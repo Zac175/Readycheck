@@ -1,0 +1,13 @@
+## Interface: 11509, 20506, 16001
+## Title: Readycheck |cff33ff99Extras|r
+## Notes: Setup wizard, first-run tour and changelog for Readycheck - loaded on demand.
+## Author: Zac
+## Version: 1.0
+## Dependencies: Readycheck
+## LoadOnDemand: 1
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+
+SetupWizard.lua
+Tutorial.lua
+Changelog.lua
+ExtrasSidebar.lua

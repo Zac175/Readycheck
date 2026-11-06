@@ -1,0 +1,28 @@
+## Interface: 11509, 20506, 16001
+## Title: Readycheck |cff33ff99Gear|r
+## Notes: Gear manager, trinket swapping, hotswap, and repair tools for Readycheck.
+## Author: Zac
+## Version: 1.0
+## Dependencies: Readycheck, Readycheck_Features
+## LoadOnDemand: 1
+## IconTexture: Interface\Icons\INV_Chest_Plate16
+
+TrinketSwap\TSS_Base.lua
+TrinketSwap\TSS_Locks.lua
+TrinketSwap\TSS_Death.lua
+TrinketSwap\TSS_Queue.lua
+TrinketSwap\TSS_Combat.lua
+TrinketSwap\TSS_UI.lua
+TrinketSwap\TSS_Events.lua
+TrinketSwap\TSS_Bootstrap.lua
+Manager\GM_Base.lua
+Manager\GM_CharSheet.lua
+Manager\GM_Menu.lua
+Manager\GM_Buttons.lua
+Manager\GM_Position.lua
+Manager\GM_Sets.lua
+Manager\GM_Runtime.lua
+Manager\GearManagerConfig.lua
+IconPicker.lua
+Hotswap.lua
+RepairReminder.lua

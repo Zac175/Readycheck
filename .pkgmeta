@@ -1,0 +1,21 @@
+# Builds the Readycheck release zip (BigWigsMods/packager).
+# The repo holds every Readycheck folder side by side; the zip puts each one
+# at the top level, exactly as they sit in Interface\AddOns.
+package-as: Readycheck
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - README.md
+  - CHANGELOG.md
+
+move-folders:
+  Readycheck/Readycheck: Readycheck
+  Readycheck/Readycheck_Consumables: Readycheck_Consumables
+  Readycheck/Readycheck_Extras: Readycheck_Extras
+  Readycheck/Readycheck_Features: Readycheck_Features
+  Readycheck/Readycheck_Gear: Readycheck_Gear
+  Readycheck/Readycheck_Reminders: Readycheck_Reminders
+  Readycheck/Readycheck_WorldTools: Readycheck_WorldTools

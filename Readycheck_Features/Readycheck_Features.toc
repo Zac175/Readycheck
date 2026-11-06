@@ -1,0 +1,24 @@
+## Interface: 11509, 20506, 16001
+## Title: Readycheck |cff33ff99Features|r
+## Notes: Boss notes, nameplate auras, polarity mode and smart macros for Readycheck.
+## Author: Zac
+## Version: 1.0
+## Dependencies: Readycheck
+## LoadOnDemand: 1
+## IconTexture: Interface\Icons\INV_Misc_Gear_01
+
+TrinketScanner.lua
+BossNotes.lua
+PolarityMode.lua
+SmartMacro.lua
+NameplateAuras.lua
+
+# The consumable bars and the raid checker moved to
+# Readycheck_Consumables; the reminder stack, TTK and the raid route
+# moved to Readycheck_Reminders. Nothing left here depended on either at
+# load time - BossNotes reaches RC:KillWatchRegister and PolarityMode
+# reaches RC:ShowReminder at runtime only, and both are stubbed in the
+# main addon's Core\Core_Stubs.lua.
+#
+# WorldBuffSync moved to Readycheck_WorldTools, with the rest of the
+# world buff stack. Nothing in this addon depended on it at load.

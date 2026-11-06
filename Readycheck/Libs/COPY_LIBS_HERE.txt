@@ -1,0 +1,29 @@
+================================================================================
+                           LIBS FOLDER REQUIRED
+================================================================================
+
+Copy your existing Libs folder contents here. Required libraries:
+
+1. LibStub/
+   - LibStub.lua
+
+2. CallbackHandler-1.0/
+   - CallbackHandler-1.0.lua
+
+3. LibSharedMedia-3.0/
+   - LibSharedMedia-3.0.lua
+
+4. LibDataBroker-1.1/
+   - LibDataBroker-1.1.lua
+
+5. LibDBIcon-1.0/
+   - LibDBIcon-1.0.lua
+
+These are standard WoW addon libraries available from:
+https://www.curseforge.com/wow/addons/libstub
+https://www.curseforge.com/wow/addons/callbackhandler
+https://www.curseforge.com/wow/addons/libsharedmedia-3-0
+https://www.curseforge.com/wow/addons/libdatabroker-1-1
+https://www.curseforge.com/wow/addons/libdbicon-1-0
+
+================================================================================

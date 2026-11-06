@@ -1,0 +1,54 @@
+## Interface: 11509, 20506, 16001
+## Title: Readycheck |cff33ff99World|r
+## Notes: Everything world buff: drop timers, the timer network, the buff board, pull timer bars, auto turn-ins and summon automation.
+## Author: Zac
+## Version: 1.0
+## Dependencies: Readycheck
+## LoadOnDemand: 1
+## IconTexture: Interface\Icons\INV_Misc_Head_Dragon_01
+
+# Three layers that all concern world buffs, kept in one addon so they
+# can be turned off as a unit:
+#   WorldTools   local detection, pull timer bars, turn-ins, summons
+#   WorldBuffs   the guild timer network and map pins
+#   the board    who in your group has what, synced over the mesh
+#
+# ALL SETTINGS STAY IN ReadycheckDB (worldTools, worldBuffTimers,
+# worldBuffs, worldBuffCache). They belong to the main addon on purpose:
+# disabling this layer must not throw a single setting away, and
+# re-enabling it has to pick up exactly where it left off.
+#
+# The main addon reaches in from three places, every one already written
+# as a nil-guard so it no-ops when this addon is off:
+#   Mesh_Inbound   -> RC.WorldBuffTimers.Mesh (WBTIME / WBYELL commands)
+#   Mesh_Inbound   -> RC.WorldBuffs peer records
+#   Core_Scan      -> RC.WorldBuffs diagnostics, CS_Gold -> peer gold
+
+# ---------- World Tools ----------
+# Core defines RC.WorldTools and the settings store the rest read
+# through, so nothing here moves above it.
+WorldTools\WT_Core.lua
+WorldTools\WT_Timers.lua
+WorldTools\WT_Turnins.lua
+WorldTools\WT_Bars.lua
+
+# ---------- World buff timer network ----------
+# Core defines RC.WorldBuffTimers and its store. Detect drives the pull
+# timer bars above via RC.WorldTools.Bars, so WT_Bars must already exist.
+WorldBuffs\WBT_Core.lua
+WorldBuffs\WBT_CityNpcs.lua
+WorldBuffs\WBT_Comms.lua
+WorldBuffs\WBT_Detect.lua
+WorldBuffs\WBT_Mesh.lua
+WorldBuffs\WBT_MapPins.lua
+WorldBuffs\WBT_Hooks.lua
+
+# ---------- Buff board ----------
+# Publishes RC.WorldBuffs, which the board UI below reads.
+WorldBuffSync.lua
+
+# ---------- UI, last ----------
+# These register sidebar pages and read the tables built above.
+WorldTools\WT_UI.lua
+WorldBuffs\WBT_UI.lua
+UI\SidebarWorldBuffs.lua

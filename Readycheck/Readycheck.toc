@@ -1,0 +1,175 @@
+## Interface: 11509, 20506, 16001
+## Title: |cffd6a640Readycheck|r |cff999999v4.8.4|r
+## Notes: The Complete Character Toolkit - reminders, consumables, gear, trinket swaps, TTK modeling and more
+## Author: Zac
+## Version: 4.8.4
+## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
+## SavedVariables: ReadycheckDB, WarriorReminderDB
+## X-Category: Combat
+## OptionalDeps: LibSharedMedia-3.0, ElvUI
+
+# WoW Forever: the old API names, put back where that client removed them (nothing on Era)
+Core\Core_Forever.lua
+
+# Libraries
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibSerialize\LibSerialize.lua
+Libs\LibDeflate\LibDeflate.lua
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+# Localization (loads before everything - defines the RCL locale table)
+Locales\Locales.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\itIT.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+
+# Core (must load first)
+Core\Core_Boot.lua
+# Which client this is (Classic Era / TBC / Forever) and which features run on it.
+Core\Core_Flavor.lua
+# Stubs must load before anything that might call a companion method.
+Core\Core_Stubs.lua
+Core\Core_Position.lua
+Core\Core_Gear.lua
+Core\Core_Debug.lua
+Core\Core_Init.lua
+Core\Core_Events.lua
+Core\Core_Scan.lua
+Core\Core_Runtime.lua
+Core\Database\DB_Abilities.lua
+Core\Database\DB_ClassAbilities.lua
+Core\Database\DB_Consumables.lua
+Core\Database\DB_ConsumablesTBC.lua
+Core\Database\DB_ConsumablesForever.lua
+Core\Database\DB_CustomItems.lua
+Core\Database\DB_Checker.lua
+Core\Database\DB_Raids.lua
+Core\Profile\PM_Profile.lua
+Core\Profile\PM_Cleanup.lua
+# Settings registry must load before PM_Export: it derives EXPORT_CATEGORIES
+# and the exportable key list that PM_Export consumes.
+Core\Profile\PM_Registry.lua
+Core\Profile\PM_Export.lua
+
+# Systems
+
+# Features
+
+# Gear Management
+
+# UI
+UI\Framework\UIF_Base.lua
+# The settings change signal the widgets below raise; load before them.
+UI\Framework\UIF_Settings.lua
+UI\Framework\UIF_Widgets.lua
+UI\Framework\UIF_Sliders.lua
+UI\Framework\UIF_Anim.lua
+# The edge glow (the warrior HUD's look, Readycheck's own art in Media).
+UI\Framework\UIF_Glow.lua
+UI\Framework\UIF_Dialogs.lua
+# Colour / font / texture / animation pickers, then the preview pane.
+UI\Framework\UIF_Pickers.lua
+# The customization standard (anchor, frame position, layout, visibility,
+# chrome, per-state styles, text format, sound) and its pickers.
+UI\Framework\UIF_Custom.lua
+UI\Framework\UIF_CustomUI.lua
+UI\Framework\UIF_Preview.lua
+UI\MinimapButton.lua
+UI\SettingsCore.lua
+UI\SettingsPanel.lua
+UI\Sidebar\Sidebar_Base.lua
+UI\Sidebar\Sidebar_Widgets.lua
+UI\Sidebar\Sidebar_AppearanceFonts.lua
+UI\Sidebar\Sidebar_AppearanceMotion.lua
+UI\Sidebar\Sidebar_AppearanceColors.lua
+UI\Sidebar\Sidebar_AppearanceCards.lua
+UI\Sidebar\Sidebar_PagesGeneral.lua
+UI\Sidebar\Sidebar_PagesStatsBar.lua
+UI\Sidebar\Sidebar_ImportExport.lua
+UI\Sidebar\Sidebar_Window.lua
+UI\Sidebar\Sidebar_Hooks.lua
+UI\Pages\Equipment\Equip_Base.lua
+UI\Pages\Equipment\Equip_TrinketQueues.lua
+UI\Pages\Equipment\Equip_GMConfig.lua
+UI\Pages\Equipment\Equip_SetEditor.lua
+UI\Consumables\Cons_Base.lua
+UI\Consumables\Cons_Notes.lua
+UI\Raids\Raids_Base.lua
+UI\Raids\Raids_Equipment.lua
+UI\Raids\Raids_Hotswap.lua
+UI\Raids\Raids_BulkTrash.lua
+UI\Raids\Raids_Nav.lua
+UI\Sidebar\Sidebar_Search.lua
+UI\Raids\Raids_BossConfig.lua
+UI\Raids\Raids_AbilityPages.lua
+UI\Raids\Raids_Remote.lua
+UI\Pages\SidebarPolarity.lua
+UI\Pages\SidebarSmartMacro.lua
+UI\Pages\SidebarMeshSync.lua
+UI\UIMover.lua
+UI\SwapToast.lua
+UI\MapStandDown.lua
+
+# ============================================================
+# SYSTEMS (merged from Readycheck_Systems: the trigger engine,
+# TTK, raid data, mesh and stats are not optional - a disableable
+# core was a footgun. Internal load order preserved exactly.)
+# ============================================================
+Systems\FontSystem.lua
+# One shared picture of the bags (where each item is, how many, cooldown
+# lookups) for every feature that used to walk the bags itself.
+Systems\BagIndex.lua
+# The one place that physically moves gear (busy and lock checks, gear-only
+# free bag slots, queued swaps checked against the item meant for them).
+Systems\EquipEngine.lua
+# One shared read of the player's buffs and debuffs, re-read once after
+# each aura change, for every feature that used to scan them itself.
+Systems\AuraIndex.lua
+Systems\SpecDetection.lua
+Systems\RaidData\RaidConfigs.lua
+Systems\RaidData\RaidProfilesSystem.lua
+Systems\RaidData\NaxxDuplicateHandler.lua
+# Boss/add/trash name resolution, lifted out of TE_Triggers and TTK_Model
+# when the reminder stack moved out: the gear stack calls it on every
+# boss death, so it cannot live in a switchable addon.
+Systems\RaidData\RaidLookup.lua
+Systems\CooldownManager.lua
+# Speech engine, formerly Readycheck_Features\Consumables\Consumables_TTS.lua.
+# The reminder stack speaks through it, so it must outlive both companions.
+Systems\TTSEngine.lua
+Systems\Trigger\TE_GearSwap.lua
+Systems\Trigger\TE_ForceEquip.lua
+Systems\Trigger\TE_Events.lua
+Systems\Stats\CS_BuffCapData.lua
+Systems\Stats\CS_BuffCap.lua
+Systems\Stats\CS_Defs.lua
+Systems\Stats\CS_Bar.lua
+Systems\Stats\CS_Buffs.lua
+Systems\Stats\CS_BuffList.lua
+Systems\Stats\CS_Gold.lua
+Systems\Sync\Mesh_Proto.lua
+Systems\Sync\Mesh_Inbound.lua
+Systems\Sync\Mesh_Remote.lua
+Systems\Sync\VersionCheck.lua
+# Per-mob nameplate view distance (card renders on the Nameplates page)
+Systems\TargetRange.lua
+
+# EVERY WORLD BUFF FEATURE now lives in Readycheck_WorldTools: local
+# drop detection, the guild timer network, map pins, the buff board and
+# its sidebar page. Kept together so the whole lot can be switched off
+# in the AddOns list as one thing.
+#
+# Settings stay here in ReadycheckDB (worldTools, worldBuffTimers,
+# worldBuffs, worldBuffCache), so disabling that addon loses nothing.
+# Mesh_Inbound, Core_Scan and CS_Gold reach into it behind nil-guards.
+

@@ -1,0 +1,1305 @@
+local RCC = _G.Readycheck
+local GetItemCount = GetItemCount or (RCC and RCC.Compat and RCC.Compat.GetItemCount)
+local GetItemSpell = GetItemSpell or (RCC and RCC.Compat and RCC.Compat.GetItemSpell)
+local GetSpellInfo = GetSpellInfo or (RCC and RCC.Compat and RCC.Compat.GetSpellInfo)
+local UnitBuff = UnitBuff or (RCC and RCC.Compat and RCC.Compat.UnitBuff)
+local UnitDebuff = UnitDebuff or (RCC and RCC.Compat and RCC.Compat.UnitDebuff)
+local AddonName = "Readycheck"
+local RC = _G[AddonName]
+
+if not RC then
+    error("Readycheck core not found!")
+    return
+end
+
+local pairs, ipairs, type, tostring, tonumber = pairs, ipairs, type, tostring, tonumber
+local math_floor, math_ceil, math_max, math_min = math.floor, math.ceil, math.max, math.min
+local table_insert, table_remove, table_sort = table.insert, table.remove, table.sort
+local string_format, string_match, string_lower = string.format, string.match, string.lower
+local GetTime = GetTime
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local GetInventoryItemLink = GetInventoryItemLink
+local GetInventoryItemID = GetInventoryItemID
+local GetItemInfo = GetItemInfo or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetItemInfo)
+local GetItemIcon = GetItemIcon or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetItemIcon)
+local C_Container = C_Container
+local C_Timer = C_Timer
+RC._gms = RC._gms or {}
+local _gms = RC._gms
+local GM = RC.GearManager
+local C, GetGMSlotHoverBorder = _gms.C, _gms.GetGMSlotHoverBorder
+------------------------------------------------------------------------
+-- Readycheck - Gear Manager Menu
+-- The hover flyout (equipment choices per slot / gear-set picker) and
+-- the docked-button drag-to-dock system: CheckAndDock/ApplyDocking snap
+-- buttons together and record dockTo/dockSide, which LoadButtonPosition
+-- (GM_Buttons.lua) replays on the next login to rebuild the layout.
+------------------------------------------------------------------------
+function GM:CreateMenuFrame()
+    if self.menuFrame then return self.menuFrame end
+
+    local menu = CreateFrame("Frame", "WRGearMenu", UIParent)
+    menu:SetSize(100, 100)
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(1000)
+    menu:EnableMouse(true)
+    menu:Hide()
+
+    menu.autoHideTimer = nil
+    menu.cooldownUpdateTimer = nil
+
+    menu:SetScript("OnEnter", function()
+        GM:CancelHideTimer()
+        if menu.fadeTimer then
+            menu.fadeTimer:Cancel()
+            menu.fadeTimer = nil
+        end
+        menu:SetAlpha(1)
+    end)
+
+    -- No OnLeave handler: hiding is driven by the notHoveredCount poll in
+    -- the OnUpdate installed by OnShow below.
+
+    menu:SetScript("OnShow", function()
+        GM:StartMenuCooldownUpdates()
+
+        menu.notHoveredCount = 0
+        menu.lastHoverCheckTime = GetTime()
+
+        menu:SetScript("OnUpdate", function(self, elapsed)
+            local now = GetTime()
+
+            if (now - (self.lastHoverCheckTime or 0)) < 0.1 then
+                return
+            end
+            self.lastHoverCheckTime = now
+
+            if GM.currentMenuAnchor then
+                local anchorName = GM.currentMenuAnchor:GetName() or ""
+                if string.find(anchorName, "^Character") then
+                    if not CharacterFrame or not CharacterFrame:IsShown() then
+                        GM:HideMenu()
+                        return
+                    end
+                end
+                if not GM.currentMenuAnchor:IsShown() then
+                    GM:HideMenu()
+                    return
+                end
+            end
+
+            local mouseOver = GM:IsMouseOverMenuSystem()
+
+            if not mouseOver then
+                self.notHoveredCount = (self.notHoveredCount or 0) + 1
+                if self.notHoveredCount >= 3 then
+                    GM:HideMenu()
+                    return
+                end
+            else
+                self.notHoveredCount = 0
+            end
+        end)
+    end)
+
+    menu:SetScript("OnHide", function()
+        GM:StopMenuCooldownUpdates()
+        menu:SetScript("OnUpdate", nil)
+        if menu.fadeTimer then
+            menu.fadeTimer:Cancel()
+            menu.fadeTimer = nil
+        end
+        menu:SetAlpha(1)
+    end)
+
+    self.menuFrame = menu
+    self.menuButtons = {}
+    return menu
+end
+
+function GM:ShowMenu(slot, anchor)
+    local menu = self:CreateMenuFrame()
+
+    self:CancelHideTimer()
+
+    if menu.fadeTimer then
+        menu.fadeTimer:Cancel()
+        menu.fadeTimer = nil
+    end
+
+    menu:SetAlpha(1)
+
+    if menu:IsShown() and self.currentMenuSlot == slot then
+        return
+    end
+
+    self.currentMenuSlot = slot
+    self.currentMenuAnchor = anchor
+
+    for _, btn in ipairs(self.menuButtons) do
+        btn:Hide()
+        btn.itemData = nil
+        btn.setName = nil
+    end
+
+    if slot == 999 then
+        local setNames = self:GetSetNames()
+        if #setNames == 0 then
+            self:HideMenu()
+            return
+        end
+
+        for _, btn in ipairs(self.menuButtons) do
+            btn:Hide()
+        end
+
+        local cols = math.min(3, #setNames)
+        local rows = math.ceil(#setNames / cols)
+        local btnSize = (self.settings and self.settings.buttonSize) or 36
+
+        menu:SetSize(cols * btnSize, rows * btnSize)
+
+        for i, setName in ipairs(setNames) do
+            local btn = self:GetOrCreateMenuButton(i)
+            btn:SetSize(btnSize, btnSize)
+
+            local col = (i - 1) % cols
+            local row = math.floor((i - 1) / cols)
+            btn:SetPoint("TOPLEFT", menu, "TOPLEFT", col * btnSize, -row * btnSize)
+
+            if btn.icon then
+                local set = self.sets[setName]
+                if set and set.icon then
+                    btn.icon:SetTexture(set.icon)
+                    btn.icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+                else
+                    btn.icon:SetTexture("Interface\\Icons\\INV_Chest_Plate16")
+                    btn.icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+                end
+
+                btn.icon:SetDesaturated(false)
+                btn.icon:SetVertexColor(1, 1, 1, 1)
+                btn.icon:Show()
+            end
+
+            if btn.nameText then
+                if self.settings.showMenuNames ~= false then
+                    btn.nameText:SetText(setName)
+
+                    local textWidth = btn.nameText:GetStringWidth()
+                    local maxWidth = 32
+
+                    if textWidth > maxWidth then
+                        local truncated = setName
+                        while btn.nameText:GetStringWidth() > maxWidth and #truncated > 3 do
+                            truncated = string.sub(truncated, 1, -2)
+                            btn.nameText:SetText(truncated .. "...")
+                        end
+                    end
+
+                    if self:IsSetComplete(setName) then
+                        btn.nameText:SetTextColor(C.white[1], C.white[2], C.white[3], C.white[4])
+                    else
+                        btn.nameText:SetTextColor(C.red[1], C.red[2], C.red[3], C.red[4])
+                    end
+                    btn.nameText:Show()
+                else
+                    btn.nameText:Hide()
+                end
+            end
+
+            btn.setName = setName
+            btn.itemData = nil
+            btn:Show()
+        end
+
+        menu:ClearAllPoints()
+
+        local anchorTop = anchor:GetTop()
+        local anchorBottom = anchor:GetBottom()
+        local screenHeight = UIParent:GetHeight()
+
+        if anchorTop and (screenHeight - anchorTop) > 100 then
+            menu:SetPoint("BOTTOM", anchor, "TOP", 0, 2)
+        elseif anchorBottom and anchorBottom > 100 then
+            menu:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+        else
+            menu:SetPoint("LEFT", anchor, "RIGHT", 2, 0)
+        end
+
+        menu:SetFrameStrata("TOOLTIP")
+        menu:Show()
+        menu.showTime = GetTime()
+
+        return
+    end
+
+    local items = self:GetItemsForSlot(slot)
+
+    local emptyTexture = RC:GetSlotEmptyTexture(self.slotInfo[slot].name)
+
+    self:DebugPrint("Empty slot texture for slot " .. slot .. ": " .. tostring(emptyTexture))
+
+    local emptySlotItem = {
+        texture = emptyTexture or "Interface\\Icons\\INV_Misc_QuestionMark",
+        itemLink = nil,
+        equipped = false,
+        bag = nil,
+        slot = nil,
+        isEmpty = true
+    }
+    table.insert(items, 1, emptySlotItem)
+
+    for _, btn in ipairs(self.menuButtons) do
+        btn:Hide()
+    end
+
+    local cols = math.min(3, math.max(1, #items))
+    local rows = math.ceil(#items / cols)
+    local btnSize = (self.settings and self.settings.buttonSize) or 36
+    local padding = 0
+
+    menu:SetSize(cols * btnSize, rows * btnSize)
+
+    for i, itemData in ipairs(items) do
+        local btn = self:GetOrCreateMenuButton(i)
+        btn:SetSize(btnSize, btnSize)
+
+        local col = (i - 1) % cols
+        local row = math.floor((i - 1) / cols)
+        btn:SetPoint("TOPLEFT", menu, "TOPLEFT", col * btnSize, -row * btnSize)
+
+        if btn.icon then
+            btn.icon:SetTexture(itemData.texture)
+            btn.icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+
+            if itemData.isEmpty then
+                btn.icon:SetDesaturated(true)
+                btn.icon:SetVertexColor(1, 1, 0.4, 1)
+
+                if not btn.emptyBg then
+                    btn.emptyBg = btn:CreateTexture(nil, "BACKGROUND", nil, -1)
+                    btn.emptyBg:SetAllPoints()
+                    btn.emptyBg:SetColorTexture(C.brownHint[1], C.brownHint[2], C.brownHint[3], C.brownHint[4])
+                end
+                btn.emptyBg:Show()
+            else
+                btn.icon:SetDesaturated(false)
+                btn.icon:SetVertexColor(1, 1, 1, 1)
+
+                if btn.emptyBg then
+                    btn.emptyBg:Hide()
+                end
+            end
+            btn.icon:Show()
+        end
+
+        btn.itemData = itemData
+        btn.setName = nil
+
+        if btn.nameText then
+            local anchorName = anchor:GetName() or ""
+            local isCharacterSheet = string.match(anchorName, "^Character")
+            local showName = false
+
+            if isCharacterSheet then
+                showName = self.settings.showCharPaneNames ~= false
+            else
+                showName = self.settings.showMenuNames ~= false
+            end
+
+            if showName and itemData.itemLink and not itemData.isEmpty then
+                local itemName = GetItemInfo(itemData.itemLink)
+                if itemName then
+                    local abbrevName = RC.GetItemAbbreviation and RC:GetItemAbbreviation(itemName) or itemName:sub(1, 5) .. "."
+                    btn.nameText:SetText(abbrevName)
+                    btn.nameText:SetTextColor(C.white[1], C.white[2], C.white[3], C.white[4])
+                    btn.nameText:Show()
+                else
+                    btn.nameText:Hide()
+                end
+            else
+                btn.nameText:Hide()
+            end
+        end
+
+        btn:Show()
+    end
+
+    menu:ClearAllPoints()
+
+    local anchorName = anchor:GetName() or ""
+    local isCharacterSheet = string.match(anchorName, "^Character")
+    local isGearSetEditor = string.match(anchorName, "^WRGearSetSlot")
+
+    -- Ammo/weapon/ranged slots sit at the paper doll's bottom edge, so
+    -- their flyout has to grow downward instead of sideways like the rest.
+    local growDownSlots = {[0] = true, [16] = true, [17] = true, [18] = true}
+
+    if isCharacterSheet or isGearSetEditor then
+        if growDownSlots[slot] then
+            menu:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+        else
+            menu:SetPoint("LEFT", anchor, "RIGHT", 2, 0)
+        end
+    else
+        local anchorTop = anchor:GetTop()
+        local anchorBottom = anchor:GetBottom()
+        local screenHeight = UIParent:GetHeight()
+
+        if anchorTop and (screenHeight - anchorTop) > 100 then
+            menu:SetPoint("BOTTOM", anchor, "TOP", 0, 2)
+        elseif anchorBottom and anchorBottom > 100 then
+            menu:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+        else
+            menu:SetPoint("LEFT", anchor, "RIGHT", 2, 0)
+        end
+    end
+
+    menu:SetFrameStrata("TOOLTIP")
+    menu:Show()
+    menu.showTime = GetTime()
+
+    if menu.autoHideTimer then
+        menu.autoHideTimer:Cancel()
+        menu.autoHideTimer = nil
+    end
+end
+
+function GM:GetOrCreateMenuButton(index)
+    local buttonName = "WRGearMenuButton" .. index
+    local btn = self.menuButtons[index]
+
+    if not btn then
+        btn = CreateFrame("Button", buttonName, self.menuFrame)
+        btn:SetSize(36, 36)
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+        local iconBg = btn:CreateTexture(buttonName .. "IconBg", "BACKGROUND", nil, -8)
+        iconBg:SetAllPoints(btn)
+        iconBg:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+        btn.iconBg = iconBg
+
+        local icon = btn:CreateTexture(buttonName .. "Icon", "BACKGROUND")
+        icon:SetPoint("TOPLEFT", btn, "TOPLEFT", 1, -1)
+        icon:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 1)
+        icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+        icon:SetVertexColor(1, 1, 1, 1)
+        btn.icon = icon
+
+        local cdText = RC:CreateFontString(btn, "OVERLAY", nil, 14)
+        cdText:SetPoint("CENTER", 0, 0)
+        cdText:SetTextColor(1, 1, 0, 1)
+        cdText:SetShadowOffset(2, -2)
+        cdText:SetShadowColor(0, 0, 0, 1)
+        cdText:Hide()
+        btn.cdText = cdText
+
+        local nameText = RC:CreateFontString(btn, "OVERLAY", nil, 8)
+        nameText:SetPoint("BOTTOM", 0, 2)
+        nameText:SetWidth(34)
+        nameText:SetHeight(10)
+        nameText:SetTextColor(1, 1, 1, 1)
+        nameText:SetJustifyH("CENTER")
+        nameText:SetJustifyV("BOTTOM")
+        nameText:SetWordWrap(false)
+        nameText:SetShadowOffset(1, -1)
+        nameText:SetShadowColor(0, 0, 0, 1)
+        nameText:Hide()
+        btn.nameText = nameText
+
+        local borders = {}
+        borders.top = btn:CreateTexture(nil, "OVERLAY")
+        borders.top:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+        borders.top:SetPoint("TOPLEFT", 0, 0)
+        borders.top:SetPoint("TOPRIGHT", 0, 0)
+        borders.top:SetHeight(1)
+
+        borders.bottom = btn:CreateTexture(nil, "OVERLAY")
+        borders.bottom:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+        borders.bottom:SetPoint("BOTTOMLEFT", 0, 0)
+        borders.bottom:SetPoint("BOTTOMRIGHT", 0, 0)
+        borders.bottom:SetHeight(1)
+
+        borders.left = btn:CreateTexture(nil, "OVERLAY")
+        borders.left:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+        borders.left:SetPoint("TOPLEFT", 0, 0)
+        borders.left:SetPoint("BOTTOMLEFT", 0, 0)
+        borders.left:SetWidth(1)
+
+        borders.right = btn:CreateTexture(nil, "OVERLAY")
+        borders.right:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+        borders.right:SetPoint("TOPRIGHT", 0, 0)
+        borders.right:SetPoint("BOTTOMRIGHT", 0, 0)
+        borders.right:SetWidth(1)
+        btn.borders = borders
+
+        local hoverBorder = {}
+        local hoverBorderCol = GetGMSlotHoverBorder()
+        hoverBorder.top = btn:CreateTexture(nil, "OVERLAY", nil, 2)
+        hoverBorder.top:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+        hoverBorder.top:SetPoint("TOPLEFT", 0, 0)
+        hoverBorder.top:SetPoint("TOPRIGHT", 0, 0)
+        hoverBorder.top:SetHeight(1)
+        hoverBorder.top:Hide()
+
+        hoverBorder.bottom = btn:CreateTexture(nil, "OVERLAY", nil, 2)
+        hoverBorder.bottom:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+        hoverBorder.bottom:SetPoint("BOTTOMLEFT", 0, 0)
+        hoverBorder.bottom:SetPoint("BOTTOMRIGHT", 0, 0)
+        hoverBorder.bottom:SetHeight(1)
+        hoverBorder.bottom:Hide()
+
+        hoverBorder.left = btn:CreateTexture(nil, "OVERLAY", nil, 2)
+        hoverBorder.left:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+        hoverBorder.left:SetPoint("TOPLEFT", 0, 0)
+        hoverBorder.left:SetPoint("BOTTOMLEFT", 0, 0)
+        hoverBorder.left:SetWidth(1)
+        hoverBorder.left:Hide()
+
+        hoverBorder.right = btn:CreateTexture(nil, "OVERLAY", nil, 2)
+        hoverBorder.right:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+        hoverBorder.right:SetPoint("TOPRIGHT", 0, 0)
+        hoverBorder.right:SetPoint("BOTTOMRIGHT", 0, 0)
+        hoverBorder.right:SetWidth(1)
+        hoverBorder.right:Hide()
+        btn.hoverBorder = hoverBorder
+
+        local hoverHighlight = btn:CreateTexture(nil, "ARTWORK", nil, 7)
+        hoverHighlight:SetAllPoints()
+        hoverHighlight:SetColorTexture(C.whiteHint[1], C.whiteHint[2], C.whiteHint[3], C.whiteHint[4])
+        hoverHighlight:SetBlendMode("ADD")
+        hoverHighlight:Hide()
+        btn.hoverHighlight = hoverHighlight
+
+        local pushed = btn:CreateTexture(nil, "ARTWORK", nil, 6)
+        pushed:SetAllPoints()
+        pushed:SetColorTexture(0, 0, 0, 0.4)
+        btn:SetPushedTexture(pushed)
+
+        btn:SetPushedTextOffset(1, -1)
+
+        btn:SetScript("OnClick", function(self, button)
+            if self.setName then
+                if button == "LeftButton" and IsAltKeyDown() then
+                    GM:PinSet(self.setName)
+                    GM:HideMenu()
+                    return
+                end
+
+                if button == "RightButton" then return end
+
+                if InCombatLockdown() then
+                    if RC and RC.QueueGearSwap then
+                        RC:QueueGearSwap(self.setName)
+                        GM:HideMenu()
+                    else
+                        GM:Print(RCL["Cannot equip sets in combat"])
+                    end
+                    return
+                end
+                GM:EquipSet(self.setName)
+                GM:HideMenu()
+                return
+            end
+
+            if self.editorGearData then
+                local itemData = self.itemData
+                if itemData then
+                    if itemData.isUnequip then
+                        self.editorGearData[self.editorSlot] = 0
+                        if self.editorUpdateCallback then
+                            self.editorUpdateCallback()
+                        end
+                        GM:DebugPrint("Set slot " .. self.editorSlot .. " to unequip (0)")
+                        GM:HideMenu()
+                        return
+                    end
+
+                    if itemData.isRemove then
+                        self.editorGearData[self.editorSlot] = nil
+                        if self.editorUpdateCallback then
+                            self.editorUpdateCallback()
+                        end
+                        GM:DebugPrint("Removed slot " .. self.editorSlot .. " from set via menu")
+                        GM:HideMenu()
+                        return
+                    end
+
+                    if itemData.itemLink then
+                        self.editorGearData[self.editorSlot] = itemData.itemLink
+                        if self.editorUpdateCallback then
+                            self.editorUpdateCallback()
+                        end
+                        GM:DebugPrint("Set slot " .. self.editorSlot .. " to item: " .. (itemData.name or "unknown"))
+                        GM:HideMenu()
+                        return
+                    end
+                end
+            end
+
+            local itemData = self.itemData
+
+            local inConfigMode = GM.currentMenuAnchor and
+                                 GM.currentMenuAnchor:GetName() and
+                                 string.match(GM.currentMenuAnchor:GetName(), "^WRGearSetSlot")
+
+            if button == "LeftButton" and IsAltKeyDown() and not inConfigMode
+               and itemData and not itemData.isEmpty
+               and (itemData.link or itemData.itemLink) then
+                GM:PinItem(itemData.link or itemData.itemLink, GM.currentMenuSlot)
+                GM:HideMenu()
+                return
+            end
+
+            if inConfigMode then
+                if itemData then
+                    if itemData.isEmpty then
+                        GM.setEditorInv[GM.currentMenuSlot].itemLink = 0
+                        GM.setEditorInv[GM.currentMenuSlot].selected = true
+
+                        local slotButton = GM.currentSlotButton or _G["WRGearSetSlot" .. GM.currentMenuSlot]
+                        if slotButton and slotButton.icon then
+                            local texture = RC:GetSlotEmptyTexture(GM.slotInfo[GM.currentMenuSlot].name)
+                            slotButton.icon:SetTexture(texture)
+                            slotButton.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                            slotButton.icon:SetVertexColor(0.7, 0.7, 0.7, 1)
+                            slotButton.icon:SetDesaturated(true)
+                        end
+                    elseif itemData.itemLink then
+                        GM.setEditorInv[GM.currentMenuSlot].itemLink = itemData.itemLink
+                        GM.setEditorInv[GM.currentMenuSlot].selected = true
+
+                        local texture = itemData.texture
+                        if not texture then
+                            texture = GetItemIcon(itemData.itemLink)
+                        end
+                        if not texture then
+                            texture = select(10, GetItemInfo(itemData.itemLink))
+                        end
+                        if not texture then
+                            local equippedLink = GetInventoryItemLink("player", GM.currentMenuSlot)
+                            if equippedLink == itemData.itemLink then
+                                texture = GetInventoryItemTexture("player", GM.currentMenuSlot)
+                            end
+                        end
+
+                        GM.setEditorInv[GM.currentMenuSlot].texture = texture
+
+                        if GM.currentEditingSet and GM.sets[GM.currentEditingSet] then
+                            local set = GM.sets[GM.currentEditingSet]
+                            if not set.textures then set.textures = {} end
+                            if texture then
+                                set.textures[GM.currentMenuSlot] = texture
+                            end
+                        end
+
+                        local slotButton = GM.currentSlotButton or _G["WRGearSetSlot" .. GM.currentMenuSlot]
+                        if slotButton and slotButton.icon then
+                            if texture then
+                                slotButton.icon:SetTexture(texture)
+                                slotButton.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                                slotButton.icon:SetVertexColor(1, 1, 1, 1)
+                                slotButton.icon:SetDesaturated(false)
+                            end
+                        end
+                    end
+
+                    if RC.SaveCurrentGearSetEditorState then
+                        RC:SaveCurrentGearSetEditorState()
+                    end
+
+                    C_Timer.After(0.05, function()
+                        if GM.currentMenuAnchor and GM.currentMenuSlot then
+                            GM:ShowMenu(GM.currentMenuSlot, GM.currentMenuAnchor)
+                        end
+                    end)
+                end
+            else
+                if itemData and itemData.isEmpty then
+                    local placed = false
+                    for bag = 0, 4 do
+                        if not placed then
+                            for bagSlot = 1, C_Container.GetContainerNumSlots(bag) do
+                                local bagItemLink = C_Container.GetContainerItemLink(bag, bagSlot)
+                                if not bagItemLink then
+                                    placed = GM:SafeUnequipToSlot(GM.currentMenuSlot, bag, bagSlot)
+                                    if placed then
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    GM:HideMenu()
+
+                    C_Timer.After(0.1, function()
+                        if GM.currentMenuAnchor and GM.currentMenuSlot and
+                           string.match(GM.currentMenuAnchor:GetName() or "", "^Character") then
+                            GM:ShowMenu(GM.currentMenuSlot, GM.currentMenuAnchor)
+                        end
+                    end)
+                elseif itemData and not itemData.equipped and itemData.bag and itemData.slot then
+                    local targetSlot = GM.currentMenuSlot
+                    -- When enabled, a docked (non-character-sheet) trinket
+                    -- flyout sends left-clicks to slot 13 and right-clicks
+                    -- to slot 14 instead of always targeting the hovered slot.
+                    if (GM.settings and GM.settings.trinketDockSplitClick)
+                       and (GM.currentMenuSlot == 13 or GM.currentMenuSlot == 14) then
+                        local anchorName = GM.currentMenuAnchor and GM.currentMenuAnchor:GetName() or ""
+                        if not anchorName:match("^Character") then
+                            targetSlot = (button == "RightButton") and 14 or 13
+                        end
+                    end
+                    GM:SafeSwapBagToSlot(itemData.bag, itemData.slot, targetSlot, itemData.link)
+                    GM:HideMenu()
+
+                    C_Timer.After(0.1, function()
+                        if GM.currentMenuAnchor and GM.currentMenuSlot and
+                           string.match(GM.currentMenuAnchor:GetName() or "", "^Character") then
+                            GM:ShowMenu(GM.currentMenuSlot, GM.currentMenuAnchor)
+                        end
+                    end)
+                end
+            end
+        end)
+
+        btn:SetScript("OnEnter", function(self)
+            if self.hoverBorder then
+                self.hoverBorder.top:Show()
+                self.hoverBorder.bottom:Show()
+                self.hoverBorder.left:Show()
+                self.hoverBorder.right:Show()
+            end
+
+            if self.hoverHighlight then
+                self.hoverHighlight:Show()
+            end
+
+            GameTooltip:Hide()
+            GM:CancelHideTimer()
+
+            C_Timer.After(0.05, function()
+                if not self:IsMouseOver() then return end
+                if not GM:TooltipsAllowed() then return end
+
+                if self.setName then
+                    GM:AnchorTooltip(self)
+                    GameTooltip:SetText(self.setName, 1, 1, 1)
+                    GameTooltip:AddLine(" ")
+
+                    local set = GM.sets[self.setName]
+                    if set and set.equip then
+                        local equippedCount = {}
+                        for s = 0, 19 do
+                            local eLink = GetInventoryItemLink("player", s)
+                            local eId = eLink and GM:GetItemID(eLink)
+                            if eId then equippedCount[eId] = (equippedCount[eId] or 0) + 1 end
+                        end
+                        local itemCount, anyMissing = 0, false
+                        for slot, itemLink in pairs(set.equip) do
+                            if itemLink and itemLink ~= 0 then
+                                local itemName = GetItemInfo(itemLink)
+                                if itemName then
+                                    local id = GM:GetItemID(itemLink)
+                                    local have = id and ((GetItemCount(id) or 0) + (equippedCount[id] or 0)) or 0
+                                    if have >= 1 then
+                                        GameTooltip:AddLine(GM.slotInfo[slot].real .. ": " .. itemName, 1, 1, 1)
+                                    else
+                                        GameTooltip:AddLine(GM.slotInfo[slot].real .. ": " .. itemName .. RCL[" (missing)"], C.red[1], C.red[2], C.red[3])
+                                        anyMissing = true
+                                    end
+                                    itemCount = itemCount + 1
+                                end
+                            end
+                        end
+                        if itemCount == 0 then
+                            GameTooltip:AddLine(RCL["(Empty set)"], 0.7, 0.7, 0.7)
+                        elseif anyMissing or not GM:IsSetComplete(self.setName) then
+                            GameTooltip:AddLine(" ")
+                            GameTooltip:AddLine(RCL["Missing gear - can't fully equip this set"], C.red[1], C.red[2], C.red[3])
+                        end
+                    end
+
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine(RCL["|cFFFFFF00Click to equip|r"], 0.8, 0.8, 0.8)
+                    GameTooltip:AddLine(RCL["|cFFFFFF00Alt+Click|r to pin this set as its own button on screen"], 0.8, 0.8, 0.8)
+                    GameTooltip:Show()
+                elseif self.itemData and self.itemData.isUnequip then
+                    GM:AnchorTooltip(self)
+                    GameTooltip:SetText(RCL["Unequip Slot"], 1, 1, 1)
+                    GameTooltip:AddLine(RCL["Click to make this slot unequip when set is activated"], 0.8, 0.8, 0.8)
+                    GameTooltip:Show()
+                elseif self.itemData and self.itemData.isRemove then
+                    GM:AnchorTooltip(self)
+                    GameTooltip:SetText(RCL["Remove from Set"], 1, 0.5, 0.5)
+                    GameTooltip:AddLine(RCL["Click to remove this slot from the gear set completely"], 0.8, 0.8, 0.8)
+                    GameTooltip:Show()
+                elseif self.itemData and self.itemData.isEmpty then
+                    GM:AnchorTooltip(self)
+                    GameTooltip:SetText(RCL["Unequip Slot"], 1, 1, 1)
+                    GameTooltip:AddLine(RCL["Click to remove item from this slot"], 0.8, 0.8, 0.8)
+                    GameTooltip:Show()
+                elseif self.itemData and self.itemData.itemLink then
+                    if GM:TooltipsAllowed() then
+                        GM:AnchorTooltip(self)
+
+                        if self.itemData.itemLink == 0 then
+                            GameTooltip:SetText(RCL["Unequip Slot"], 1, 1, 1)
+                            GameTooltip:AddLine(RCL["This slot will be unequipped"], 0.8, 0.8, 0.8)
+                        elseif type(self.itemData.itemLink) == "string" then
+                            GameTooltip:SetHyperlink(self.itemData.itemLink)
+
+                            if self.itemData.equipped then
+                                GameTooltip:AddLine(" ")
+                                GameTooltip:AddLine(RCL["|cFF808080(Currently equipped)|r"], 0.7, 0.7, 0.7)
+                            end
+
+                            if not self.editorGearData
+                                    and not ((GM.currentMenuAnchor and GM.currentMenuAnchor:GetName() or ""):match("^WRGearSetSlot")) then
+                                GameTooltip:AddLine(" ")
+                                GameTooltip:AddLine(RCL["|cFFFFFF00Alt+Click|r to pin this item as its own button on screen"], 0.8, 0.8, 0.8)
+                            end
+                        end
+
+                        GameTooltip:Show()
+                    end
+                end
+            end)
+        end)
+
+        btn:SetScript("OnLeave", function(self)
+            if self.hoverBorder then
+                self.hoverBorder.top:Hide()
+                self.hoverBorder.bottom:Hide()
+                self.hoverBorder.left:Hide()
+                self.hoverBorder.right:Hide()
+            end
+
+            if self.hoverHighlight then
+                self.hoverHighlight:Hide()
+            end
+
+            GameTooltip:Hide()
+        end)
+
+        self.menuButtons[index] = btn
+    end
+
+    return btn
+end
+
+function GM:HideMenu()
+    self:CancelHideTimer()
+
+    if self.menuShowTimer then
+        self.menuShowTimer:Cancel()
+        self.menuShowTimer = nil
+    end
+
+    if self.menuFrame then
+        if self.menuFrame.fadeTimer then
+            self.menuFrame.fadeTimer:Cancel()
+            self.menuFrame.fadeTimer = nil
+        end
+        if self.menuFrame.safetyTimer then
+            self.menuFrame.safetyTimer:Cancel()
+            self.menuFrame.safetyTimer = nil
+        end
+        self.menuFrame:SetAlpha(1)
+        self.menuFrame:Hide()
+
+        if self.menuButtons then
+            for _, btn in ipairs(self.menuButtons) do
+                if btn then
+                    btn:Hide()
+                end
+            end
+        end
+    end
+
+    GameTooltip:Hide()
+
+    self.currentMenuSlot = nil
+    self.currentMenuAnchor = nil
+end
+
+function GM:UpdateMenuCooldowns()
+    if not self.menuFrame or not self.menuFrame:IsShown() then
+        return
+    end
+
+    for _, btn in ipairs(self.menuButtons) do
+        if btn and btn:IsShown() and btn.cdText and btn.itemData and btn.itemData.itemLink then
+            local itemID = self:GetItemID(btn.itemData.itemLink)
+            if itemID then
+                local start, duration
+                if btn.itemData.invSlot and btn.itemData.invSlot >= 1 then
+                    start, duration = GetInventoryItemCooldown("player", btn.itemData.invSlot)
+                else
+                    start, duration = RC:GetItemCooldownSafe(itemID)
+                end
+                if start and duration and duration > 0 then
+                    local remaining = math.ceil(duration - (GetTime() - start))
+                    if remaining > 0 and (not GM.settings or GM.settings.showCooldownTextMenus ~= false) then
+                        if remaining >= 60 then
+                            btn.cdText:SetText(math.ceil(remaining / 60) .. "m")
+                        else
+                            btn.cdText:SetText(remaining .. "s")
+                        end
+                        btn.cdText:Show()
+                    else
+                        btn.cdText:Hide()
+                    end
+                else
+                    btn.cdText:Hide()
+                end
+            else
+                btn.cdText:Hide()
+            end
+        end
+    end
+end
+
+function GM:StartMenuCooldownUpdates()
+    self:StopMenuCooldownUpdates()
+
+    local function updateTick()
+        if self.menuFrame and self.menuFrame:IsShown() then
+            self:UpdateMenuCooldowns()
+            self.menuFrame.cooldownUpdateTimer = C_Timer.NewTimer(0.5, updateTick)
+        end
+    end
+
+    updateTick()
+end
+
+function GM:StopMenuCooldownUpdates()
+    if self.menuFrame and self.menuFrame.cooldownUpdateTimer then
+        self.menuFrame.cooldownUpdateTimer:Cancel()
+        self.menuFrame.cooldownUpdateTimer = nil
+    end
+end
+
+function GM:GetItemsForSlot(slot)
+    if self.remoteItemsOverride then
+        return self:GetRemoteItemsForSlot(slot)
+    end
+
+    local items = {}
+
+    local equippedLink = GetInventoryItemLink("player", slot)
+    local equippedID = self:GetItemID(equippedLink)
+
+    local isCharacterSheet = (self.currentMenuAnchor and
+                              string.match(self.currentMenuAnchor:GetName() or "", "^Character"))
+
+    local inGearSetEditor = (self.currentMenuAnchor and
+                             self.currentMenuAnchor:GetName() and
+                             string.match(self.currentMenuAnchor:GetName(), "^WRGearSetSlot"))
+
+    if equippedLink then
+        local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(equippedLink)
+        if not texture then
+            texture = GetInventoryItemTexture("player", slot)
+        end
+
+        local isInSet = false
+        if inGearSetEditor and self.setEditorInv and self.setEditorInv[slot] then
+            if self.setEditorInv[slot].itemLink == equippedLink and self.setEditorInv[slot].selected then
+                isInSet = true
+            end
+        end
+
+        table.insert(items, {
+            itemLink = equippedLink,
+            name = name or "Loading...",
+            texture = texture or "Interface\\Icons\\INV_Misc_QuestionMark",
+            quality = quality,
+            equipped = (not inGearSetEditor) or isInSet,
+        })
+    end
+
+    local _pairedMap = {[11]=12, [12]=11, [13]=14, [14]=13, [16]=17, [17]=16}
+    local _pairedSlot = _pairedMap[slot]
+    local _pairedShowID = nil
+    if _pairedSlot then
+        local pairedLink = GetInventoryItemLink("player", _pairedSlot)
+        local pairedID   = pairedLink and self:GetItemID(pairedLink)
+        if pairedLink and pairedID then
+            local pName, _, pQuality, _, _, _, _, _, pEquipSlot, pTexture = GetItemInfo(pairedLink)
+            if self:CanItemGoInSlot(pEquipSlot, slot) then
+                if not pTexture then
+                    pTexture = GetInventoryItemTexture("player", _pairedSlot)
+                end
+                table.insert(items, {
+                    itemLink = pairedLink,
+                    name     = pName or "Loading...",
+                    texture  = pTexture or "Interface\\Icons\\INV_Misc_QuestionMark",
+                    quality  = pQuality,
+                    equipped = false,
+                })
+                _pairedShowID = pairedID
+            end
+        end
+    end
+
+    local equippedItems = {}
+
+    local setItems = {}
+    if inGearSetEditor and self.setEditorInv then
+        for i = 0, 19 do
+            if self.setEditorInv[i] and self.setEditorInv[i].selected and self.setEditorInv[i].itemLink then
+                local itemID = self:GetItemID(self.setEditorInv[i].itemLink)
+                if itemID then
+                    setItems[itemID] = true
+                end
+            end
+        end
+    end
+
+    for bag = 0, 4 do
+        for bagSlot = 1, C_Container.GetContainerNumSlots(bag) do
+            local itemLink = C_Container.GetContainerItemLink(bag, bagSlot)
+            if itemLink then
+                local _, _, _, _, _, _, _, _, equipSlot, texture = GetItemInfo(itemLink)
+
+                if not texture then
+                    texture = GetItemIcon(itemLink)
+                end
+
+                -- IMPROVED: Use C_Container.GetContainerItemInfo as backup for texture
+                if not texture then
+                    local itemInfo = C_Container.GetContainerItemInfo(bag, bagSlot)
+                    if itemInfo then
+                        texture = itemInfo.iconFileID
+                    end
+                end
+
+                if self:CanItemGoInSlot(equipSlot, slot) then
+                    local itemID = self:GetItemID(itemLink)
+                    if not equippedItems[itemID] then
+                        local name, _, quality = GetItemInfo(itemLink)
+
+                        local isInCurrentSet = inGearSetEditor and setItems[itemID]
+
+                        table.insert(items, {
+                            itemLink = itemLink,
+                            name = name or "Loading...",
+                            texture = texture or "Interface\\Icons\\INV_Misc_QuestionMark",
+                            quality = quality,
+                            bag = bag,
+                            slot = bagSlot,
+                            equipped = isInCurrentSet,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    return items
+end
+
+-- Feeds the same flyout UI from another unit's inspected gear instead of
+-- the player's own bags/equipment, set up by whatever populates
+-- remoteItemsOverride/remoteEquippedBySlot (outside this file).
+function GM:GetRemoteItemsForSlot(slot)
+    local items = {}
+    local override = self.remoteItemsOverride
+    if not override then return items end
+
+    local setEditorInv = self.setEditorInv
+
+    local setItemIds = {}
+    if setEditorInv then
+        for i = 0, 19 do
+            local s = setEditorInv[i]
+            if s and s.selected and s.itemLink and type(s.itemLink) == "string" then
+                local id = tonumber(s.itemLink:match("item:(%d+)"))
+                if id then setItemIds[id] = true end
+            end
+        end
+    end
+
+    local thisSlotItem = setEditorInv and setEditorInv[slot]
+    if thisSlotItem and thisSlotItem.selected and thisSlotItem.itemLink
+            and type(thisSlotItem.itemLink) == "string" then
+        local name = GetItemInfo(thisSlotItem.itemLink) or thisSlotItem.itemLink:match("item:(%d+)")
+        items[#items+1] = {
+            itemLink = thisSlotItem.itemLink,
+            name     = name or "Loading...",
+            texture  = thisSlotItem.texture or "Interface\\Icons\\INV_Misc_QuestionMark",
+            equipped = true,
+        }
+    end
+
+    local candidates = {}
+    for _, item in ipairs(override) do
+        if self:CanItemGoInSlot(item.equipLoc or "", slot) then
+            local id = item.id
+            local inThisSlot = thisSlotItem and thisSlotItem.selected
+                and thisSlotItem.itemLink and type(thisSlotItem.itemLink) == "string"
+                and tonumber(thisSlotItem.itemLink:match("item:(%d+)")) == id
+            if not inThisSlot then
+                candidates[#candidates+1] = {
+                    itemLink = item.link or ("item:" .. id),
+                    name     = item.name or ("item:" .. id),
+                    texture  = item.icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+                    equipped = setItemIds[id] and true or false,
+                }
+            end
+        end
+    end
+    table.sort(candidates, function(a,b) return (a.name or "") < (b.name or "") end)
+    for _, c in ipairs(candidates) do items[#items+1] = c end
+
+    return items
+end
+
+function GM:CanItemGoInSlot(equipSlot, invSlot)
+    if not equipSlot then return false end
+
+    local slotMap = {
+        ["INVTYPE_HEAD"] = {1}, ["INVTYPE_NECK"] = {2}, ["INVTYPE_SHOULDER"] = {3},
+        ["INVTYPE_BODY"] = {4}, ["INVTYPE_CHEST"] = {5}, ["INVTYPE_ROBE"] = {5},
+        ["INVTYPE_WAIST"] = {6}, ["INVTYPE_LEGS"] = {7}, ["INVTYPE_FEET"] = {8},
+        ["INVTYPE_WRIST"] = {9}, ["INVTYPE_HAND"] = {10}, ["INVTYPE_FINGER"] = {11, 12},
+        ["INVTYPE_TRINKET"] = {13, 14}, ["INVTYPE_CLOAK"] = {15},
+        ["INVTYPE_WEAPON"] = {16, 17}, ["INVTYPE_SHIELD"] = {17}, ["INVTYPE_2HWEAPON"] = {16},
+        ["INVTYPE_WEAPONMAINHAND"] = {16}, ["INVTYPE_WEAPONOFFHAND"] = {17}, ["INVTYPE_HOLDABLE"] = {17},
+        ["INVTYPE_RANGED"] = {18}, ["INVTYPE_RANGEDRIGHT"] = {18}, ["INVTYPE_THROWN"] = {18},
+        ["INVTYPE_RELIC"] = {18}, ["INVTYPE_TABARD"] = {19}, ["INVTYPE_AMMO"] = {0},
+    }
+
+    local slots = slotMap[equipSlot]
+    if not slots then return false end
+
+    for _, s in ipairs(slots) do
+        if s == invSlot then return true end
+    end
+    return false
+end
+
+-- Walks the dockTo chain to the root so dragging any child button in a
+-- docked group moves the whole group together (see OnDragStart in
+-- GM_Buttons.lua).
+function GM:FindParentButton(slot)
+    if not self.buttonData[slot] or not self.buttonData[slot].dockTo then
+        return slot
+    end
+    return self:FindParentButton(self.buttonData[slot].dockTo)
+end
+
+function GM:AddDockedChildren(parentSlot, list)
+    for slot, data in pairs(self.buttonData) do
+        if data.dockTo == parentSlot then
+            table.insert(list, slot)
+            self:AddDockedChildren(slot, list)
+        end
+    end
+end
+
+function GM:CheckAndDock(slot)
+    if not self.buttons[slot] then return false end
+
+    local button = self.buttons[slot]
+    local myLeft = button:GetLeft()
+    local myRight = button:GetRight()
+    local myTop = button:GetTop()
+    local myBottom = button:GetBottom()
+
+    if not myLeft or not myRight or not myTop or not myBottom then return false end
+
+    -- 20px pixel-snap radius for auto-docking. occupiedPositions tracks
+    -- which side of each button is already claimed so two buttons can't
+    -- both dock to the same slot's same edge.
+    local snapDistance = 20
+    local bestDist = snapDistance + 1
+    local bestTarget = nil
+    local bestSide = nil
+
+    self:DebugPrint("CheckAndDock for slot " .. slot .. " at (" .. math.floor(myLeft) .. "," .. math.floor(myTop) .. ")")
+
+    local occupiedPositions = {}
+    for checkSlot, checkData in pairs(self.buttonData) do
+        if checkSlot ~= slot and checkData.dockTo and self.buttons[checkSlot] then
+            local key = checkData.dockTo .. "_" .. checkData.dockSide
+            occupiedPositions[key] = checkSlot
+            self:DebugPrint("Occupied: " .. key .. " by slot " .. checkSlot)
+        end
+    end
+
+    for otherSlot, otherButton in pairs(self.buttons) do
+        if otherSlot ~= slot and otherButton:IsVisible() then
+            local oLeft = otherButton:GetLeft()
+            local oRight = otherButton:GetRight()
+            local oTop = otherButton:GetTop()
+            local oBottom = otherButton:GetBottom()
+
+            if oLeft and oRight and oTop and oBottom then
+                local centerDist = math.sqrt((myLeft - oLeft)^2 + (myTop - oTop)^2)
+
+                if centerDist >= 10 then
+
+                    local vertAligned = (myTop - 5 < oTop and myBottom + 5 > oBottom) or
+                                       (oTop - 5 < myTop and oBottom + 5 > myBottom) or
+                                       (myTop > oBottom and myTop < oTop) or
+                                       (myBottom > oBottom and myBottom < oTop)
+
+                    local horizAligned = (myLeft - 5 < oLeft and myRight + 5 > oRight) or
+                                        (oLeft - 5 < myLeft and oRight + 5 > myRight) or
+                                        (myLeft > oLeft and myLeft < oRight) or
+                                        (myRight > oLeft and myRight < oRight)
+
+                    if vertAligned and math.abs(myLeft - oRight) < snapDistance then
+                        local key = otherSlot .. "_RIGHT"
+                        if not occupiedPositions[key] then
+                            local dist = math.abs(myLeft - oRight)
+                            if dist < bestDist then
+                                bestDist = dist
+                                bestTarget = otherSlot
+                                bestSide = "RIGHT"
+                            end
+                        else
+                            self:DebugPrint("RIGHT side of slot " .. otherSlot .. " occupied by slot " .. occupiedPositions[key])
+                        end
+                    end
+
+                    if vertAligned and math.abs(myRight - oLeft) < snapDistance then
+                        local key = otherSlot .. "_LEFT"
+                        if not occupiedPositions[key] then
+                            local dist = math.abs(myRight - oLeft)
+                            if dist < bestDist then
+                                bestDist = dist
+                                bestTarget = otherSlot
+                                bestSide = "LEFT"
+                            end
+                        end
+                    end
+
+                    if horizAligned and math.abs(myBottom - oTop) < snapDistance then
+                        local key = otherSlot .. "_TOP"
+                        if not occupiedPositions[key] then
+                            local dist = math.abs(myBottom - oTop)
+                            if dist < bestDist then
+                                bestDist = dist
+                                bestTarget = otherSlot
+                                bestSide = "TOP"
+                            end
+                        end
+                    end
+
+                    if horizAligned and math.abs(myTop - oBottom) < snapDistance then
+                        local key = otherSlot .. "_BOTTOM"
+                        if not occupiedPositions[key] then
+                            local dist = math.abs(myTop - oBottom)
+                            if dist < bestDist then
+                                bestDist = dist
+                                bestTarget = otherSlot
+                                bestSide = "BOTTOM"
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if bestTarget and bestSide then
+        self:DebugPrint("Docking slot " .. slot .. " to slot " .. bestTarget .. " on " .. bestSide .. " side (dist: " .. math.floor(bestDist) .. ")")
+        self:ApplyDocking(slot, bestTarget, bestSide, true)
+        return true
+    end
+
+    self:DebugPrint("No valid dock position found for slot " .. slot)
+    return false
+end
+
+function GM:CheckNearDock(slot)
+    if not self.buttons[slot] then return false end
+
+    local button = self.buttons[slot]
+    local myLeft = button:GetLeft()
+    local myRight = button:GetRight()
+    local myTop = button:GetTop()
+    local myBottom = button:GetBottom()
+
+    if not myLeft or not myRight or not myTop or not myBottom then return false end
+
+    local snapDistance = 20
+
+    for otherSlot, otherButton in pairs(self.buttons) do
+        if otherSlot ~= slot and otherButton:IsVisible() then
+            local oLeft = otherButton:GetLeft()
+            local oRight = otherButton:GetRight()
+            local oTop = otherButton:GetTop()
+            local oBottom = otherButton:GetBottom()
+
+            if oLeft and oRight and oTop and oBottom then
+                local centerDist = math.sqrt((myLeft - oLeft)^2 + (myTop - oTop)^2)
+
+                if centerDist >= 10 then
+                    if math.abs(myLeft - oRight) < snapDistance or
+                       math.abs(myRight - oLeft) < snapDistance or
+                       math.abs(myTop - oBottom) < snapDistance or
+                       math.abs(myBottom - oTop) < snapDistance then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function GM:ApplyDocking(slot, targetSlot, side, showAnimation)
+    if not self.buttons[slot] or not self.buttons[targetSlot] then return end
+
+    local button = self.buttons[slot]
+    local target = self.buttons[targetSlot]
+
+    button:ClearAllPoints()
+
+    -- Docked spacing is the user's buttonSpacing setting, not a fixed
+    -- gap - 0 means edge-to-edge, matching the drag-to-dock snap visual.
+    local gap = (self.settings and self.settings.buttonSpacing) or 0
+    if side == "RIGHT" then
+        button:SetPoint("LEFT", target, "RIGHT", gap, 0)
+    elseif side == "LEFT" then
+        button:SetPoint("RIGHT", target, "LEFT", -gap, 0)
+    elseif side == "TOP" then
+        button:SetPoint("BOTTOM", target, "TOP", 0, gap)
+    elseif side == "BOTTOM" then
+        button:SetPoint("TOP", target, "BOTTOM", 0, -gap)
+    end
+
+    self.buttonData[slot].dockTo = targetSlot
+    self.buttonData[slot].dockSide = side
+
+    if button.dockGlow then
+        button.dockGlow:Hide()
+    end
+end
+
+function GM:UpdateButtonUseAction(slot, button)
+    if slot == 999 then return end
+    button = button or self.buttons[slot]
+    if not button then return end
+    if InCombatLockdown() then return end
+    local info = self.slotInfo[slot]
+    local invSlot = info and info.invSlot
+    if invSlot and GetInventoryItemID("player", invSlot) then
+        button:SetAttribute("type1", "item")
+        button:SetAttribute("item1", invSlot)
+        button:SetAttribute("type2", "item")
+        button:SetAttribute("item2", invSlot)
+    else
+        button:SetAttribute("type1", nil)
+        button:SetAttribute("item1", nil)
+        button:SetAttribute("type2", nil)
+        button:SetAttribute("item2", nil)
+    end
+end

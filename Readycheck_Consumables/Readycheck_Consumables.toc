@@ -1,0 +1,78 @@
+## Interface: 11509, 20506, 16001
+## Title: Readycheck |cff33ff99Consumables|r
+## Notes: The consumable bars - main, potions, weapon oils and trinkets - and the raid consumables checker.
+## Author: Zac
+## Version: 1.0
+## Dependencies: Readycheck, Readycheck_Features
+## LoadOnDemand: 1
+## IconTexture: Interface\Icons\INV_Potion_41
+
+# Two layers, kept in one addon so they switch off as a unit:
+#   Checker      the raid consumables window and its popups
+#   Consumables  the four bars (main, potions, weapons, trinkets) and the
+#                shared button/cooldown/refresh machinery behind them
+#
+# ALL SETTINGS STAY IN ReadycheckDB (consumablesHelper, potionsBar,
+# weaponsBar, trinketBar, consumablesChecker). They belong to the main
+# addon on purpose: switching this off must not throw a setting away.
+#
+# What stays in the main addon, and why:
+#   Systems\TTSEngine.lua      the speech engine used to live here as
+#                              Consumables_TTS.lua. The reminder stack
+#                              speaks through it too - RR_Engine alone has
+#                              13 call sites - so announcements must not
+#                              fall silent because the bars are off.
+#   UI\Consumables\Cons_Base   publishes RC._sbc, the shared sidebar
+#                              helpers that the bar pages here, the boss
+#                              notes page and the reminder pages all read.
+#   Core\Core_Stubs.lua        no-op fallback for every bar refresh method
+#                              that core calls unguarded.
+#
+# RC._chInit is the ordered queue of init closures every file below
+# appends to; Consumables_Bootstrap drains it once RC.db exists and so
+# must stay last in its group.
+
+# ---------- Consumables checker ----------
+# Base defines RC.consumablesChecker and the icon cache the rest read.
+# Bootstrap wires the events and loads last in this group.
+Checker_Base.lua
+# Must-have items: big on-screen icons when one is missing
+Checker_Essentials.lua
+Checker_Popup.lua
+Checker_Render.lua
+Checker_Window.lua
+Checker_Bootstrap.lua
+
+# ---------- The bars ----------
+# Base is bar chrome only and creates RC._chInit, so it loads first.
+# State defines RC.consumablesHelper / potionsBar / weaponsBar /
+# trinketBar, which every file after it reads.
+# Events is the one event frame the four bars share; it must come before
+# any file that registers with it.
+Consumables_Base.lua
+# Style: the button look (fonts, colours, glow, entrance/exit) the bars
+# and the settings previews share.
+Consumables_Style.lua
+Consumables_State.lua
+Consumables_Events.lua
+Consumables_Items.lua
+Consumables_Buttons.lua
+Consumables_Frames.lua
+Consumables_Refresh.lua
+Consumables_Weapons.lua
+Consumables_Trinkets.lua
+Consumables_Runtime.lua
+Consumables_Bootstrap.lua
+
+# ---------- UI, last ----------
+# Sidebar pages; they read the tables built above and RC._sbc from the
+# main addon.
+# Shared Look/Text/Animation/Position tabs and the pane preview for the
+# bar pages below; must load before them.
+UI\Cons_BarStyle.lua
+UI\Cons_Checker.lua
+UI\Cons_HelperCfg.lua
+UI\Cons_PotionsCfg.lua
+UI\Cons_WeaponsCfg.lua
+UI\Cons_TrinketCfg.lua
+UI\Cons_Items.lua

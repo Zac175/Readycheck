@@ -1,0 +1,95 @@
+## Interface: 11509, 20506, 16001
+## Title: Readycheck |cff33ff99Reminders|r
+## Notes: The reminder stack: the trigger engine that decides when to warn you, the popup itself, kill-time modelling and the raid route.
+## Author: Zac
+## Version: 1.0
+## Dependencies: Readycheck
+## LoadOnDemand: 1
+## IconTexture: Interface\Icons\INV_Misc_Bell_01
+
+# Four layers that all answer "tell the player to do something now", kept
+# in one addon so they switch off as a unit:
+#   Core_Reminders   the popup frame, its icons, animation and dismissal
+#   Trigger          evaluates each boss's ability config and raises them
+#   TTK              kill-time model and execute-phase prediction
+#   Route            the ordered raid route and its use-watching
+#
+# TTK and Route are not reminders, but both feed the trigger engine
+# (ttk triggers read PredictTTK, route steps raise reminders) and neither
+# stands up without it, so splitting them further just moved the seam.
+#
+# ALL SETTINGS STAY IN ReadycheckDB, plus executeSettings for the TTK
+# history. They belong to the main addon on purpose: switching this off
+# must not throw a single setting away, and switching it back on has to
+# pick up exactly where it left off.
+#
+# What the main addon keeps, and why it survives this addon being off:
+#   Core\Core_Stubs.lua        no-op fallback for every method below that
+#                              core calls unguarded - see that file first
+#   Core\Core_Boot.lua         CreateFontString, FormatTime
+#   Systems\RaidData\RaidLookup.lua
+#                              boss/add/trash name resolution, which the
+#                              gear stack calls on every boss death
+#   Systems\Trigger\TE_Events  the single event pump, shared with gear
+#   Systems\TTSEngine.lua      the speech engine the reminders talk through
+#   Core_Events                SmartDismissReminder and friends
+#   UI\Sidebar\Sidebar_PagesStatsBar.lua
+#                              stats bar and buff pushoff pages, which
+#                              used to share a file with the reminder page
+
+# ---------- The popup ----------
+# Defines RC:ShowReminder and the frame everything below draws into, so
+# nothing here moves above it.
+Core_Reminders.lua
+
+# ---------- Kill-time model ----------
+# Model defines RC.executeCalculator and its defaults; History and Execute
+# both read that table at load, so Model stays first.
+TTK\TTK_Model.lua
+TTK\TTK_History.lua
+TTK\TTK_Execute.lua
+
+# ---------- Trigger engine ----------
+# Reads RC._tes, the reuse tables built in the main addon's
+# Systems\Trigger\TE_GearSwap.lua - already loaded by the time we get here.
+# Triggers must precede Encounters: the encounter gates call back into it.
+Trigger\TE_Triggers.lua
+Trigger\TE_Encounters.lua
+Trigger\TE_Reminders.lua
+
+# ---------- TTK display ----------
+# Draws from the model above and is registered with UIMover, so it loads
+# after both are in place.
+TTK\TTKDisplay.lua
+
+# ---------- Individual reminders ----------
+Reminders\EquipmentReminder.lua
+Reminders\BattleShoutReminder.lua
+Reminders\BoonReminder.lua
+Reminders\CustomReminders.lua
+# Raid buff and boss debuff trackers: one engine, two instances.
+Reminders\AuraTracker.lua
+
+# ---------- Raid route ----------
+# Engine defines RC.RaidRoute and the store; Tracker and UseWatch drive it.
+Route\RR_Engine.lua
+Route\RR_Tracker.lua
+Route\RR_UseWatch.lua
+
+# ---------- UI, last ----------
+# These register sidebar pages and read every table built above. The
+# Cons_* pages read RC._sbc, published by the main addon's
+# UI\Consumables\Cons_Base.lua, which stays there because the consumables
+# and boss-notes pages share it.
+# The kit first: row builders the pages below share (RC._rpk).
+UI\Reminders_PageKit.lua
+UI\Sidebar_PagesReminders.lua
+UI\Sidebar_PagesExecute.lua
+UI\SidebarCustomReminders.lua
+UI\Cons_BattleShout.lua
+UI\Cons_Boon.lua
+UI\Cons_AuraTracker.lua
+UI\Route\Route_Helpers.lua
+UI\Route\Route_Render.lua
+# The From Logs window: the route page's link, Copy my character, Paste Route
+UI\Route\Route_FromLogs.lua

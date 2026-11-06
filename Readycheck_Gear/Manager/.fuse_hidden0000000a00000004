@@ -1,0 +1,1199 @@
+local RCC = _G.Readycheck
+local GetItemCount = GetItemCount or (RCC and RCC.Compat and RCC.Compat.GetItemCount)
+local GetItemSpell = GetItemSpell or (RCC and RCC.Compat and RCC.Compat.GetItemSpell)
+local GetSpellInfo = GetSpellInfo or (RCC and RCC.Compat and RCC.Compat.GetSpellInfo)
+local UnitBuff = UnitBuff or (RCC and RCC.Compat and RCC.Compat.UnitBuff)
+local UnitDebuff = UnitDebuff or (RCC and RCC.Compat and RCC.Compat.UnitDebuff)
+local AddonName = "Readycheck"
+local RC = _G[AddonName]
+
+if not RC then
+    error("Readycheck core not found!")
+    return
+end
+
+local pairs, ipairs, type, tostring, tonumber = pairs, ipairs, type, tostring, tonumber
+local math_floor, math_ceil, math_max, math_min = math.floor, math.ceil, math.max, math.min
+local table_insert, table_remove, table_sort = table.insert, table.remove, table.sort
+local string_format, string_match, string_lower = string.format, string.match, string.lower
+local GetTime = GetTime
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local GetInventoryItemLink = GetInventoryItemLink
+local GetInventoryItemID = GetInventoryItemID
+local GetItemInfo = GetItemInfo or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetItemInfo)
+local GetItemIcon = GetItemIcon or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetItemIcon)
+local C_Container = C_Container
+local C_Timer = C_Timer
+RC._gms = RC._gms or {}
+local _gms = RC._gms
+local GM = RC.GearManager
+------------------------------------------------------------------------
+-- Readycheck - Gear Manager Runtime
+-- GM:Initialize(): settings load/migration, event wiring, and the
+-- Alt+Click-on-character-model button toggle. Also owns the button
+-- cooldown ticker (StartButtonCooldownUpdates/UpdateButtonCooldowns,
+-- guarded by self.buttonCooldownTimer, auto-stopped when nothing is on
+-- cooldown) and the Fungal Bloom auto-swap watcher. High-frequency
+-- events (BAG_UPDATE_COOLDOWN, SPELL_UPDATE_COOLDOWN, UNIT_INVENTORY_
+-- CHANGED, UNIT_AURA) only restart that guarded ticker or flip a dirty
+-- flag behind a short C_Timer - never per-event work. The PLAYER_LOGIN
+-- block at the bottom is a separate system: the on-use speed-swap item
+-- revert watcher (reverts a trinket/belt once its use buff ends).
+------------------------------------------------------------------------
+function GM:Lock()
+    self.locked = true
+    self.settings.buttonsLocked = true
+
+    for slot, buttonData in pairs(self.buttonData) do
+        buttonData.locked = true
+    end
+
+    self:UpdateAllLockIcons()
+
+    if RC.SidebarState and RC.SidebarState.currentPanel == "gear_manager" then
+        if RC.sidebarConfigFrame and RC.sidebarConfigFrame.scrollChild and RC.ShowSidebarGearManagerConfig then
+            RC:ShowSidebarGearManagerConfig(RC.sidebarConfigFrame)
+        end
+    end
+
+    self:SaveSettings()
+    self:DebugPrint("All buttons LOCKED")
+end
+
+function GM:Unlock()
+    self.locked = false
+    self.settings.buttonsLocked = false
+
+    for slot, buttonData in pairs(self.buttonData) do
+        buttonData.locked = false
+    end
+
+    self:UpdateAllLockIcons()
+
+    if RC.SidebarState and RC.SidebarState.currentPanel == "gear_manager" then
+        if RC.sidebarConfigFrame and RC.sidebarConfigFrame.scrollChild and RC.ShowSidebarGearManagerConfig then
+            RC:ShowSidebarGearManagerConfig(RC.sidebarConfigFrame)
+        end
+    end
+
+    self:SaveSettings()
+    self:DebugPrint("All buttons UNLOCKED")
+end
+
+function GM:UpdateAllLockIcons()
+    if self.settings and self.settings.buttonsLocked ~= nil then
+        self.locked = self.settings.buttonsLocked
+    end
+
+    local isLocked = self.locked or self.settings.buttonsLocked
+    self:DebugPrint("UpdateAllLockIcons: isLocked = " .. tostring(isLocked) .. " (GM.locked=" .. tostring(self.locked) .. ", settings.buttonsLocked=" .. tostring(self.settings.buttonsLocked) .. ")")
+
+    for slot, button in pairs(self.buttons) do
+        if isLocked then
+            if button.lockIcon then
+                button.lockIcon:Hide()
+            end
+            if button.closeBtn then
+                button.closeBtn:Hide()
+            end
+        else
+            if button.lockIcon then
+                button.lockIcon:Show()
+            end
+            if button.closeBtn then
+                button.closeBtn:Show()
+            end
+        end
+    end
+end
+
+function GM:SaveSettings()
+    self:DebugPrint("SaveSettings CALLED")
+
+    if not RC.db then
+        self:Print(RCL["ERROR: WR.db is nil in SaveSettings!"])
+        return
+    end
+    if not RC.db.gearManager then RC.db.gearManager = {} end
+    if not RC.db.gearManager.settings then RC.db.gearManager.settings = {} end
+
+    self.settingsLoaded = true
+
+    for key, value in pairs(self.settings) do
+        RC.db.gearManager.settings[key] = value
+        self:DebugPrint(string.format(RCL["Saved setting: %s = %s"], key, tostring(value)))
+    end
+
+    if RC.SaveConfigurationToProfile then
+        RC:SaveConfigurationToProfile()
+        self:DebugPrint("Called SaveConfigurationToProfile")
+    else
+        self:Print(RCL["ERROR: WR.SaveConfigurationToProfile is nil!"])
+    end
+end
+
+function GM:Initialize()
+    if not RC or not RC.db then
+        C_Timer.After(0.5, function() GM:Initialize() end)
+        return
+    end
+
+    self:DebugPrint("=== GearManager Initialize START ===")
+    self:DebugPrint("WR.db exists: " .. tostring(RC.db ~= nil))
+
+    local existingSetCount = 0
+    if RC.db.gearSets then
+        for _ in pairs(RC.db.gearSets) do
+            existingSetCount = existingSetCount + 1
+        end
+        self:DebugPrint("Found " .. existingSetCount .. " existing gear sets in WR.db.gearSets")
+    else
+        self:DebugPrint("WR.db.gearSets is nil - will create empty table")
+    end
+
+    if not RC.db.gearButtons then RC.db.gearButtons = {} end
+    if not RC.db.gearButtonPositions then RC.db.gearButtonPositions = {} end
+    if not RC.db.gearPinnedButtons then RC.db.gearPinnedButtons = {} end
+    if not RC.db.gearManager then RC.db.gearManager = {} end
+    if not RC.db.gearSets then
+        RC.db.gearSets = {}
+        self:DebugPrint("Created empty WR.db.gearSets table")
+    end
+
+    if RC.db.gearManager.enabled ~= nil then
+        self.enabled = RC.db.gearManager.enabled
+    else
+        self.enabled = false
+        RC.db.gearManager.enabled = false
+    end
+
+    if not RC.db.gearManager.settings then
+        RC.db.gearManager.settings = {}
+        self:DebugPrint("Created empty WR.db.gearManager.settings table")
+    end
+
+    for key, value in pairs(RC.db.gearManager.settings) do
+        if self.settings[key] ~= nil then
+            self.settings[key] = value
+            self:DebugPrint(string.format(RCL["Loaded setting: %s = %s"], key, tostring(value)))
+        end
+    end
+
+    -- showCooldownText is a legacy single setting now split into
+    -- showCooldownTextButtons/Menus; back-fill both from it once, then
+    -- clear it so this block is a no-op on every subsequent login.
+    do
+        local saved = RC.db.gearManager.settings
+        if saved and saved.showCooldownText ~= nil then
+            if saved.showCooldownTextButtons == nil then
+                self.settings.showCooldownTextButtons = saved.showCooldownText
+            end
+            if saved.showCooldownTextMenus == nil then
+                self.settings.showCooldownTextMenus = saved.showCooldownText
+            end
+            saved.showCooldownText = nil
+            self:DebugPrint("Migrated legacy showCooldownText into split keys")
+        end
+    end
+
+    -- Restored before RestoreButtonsFromProfile/UpdateGearSetButtonIcon
+    -- run, so GetCurrentEquippedSet has a same-session hint to fall back
+    -- on if no set matches gear exactly at login.
+    if self.settings.lastEquippedSetName and self.settings.lastEquippedSetName ~= "" then
+        self.lastEquippedSetName = self.settings.lastEquippedSetName
+        self:DebugPrint("Restored lastEquippedSetName from profile: " .. self.lastEquippedSetName)
+    end
+
+    self.locked = self.settings.buttonsLocked or false
+    self:DebugPrint("Initialize: Synchronized lock state = " .. tostring(self.locked))
+
+    self.settingsLoaded = true
+    self:DebugPrint("Initialize: Settings loaded, settingsLoaded flag set")
+
+    function GM:SyncFungalBloom()
+        local fb = nil
+        if RC and RC.GetActiveRaidProfile then
+            local naxxProfile = RC:GetActiveRaidProfile("Naxxramas")
+            if naxxProfile and naxxProfile.bosses and naxxProfile.bosses["Loatheb"] then
+                fb = naxxProfile.bosses["Loatheb"].fungalBloom
+            end
+        end
+        if fb then
+            self.settings.fungalBloomEnabled   = fb.enabled    or false
+            self.settings.fungalBloomActiveSet = fb.activeSet  or ""
+            self.settings.fungalBloomSet       = fb.falloffSet or ""
+            self:DebugPrint(string.format(
+                RCL["SyncFungalBloom: enabled=%s activeSet=%s falloffSet=%s"],
+                tostring(self.settings.fungalBloomEnabled),
+                tostring(self.settings.fungalBloomActiveSet),
+                tostring(self.settings.fungalBloomSet)
+            ), "gear")
+        else
+            self.settings.fungalBloomEnabled   = false
+            self.settings.fungalBloomActiveSet = ""
+            self.settings.fungalBloomSet       = ""
+            self:DebugPrint("SyncFungalBloom: no Loatheb profile found, disabled", "gear")
+        end
+    end
+
+    C_Timer.After(1.5, function() GM:SyncFungalBloom() end)
+
+    self:LoadSets()
+
+    C_Timer.After(0.2, function()
+        for setName, setData in pairs(GM.sets) do
+            GM:EnsureEquipButton(setName)
+            if setData.keybind and setData.keybind ~= "" then
+                local btnName = GM:GetEquipButtonName(setName)
+                SetBinding(setData.keybind, "CLICK " .. btnName .. ":LeftButton")
+                GM:DebugPrint("Restored keybind '" .. setData.keybind .. "' for set: " .. setName, "gear")
+            end
+        end
+    end)
+
+    if self.enabled then
+        C_Timer.After(0.5, function()
+            self:RestoreButtonsFromProfile()
+            C_Timer.After(0.3, function()
+                self:UpdateAllButtonIcons()
+                self:ScheduleGearSetStatusRefresh()
+            end)
+        end)
+    end
+
+    C_Timer.After(1, function()
+        local characterModel = CharacterModelFrame or CharacterModelScene
+        if characterModel then
+            GM.oldCharacterModelFrame_OnMouseUp = characterModel:GetScript("OnMouseUp")
+            if GM.oldCharacterModelFrame_OnMouseUp then
+                characterModel:SetScript("OnMouseUp", function(frame, button)
+                    if IsAltKeyDown() and GM.enabled then
+                        GM:DebugPrint("Alt+Click detected on character model")
+                        if GM.buttons[999] then
+                            GM:RemoveButton(999)
+                        else
+                            GM:CreateButton(999)
+                        end
+                    end
+                    if GM.oldCharacterModelFrame_OnMouseUp then
+                        GM.oldCharacterModelFrame_OnMouseUp(frame, button)
+                    end
+                end)
+            else
+                characterModel:SetScript("OnMouseUp", function(frame, button)
+                    if IsAltKeyDown() and GM.enabled then
+                        GM:DebugPrint("Alt+Click detected on character model")
+                        if GM.buttons[999] then
+                            GM:RemoveButton(999)
+                        else
+                            GM:CreateButton(999)
+                        end
+                    end
+                end)
+            end
+            GM:DebugPrint("Character model hook installed successfully")
+        else
+            GM:Print(RCL["WARNING: Could not find CharacterModelFrame - Alt+Click on model will not work"])
+        end
+    end)
+
+    self.frame = CreateFrame("Frame")
+    self.frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+    self.frame:RegisterEvent("PLAYER_LOGIN")
+    self.frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    self.frame:RegisterEvent("BAG_UPDATE_COOLDOWN")
+    self.frame:RegisterEvent("BAG_UPDATE_DELAYED")
+    self.frame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
+    self.frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+    self.frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    self.frame:RegisterEvent("EQUIP_BIND_CONFIRM")
+    self.frame:RegisterEvent("EQUIP_BIND_REFUNDABLE_CONFIRM")
+    self.frame:RegisterEvent("USE_BIND_CONFIRM")
+
+    local function gearManagerOnEvent(frame, event, ...)
+        if event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_LOGIN" then
+            GM.locked = false
+            GM:DebugPrint("Reset GM.locked to false for potential character switch")
+
+            if RC.db and RC.db.gearManager and RC.db.gearManager.settings then
+                if RC.db.gearManager.settings.buttonsLocked ~= nil then
+                    GM.locked = RC.db.gearManager.settings.buttonsLocked
+                    GM.settings.buttonsLocked = RC.db.gearManager.settings.buttonsLocked
+                    GM:DebugPrint("Early load of lock state from profile: " .. tostring(GM.locked))
+                end
+            end
+
+            if RC.db and RC.db.gearButtons then
+                local buttonCount = 0
+                for slot, active in pairs(RC.db.gearButtons) do
+                    if active then
+                        buttonCount = buttonCount + 1
+                    end
+                end
+                GM:DebugPrint("DB contains " .. buttonCount .. " button(s) - waiting for profile load to restore")
+            end
+
+            C_Timer.After(4, function()
+                if RC.db and RC.db.gearManager and RC.db.gearManager.settings then
+                    if RC.db.gearManager.settings.buttonsLocked ~= nil then
+                        GM.locked = RC.db.gearManager.settings.buttonsLocked
+                        GM.settings.buttonsLocked = RC.db.gearManager.settings.buttonsLocked
+                    end
+                end
+                GM:UpdateAllLockIcons()
+                GM:DebugPrint("Final post-login lock icon update, locked=" .. tostring(GM.locked))
+            end)
+
+            GM:StartButtonCooldownUpdates()
+
+            -- CRITICAL: Force immediate cooldown updates after buttons are restored
+            -- Multiple updates to ensure cooldowns are caught (C_Container API can be delayed)
+            C_Timer.After(2, function()
+                if GM.buttons[13] or GM.buttons[14] then
+                    GM:UpdateButtonCooldowns()
+                    GM:DebugPrint("Early cooldown update (2s)")
+                end
+            end)
+
+            C_Timer.After(4, function()
+                if GM.buttons[13] or GM.buttons[14] then
+                    GM:UpdateButtonCooldowns()
+                    GM:DebugPrint("Mid cooldown update (4s)")
+                end
+            end)
+
+            C_Timer.After(6, function()
+                if GM.buttons[13] or GM.buttons[14] then
+                    GM:UpdateButtonCooldowns()
+                    GM:DebugPrint("Login cooldown update applied")
+                end
+            end)
+
+            C_Timer.After(2, function()
+                GM:SetupCharacterSheetQueueIndicators()
+                GM:DebugPrint("Character sheet queue indicators initialized")
+            end)
+
+            C_Timer.After(3, function()
+                if GM and GM.SyncFungalBloom then
+                    GM:SyncFungalBloom()
+                end
+            end)
+        elseif event == "BAG_UPDATE_DELAYED" then
+            GM:ScheduleGearSetStatusRefresh()
+        elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+            GM:ScheduleEquipmentRefresh()
+            GM:ScheduleGearSetStatusRefresh()
+            if not GM.buttonCooldownTimer then
+                GM:StartButtonCooldownUpdates()
+            end
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            local unit = ...
+            if unit == "player" then
+                GM:StartButtonCooldownUpdates()
+            end
+        -- StartButtonCooldownUpdates is a no-op once the ticker is already
+        -- running, so calling it on every cooldown event costs nothing.
+        elseif event == "BAG_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_COOLDOWN" then
+            if event == "SPELL_UPDATE_COOLDOWN" and RC.Profiler and RC.Profiler.CountHit then
+                RC.Profiler:CountHit("Event:SPELL_UPDATE_COOLDOWN(gear)")
+            end
+            GM:StartButtonCooldownUpdates()
+        elseif event == "UNIT_INVENTORY_CHANGED" then
+            local unit = ...
+            if unit == "player" then
+                if not GM.buttonCooldownTimer then
+                    GM:StartButtonCooldownUpdates()
+                end
+                -- Coalesces bursts of UNIT_INVENTORY_CHANGED (e.g. a full
+                -- bag move) into a single UpdateButtonCooldowns call.
+                if not GM._invChangedPending then
+                    GM._invChangedPending = true
+                    C_Timer.After(0.1, function()
+                        GM._invChangedPending = false
+                        GM:UpdateButtonCooldowns()
+                    end)
+                end
+            end
+        elseif event == "EQUIP_BIND_CONFIRM" or event == "EQUIP_BIND_REFUNDABLE_CONFIRM" then
+            local slot = ...
+            GM:DebugPrint("EQUIP_BIND_CONFIRM fired for slot " .. tostring(slot) .. ", pendingEquipSlot=" .. tostring(GM.pendingEquipSlot))
+            if slot and GM.pendingEquipSlot == slot then
+                GM:DebugPrint("Auto-confirming equip bind for slot " .. slot)
+                EquipPendingItem(slot)
+                GM.pendingEquipSlot = nil
+                GM.pendingEquipTime = nil
+            elseif slot then
+                GM:DebugPrint("Bind confirm for slot " .. slot .. " - not from GearManager, letting dialog show")
+            end
+        elseif event == "USE_BIND_CONFIRM" then
+            local slot = ...
+            if slot and GM.pendingEquipSlot == slot then
+                GM:DebugPrint("Auto-confirming use bind for slot " .. slot)
+                ConfirmBindOnUse()
+                GM.pendingEquipSlot = nil
+            end
+        elseif event == "GET_ITEM_INFO_RECEIVED" then
+            local itemID, success = ...
+            if success and itemID then
+                for slot, button in pairs(GM.buttons) do
+                    if slot ~= 999 and button and button.nameText and not button.nameText:IsShown() then
+                        local equippedID = GetInventoryItemID("player", slot)
+                        if equippedID == itemID then
+                            GM:UpdateButtonIcon(slot)
+                        end
+                    end
+                end
+            end
+        elseif event == "UNIT_AURA" then
+            local unit = ...
+            if unit == "player" and GM.settings.fungalBloomEnabled then
+                GM._fungalBloomDirty = true
+                if not GM._fungalBloomPending then
+                    GM._fungalBloomPending = true
+                    C_Timer.After(0.1, function()
+                        GM._fungalBloomPending = false
+                        if not GM._fungalBloomDirty then return end
+                        GM._fungalBloomDirty = false
+
+                        local isActive = false
+                        local expTime  = 0
+                        for i = 1, 40 do
+                            local name, _, _, _, _, expirationTime, _, _, _, spellId = UnitDebuff("player", i)
+                            if not name then break end
+                            if spellId == 29232 then
+                                isActive = true
+                                expTime  = expirationTime or 0
+                                break
+                            end
+                        end
+
+                        GM:DebugPrint(string.format(
+                            RCL["UNIT_AURA fungalBloom: isActive=%s wasActive=%s expTime=%.1f"],
+                            tostring(isActive), tostring(GM.fungalBloomWasActive), expTime
+                        ), "gear")
+
+                        local activeSet  = GM.settings.fungalBloomActiveSet or ""
+                        local falloffSet = GM.settings.fungalBloomSet or ""
+
+                        local function FlushSetFromQueue(setName)
+                            if not setName or setName == "" then return end
+                            if RC.gearSwapQueue then
+                                for qi = #RC.gearSwapQueue, 1, -1 do
+                                    if RC.gearSwapQueue[qi] == setName then
+                                        table.remove(RC.gearSwapQueue, qi)
+                                        GM:DebugPrint("FlushSetFromQueue: removed stale entry for " .. setName, "gear")
+                                    end
+                                end
+                            end
+                        end
+
+                        if not GM.fungalBloomWasActive and isActive then
+                            GM:DebugPrint("Fungal Bloom GAINED - targeting set: " .. activeSet, "gear")
+                            FlushSetFromQueue(falloffSet)
+                            if activeSet ~= "" then
+                                RC:EquipGearSet(activeSet)
+                            end
+
+                        elseif GM.fungalBloomWasActive and not isActive then
+                            GM:DebugPrint("Fungal Bloom FELL OFF - queuing set: " .. falloffSet, "gear")
+                            FlushSetFromQueue(activeSet)
+                            if falloffSet ~= "" then
+                                RC:EquipGearSet(falloffSet)
+                            end
+                        end
+
+                        GM.fungalBloomWasActive = isActive
+                    end)
+                end
+            end
+        end
+    end
+
+    self.frame:SetScript("OnEvent", gearManagerOnEvent)
+    if RC.RegisterUnitAuraCallback then
+        RC:RegisterUnitAuraCallback("GearManagerFungalBloom", 0.1, function()
+            gearManagerOnEvent(nil, "UNIT_AURA", "player")
+        end)
+    else
+        self.frame:RegisterUnitEvent("UNIT_AURA", "player")
+    end
+
+    self:DebugPrint("Ready! Alt+Click slots to create buttons | /rc hotswap bshout / flask / bloodrage for hotswap actions")
+end
+
+function GM:UpdateButtonCooldowns()
+    if RC.Profiler then RC.Profiler:StartTiming("GearBtnCooldowns") end
+    if not self.fontsRefreshed then
+        self.fontsRefreshed = true
+        self:RefreshAllButtonFonts()
+    end
+
+    local now = GetTime()
+    local hasActiveCooldown = false
+
+    if not self.itemStates then
+        self.itemStates = {}
+    end
+
+    for slot, button in pairs(self.buttons) do
+        if slot ~= 999 and slot ~= 0 and not self:GetPinnedDef(slot) and button and button:IsShown() and button.cdText then
+            local itemID = GetInventoryItemID("player", slot)
+
+            if itemID then
+                if not self.itemStates[slot] then
+                    self.itemStates[slot] = {
+                        lastEquipTime = 0,
+                        cooldownDetectedAt = 0,
+                        wasOnCooldown = false,
+                        itemId = nil
+                    }
+                end
+
+                local state = self.itemStates[slot]
+
+                if state.itemId ~= itemID then
+                    state.itemId = itemID
+                    state.lastEquipTime = GetTime()
+                    state.cooldownDetectedAt = 0
+                    state.wasOnCooldown = false
+                end
+
+                -- Get cooldown: use inventory API for equipped slots, bag API for others.
+                -- The bag lookup goes through RC:GetItemCooldownSafe (TSS_Base.lua),
+                -- which uses C_Container.GetItemCooldown when the client has it and
+                -- falls back to core's bag-scan shim when it does not.
+                local start, duration
+                if slot >= 1 and slot <= 19 then
+                    start, duration = GetInventoryItemCooldown("player", slot)
+                else
+                    start, duration = RC:GetItemCooldownSafe(itemID)
+                end
+
+                if start and duration and duration > 1.5 then
+                    local remaining = duration - (now - start)
+
+                    if remaining > 0 then
+                        hasActiveCooldown = true
+
+                        local text, r, g, b
+                        local elapsed = now - start
+
+                        if not state.wasOnCooldown or state.cooldownDetectedAt == 0 then
+                            state.cooldownDetectedAt = GetTime()
+                            state.wasOnCooldown = true
+                        end
+
+                        if (slot == 13 or slot == 14) and RC and RC.trinketSwapSystem and RC.trinketSwapSystem.trinketStates then
+                            local showBuffTimer = false
+                            local slotKey = slot == 13 and "slot1" or "slot2"
+                            local trinketState = RC.trinketSwapSystem.trinketStates[slotKey]
+
+                            if trinketState and trinketState.buffExpireTime and trinketState.buffExpireTime > now then
+                                showBuffTimer = true
+                            end
+
+                            if not showBuffTimer and RC.itemBuffSpellIds and RC.itemBuffSpellIds[itemID] then
+                                local buffSpellId = RC.itemBuffSpellIds[itemID]
+                                local buffName = GetSpellInfo(buffSpellId)
+                                if buffName then
+                                    for i = 1, 40 do
+                                        local name, _, _, _, _, expirationTime = RC.Compat.ReadPlayerBuff("player", i)
+                                        if not name then break end
+                                        if name == buffName and expirationTime then
+                                            showBuffTimer = true
+                                            trinketState = trinketState or {}
+                                            trinketState.buffExpireTime = expirationTime
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+
+                            if not showBuffTimer and RC.trinketCooldowns and RC.trinketCooldowns[itemID] then
+                                local expectedCD = RC.trinketCooldowns[itemID]
+                                local buffDuration = RC.trinketBuffDurations and RC.trinketBuffDurations[itemID] or 20
+
+                                if math.abs(duration - expectedCD) < 5 and elapsed < buffDuration then
+                                    showBuffTimer = true
+                                    trinketState = trinketState or {}
+                                    trinketState.buffExpireTime = start + buffDuration
+                                end
+                            end
+
+                            if showBuffTimer then
+                                local buffRemaining = (trinketState and trinketState.buffExpireTime or 0) - now
+                                if buffRemaining > 0 then
+                                    text = tostring(math.ceil(buffRemaining))
+                                    r, g, b = 0.3, 1.0, 0.3
+
+                                    if button.cooldownFrame and trinketState and trinketState.buffExpireTime then
+                                        local knownDur = (RC.GetTrinketBuffDuration and RC:GetTrinketBuffDuration(itemID)) or 20
+                                        local buffStart = trinketState.buffExpireTime - knownDur
+                                        local buffDur = trinketState.buffExpireTime - buffStart
+                                        button.cooldownFrame:SetCooldown(buffStart, buffDur)
+                                        button.cooldownFrame:Show()
+                                    end
+                                else
+                                    local displayRemaining = remaining
+                                    if displayRemaining >= 60 then
+                                        text = math.ceil(displayRemaining / 60) .. "m"
+                                    else
+                                        text = tostring(math.ceil(displayRemaining))
+                                    end
+                                    r, g, b = 1.0, 1.0, 0
+
+                                    if button.cooldownFrame then
+                                        button.cooldownFrame:SetCooldown(start, duration)
+                                        button.cooldownFrame:Show()
+                                    end
+                                end
+                            else
+                                -- Show cooldown countdown (yellow)
+                                -- WoW's C_Container.GetItemCooldown already handles 30s equip CD
+                                local displayRemaining = remaining
+
+                                if displayRemaining >= 60 then
+                                    text = math.ceil(displayRemaining / 60) .. "m"
+                                else
+                                    text = tostring(math.ceil(displayRemaining))
+                                end
+                                r, g, b = 1.0, 1.0, 0
+
+                                if button.cooldownFrame then
+                                    button.cooldownFrame:SetCooldown(start, duration)
+                                    button.cooldownFrame:Show()
+                                end
+                            end
+                        else
+                            local hasOnUse = RC and RC.IsTrinketOnUse and RC:IsTrinketOnUse(itemID)
+                            local displayRemaining = remaining
+                            local showBuffTimer = false
+                            local buffRemaining = 0
+
+                            if hasOnUse then
+                                if RC and RC.itemBuffSpellIds and RC.itemBuffSpellIds[itemID] then
+                                    local buffSpellId = RC.itemBuffSpellIds[itemID]
+                                    local buffName = GetSpellInfo(buffSpellId)
+                                    if buffName then
+                                        for i = 1, 40 do
+                                            local name, _, _, _, _, expirationTime = RC.Compat.ReadPlayerBuff("player", i)
+                                            if not name then break end
+                                            if name == buffName and expirationTime then
+                                                showBuffTimer = true
+                                                buffRemaining = expirationTime - now
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+
+                                if not showBuffTimer and RC.trinketCooldowns and RC.trinketCooldowns[itemID] then
+                                    local expectedCD = RC.trinketCooldowns[itemID]
+                                    local buffDuration = RC.trinketBuffDurations and RC.trinketBuffDurations[itemID] or 20
+
+                                    if math.abs(duration - expectedCD) < 5 and elapsed < buffDuration then
+                                        showBuffTimer = true
+                                        buffRemaining = buffDuration - elapsed
+                                    end
+                                end
+
+                                if showBuffTimer and buffRemaining > 0 then
+                                    text = tostring(math.ceil(buffRemaining))
+                                    r, g, b = 0.3, 1.0, 0.3
+
+                                    if button.cooldownFrame then
+                                        local buffDur = RC.trinketBuffDurations and RC.trinketBuffDurations[itemID] or 20
+                                        local buffStart = now - (buffDur - buffRemaining)
+                                        button.cooldownFrame:SetCooldown(buffStart, buffDur)
+                                        button.cooldownFrame:Show()
+                                    end
+                                else
+                                    if displayRemaining >= 60 then
+                                        text = math.ceil(displayRemaining / 60) .. "m"
+                                    else
+                                        text = tostring(math.ceil(displayRemaining))
+                                    end
+                                    r, g, b = 1.0, 1.0, 0
+
+                                    if button.cooldownFrame then
+                                        button.cooldownFrame:SetCooldown(start, duration)
+                                        button.cooldownFrame:Show()
+                                    end
+                                end
+                            else
+                                if displayRemaining >= 60 then
+                                    text = math.ceil(displayRemaining / 60) .. "m"
+                                else
+                                    text = tostring(math.ceil(displayRemaining))
+                                end
+                                r, g, b = 1.0, 1.0, 0
+
+                                if button.cooldownFrame then
+                                    button.cooldownFrame:SetCooldown(start, duration)
+                                    button.cooldownFrame:Show()
+                                end
+                            end
+                        end
+
+                        if (not GM.settings or GM.settings.showCooldownTextButtons ~= false) and RC:ShouldShowOwnCooldownText() then
+                            button.cdTextFrame:Show()
+                            button.cdText:SetText(text)
+                            button.cdText:SetTextColor(r, g, b)
+                            button.cdText:SetAlpha(1)
+                            button.cdText:Show()
+                        else
+                            button.cdText:Hide()
+                            if button.cdTextFrame then button.cdTextFrame:Hide() end
+                        end
+                    else
+                        button.cdText:Hide()
+                        if button.cooldownFrame then
+                            button.cooldownFrame:Hide()
+                        end
+                        state.wasOnCooldown = false
+                        state.cooldownDetectedAt = 0
+                    end
+                else
+                    button.cdText:Hide()
+                    if button.cooldownFrame then
+                        button.cooldownFrame:Hide()
+                    end
+                    state.wasOnCooldown = false
+                    state.cooldownDetectedAt = 0
+                end
+            else
+                button.cdText:Hide()
+                if button.cooldownFrame then
+                    button.cooldownFrame:Hide()
+                end
+            end
+        end
+    end
+
+    if RC.Profiler then RC.Profiler:StopTiming("GearBtnCooldowns") end
+    if hasActiveCooldown then
+        if not self.buttonCooldownTimer then
+            self:StartButtonCooldownUpdates()
+        end
+    elseif self.buttonCooldownTimer then
+        self:StopButtonCooldownUpdates()
+        self:DebugPrint("No active cooldowns - ticker auto-stopped")
+    end
+end
+
+function GM:StartButtonCooldownUpdates()
+    if self.buttonCooldownTimer then
+        return
+    end
+
+    local self = self
+
+    local cb = function()
+        local success, err = pcall(function()
+            self:UpdateButtonCooldowns()
+        end)
+
+        if not success then
+            self:DebugPrint("Ticker ERROR: " .. tostring(err))
+        end
+    end
+
+    if RC.Profiler and RC.Profiler.TrackTicker then
+        self.buttonCooldownTimer = RC.Profiler:TrackTicker("GearManager:ButtonCooldowns", 0.5, cb)
+    else
+        self.buttonCooldownTimer = C_Timer.NewTicker(0.5, cb)
+    end
+
+    self:DebugPrint("Cooldown ticker STARTED")
+end
+
+function GM:StopButtonCooldownUpdates()
+    if self.buttonCooldownTimer then
+        self.buttonCooldownTimer:Cancel()
+        self.buttonCooldownTimer = nil
+        self:DebugPrint("Cooldown ticker STOPPED")
+    end
+end
+
+function RC._GetGearManagerFadeSettings()
+    local s = RC.GearManager and RC.GearManager.settings
+    if not s then return nil end
+    return { enabled = s.mouseoverFade, alpha = s.mouseoverFadeAlpha or 0.15 }
+end
+
+function GM:UpdateButtonsMouseoverFade()
+    if not self.buttons then return end
+    if not RC.ApplyMouseoverFade then return end
+    for _, button in pairs(self.buttons) do
+        if button then
+            RC:ApplyMouseoverFade(button, RC._GetGearManagerFadeSettings)
+        end
+    end
+end
+
+function GM:GetEquipButtonName(setName)
+    return "WRGearEquip_" .. setName:gsub("[^%w]", "_")
+end
+
+function GM:EnsureEquipButton(setName)
+    local btnName = self:GetEquipButtonName(setName)
+    if _G[btnName] then return _G[btnName] end
+    local btn = CreateFrame("Button", btnName, UIParent)
+    btn:SetSize(1, 1)
+    btn:Hide()
+    btn:SetScript("OnClick", function()
+        if RC and RC.GearManager then
+            RC.GearManager:EquipSet(setName)
+        end
+    end)
+    return btn
+end
+
+function GM:SetSetKeybind(setName, key)
+    local set = self.sets[setName]
+    if not set then return end
+    local btnName = self:GetEquipButtonName(setName)
+    self:EnsureEquipButton(setName)
+    local oldKey = set.keybind
+    if oldKey and oldKey ~= "" then
+        SetBinding(oldKey)
+    end
+    set.keybind = key
+    if not RC.db.gearSets then RC.db.gearSets = {} end
+    if RC.db.gearSets[setName] then
+        RC.db.gearSets[setName].keybind = key
+    end
+    if key and key ~= "" then
+        SetBinding(key, "CLICK " .. btnName .. ":LeftButton")
+    end
+    SaveBindings(2)
+    RC:SaveConfigurationToProfile()
+    self:DebugPrint("Keybind for '" .. setName .. "': '" .. tostring(key) .. "'", "gear")
+end
+
+ReadycheckGear = {
+    EquipSet = function(setName) return RC.GearManager:EquipSet(setName) end,
+    ToggleSet = function(setName) return RC.GearManager:ToggleSet(setName) end,
+    IsSetEquipped = function(setName) return RC.GearManager:IsSetEquipped(setName) end,
+    GetSets = function() return RC.GearManager:GetSetNames() end,
+    SaveCurrentGear = function(setName) return RC.GearManager:SaveCurrentGear(setName) end,
+}
+
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:SetScript("OnEvent", function()
+    do
+        RC.speedSwapItems = {
+            { id = 4984,  name = "Skull of Impending Doom" },
+            { id = 7189,  name = "Goblin Rocket Boots" },
+            { id = 10724, name = "Gnomish Rocket Boots" },
+            { id = 7391,  name = "Swift Boots" },
+            { id = 4264,  name = "Barbaric Belt" },
+            { id = 6972,  name = "Fire Hardened Hauberk" },
+        }
+        local REVERT_ITEMS = {}
+        for _, e in ipairs(RC.speedSwapItems) do REVERT_ITEMS[e.id] = true end
+        local lastKnown = {}
+        local pendingPrev = {}
+        local watching = nil
+        local queued = nil
+        local auraTicker = nil
+        local expiryTimer = nil
+
+        local f = CreateFrame("Frame")
+
+        local function Enabled()
+            return RC.db and RC.db.gearUseRevert ~= false
+        end
+
+        local function AnyTrackedWorn()
+            for slot = 1, 19 do
+                local id = GetInventoryItemID("player", slot)
+                if id and REVERT_ITEMS[id] then return true end
+            end
+            return false
+        end
+
+        local function UpdateCastReg()
+            if Enabled() and AnyTrackedWorn() then
+                f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+            else
+                f:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+            end
+        end
+
+        -- Two different items can share one on-use spell - Barbaric Belt
+        -- and Fire Hardened Hauberk both cast 9174 - so matching on the
+        -- spell alone picks whichever slot happens to be scanned first,
+        -- and the wrong slot gets reverted. The item you actually used is
+        -- the one whose cooldown started just now, so when more than one
+        -- worn item claims the spell, let the cooldown break the tie.
+        local function PickCastSlot(candidates)
+            if #candidates == 0 then return nil end
+            if #candidates == 1 then return candidates[1] end
+            local now = GetTime()
+            local best, bestAge
+            for _, slot in ipairs(candidates) do
+                local start, dur = GetInventoryItemCooldown("player", slot)
+                if start and start > 0 and dur and dur > 1.5 then
+                    local age = now - start
+                    if age >= 0 and age < 2 and (not bestAge or age < bestAge) then
+                        best, bestAge = slot, age
+                    end
+                end
+            end
+            return best or candidates[1]
+        end
+
+        local function WornCastsSpell(slot, spellId)
+            local worn = GetInventoryItemID("player", slot)
+            if not worn or not REVERT_ITEMS[worn] then return nil end
+            local _, isid = GetItemSpell(worn)
+            if isid and isid == spellId then return worn end
+            return nil
+        end
+
+        local function DoRevert(slot, rec, why)
+            if not rec then return end
+            if InCombatLockdown() then
+                queued = { slot = slot, rec = rec }
+                f:RegisterEvent("PLAYER_REGEN_ENABLED")
+                RC:DebugPrint("Swapback queued to combat end (slot " .. slot .. ")", "gear")
+                return
+            end
+            local prev = (RC.db.speedSwapTargets
+                and RC.db.speedSwapTargets[rec.item]) or rec.prev
+            if not prev or prev == 0 then
+                RC:DebugPrint("Swapback skipped: nothing to restore for"
+                    .. " slot " .. slot .. " (no recorded previous, no"
+                    .. " configured target)", "gear")
+                return
+            end
+            if RC.db and RC.db.speedSwapPending then
+                RC.db.speedSwapPending[slot] = nil
+            end
+            local worn = GetInventoryItemID("player", slot)
+            if worn and not REVERT_ITEMS[worn] then
+                return
+            end
+            RC:FastEquipItem(prev, slot)
+            RC:DebugPrint("Swapback: slot " .. slot .. " -> item " .. prev
+                .. " (" .. why .. ")", "gear")
+        end
+
+        -- How long to look for a buff before concluding the item grants
+        -- none. A use effect's aura lands on the same frame as the cast, so
+        -- this only has to cover a couple of frames - and every tenth of a
+        -- second here is a tenth the slot spends holding the wrong item on
+        -- a speedrun pull.
+        local DISCOVERY_WINDOW = 0.3
+
+        local function StopAuraTicker()
+            if auraTicker then
+                auraTicker:Cancel()
+                auraTicker = nil
+            end
+        end
+
+        local function StopExpiryTimer()
+            if expiryTimer then
+                expiryTimer:Cancel()
+                expiryTimer = nil
+            end
+        end
+
+        local function FinishWatch(w, why)
+            watching = nil
+            StopAuraTicker()
+            StopExpiryTimer()
+            if RC.UnregisterUnitAuraCallback then
+                RC:UnregisterUnitAuraCallback("GearUseRevert")
+            end
+            DoRevert(w.slot, pendingPrev[w.slot], why)
+            pendingPrev[w.slot] = nil
+        end
+
+        local function AuraTick()
+            local w = watching
+            if not w then return end
+            local now = GetTime()
+            if not w.spellId then
+                for i = 1, 40 do
+                    local name, _, _, _, dur, expTime, _, sid = RC.Compat.ReadPlayerBuff("player", i)
+                    if not name then break end
+                    local startedNow = dur and dur > 0 and expTime
+                        and math.abs((expTime - dur) - w.armT) < 1.5
+                    -- Some items name their buff with the same spell they
+                    -- cast, so match on that too rather than relying only
+                    -- on the aura having appeared at the moment we armed.
+                    local sameSpell = w.itemSpellId and sid == w.itemSpellId
+                    if startedNow or sameSpell then
+                        w.spellId = sid
+                        w.expiry = expTime
+                        break
+                    end
+                end
+                if w.spellId then
+                    -- Buff found, so stop polling entirely and wake up once
+                    -- at the exact moment it ends. UNIT_AURA still covers
+                    -- early removal, and it costs nothing when auras are
+                    -- not changing, so nothing has to spin in between.
+                    StopAuraTicker()
+                    if w.expiry and w.expiry > now then
+                        StopExpiryTimer()
+                        expiryTimer = C_Timer.NewTimer((w.expiry - now) + 0.05, function()
+                            local cur = watching
+                            if cur then FinishWatch(cur, "buff ended") end
+                        end)
+                    end
+                    return
+                end
+
+                -- Nothing appeared in the discovery window, so this item
+                -- grants no aura. Swap back now rather than sitting on a
+                -- fixed timeout.
+                if now - w.armT >= DISCOVERY_WINDOW then
+                    FinishWatch(w, "no buff found")
+                end
+                return
+            end
+            local present = false
+            for i = 1, 40 do
+                local name, _, _, _, _, _, _, sid = RC.Compat.ReadPlayerBuff("player", i)
+                if not name then break end
+                if sid == w.spellId then present = true break end
+            end
+            if not present or (w.expiry and now > w.expiry + 0.3) then
+                FinishWatch(w, "buff ended")
+            end
+        end
+
+        -- AuraTick used to be driven only by the player's UNIT_AURA event.
+        -- That works for items whose use effect grants an obvious buff, but
+        -- an item that applies no visible player aura - Barbaric Belt among
+        -- them - never fires it, so the watch sat armed forever and the slot
+        -- was never swapped back. Worse, a stuck watch blocks the next one,
+        -- since only one slot is tracked at a time.
+        --
+        -- The polling is deliberately shaped to be brief. It runs fast for
+        -- the fraction of a second it takes to learn whether there is a
+        -- buff, then stops: either the buff is found and a single timer is
+        -- scheduled for its expiry, or there is none and the swap happens
+        -- immediately. Outside that window nothing polls, so this costs no
+        -- frame time while you are actually fighting.
+        local function ArmWatch(slot, itemId)
+            local _, itemSpellId = GetItemSpell(itemId or 0)
+            StopAuraTicker()
+            StopExpiryTimer()
+            watching = { slot = slot, armT = GetTime(), itemSpellId = itemSpellId }
+
+            if RC.RegisterUnitAuraCallback then
+                RC:RegisterUnitAuraCallback("GearUseRevert", 0.05, AuraTick)
+            end
+
+            local function Pulse()
+                if not watching then StopAuraTicker() return end
+                AuraTick()
+                if not watching then StopAuraTicker() end
+            end
+            if RC.Profiler and RC.Profiler.TrackTicker then
+                auraTicker = RC.Profiler:TrackTicker("GearUseRevert", 0.05, Pulse)
+            else
+                auraTicker = C_Timer.NewTicker(0.05, Pulse)
+            end
+
+            -- The aura is usually already there on the next frame, so look
+            -- straight away instead of waiting a whole tick to start.
+            C_Timer.After(0, AuraTick)
+        end
+
+        f:SetScript("OnEvent", function(_, event, a1, a2, a3)
+            if event == "PLAYER_EQUIPMENT_CHANGED" then
+                local slot = a1
+                local old = lastKnown[slot]
+                local new = GetInventoryItemID("player", slot)
+                lastKnown[slot] = new
+                if Enabled() and new and REVERT_ITEMS[new]
+                   and old and not REVERT_ITEMS[old] then
+                    pendingPrev[slot] = { prev = old, item = new }
+                    RC.db.speedSwapPending = RC.db.speedSwapPending or {}
+                    RC.db.speedSwapPending[slot] = { prev = old, item = new }
+                end
+                UpdateCastReg()
+            elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+                if not Enabled() then return end
+                local spellId = a3
+
+                local tracked = {}
+                for slot in pairs(pendingPrev) do
+                    if WornCastsSpell(slot, spellId) then
+                        tracked[#tracked + 1] = slot
+                    end
+                end
+
+                local slot = PickCastSlot(tracked)
+                if slot then
+                    ArmWatch(slot, GetInventoryItemID("player", slot))
+                else
+                    local loose = {}
+                    for s = 1, 19 do
+                        if WornCastsSpell(s, spellId) then
+                            loose[#loose + 1] = s
+                        end
+                    end
+                    slot = PickCastSlot(loose)
+                    if slot then
+                        local worn = GetInventoryItemID("player", slot)
+                        pendingPrev[slot] = pendingPrev[slot]
+                            or { prev = nil, item = worn }
+                        ArmWatch(slot, worn)
+                        local tgt = RC.db.speedSwapTargets
+                            and RC.db.speedSwapTargets[worn]
+                        if not tgt or tgt == 0 then
+                            RC:DebugPrint("Swapback: no previous item"
+                                .. " recorded and no target configured"
+                                .. " for item " .. worn
+                                .. " - set one in On-Use Gear Swaps", "gear")
+                        end
+                    end
+                end
+            elseif event == "PLAYER_REGEN_ENABLED" then
+                f:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                local q = queued
+                queued = nil
+                if q then DoRevert(q.slot, q.rec, "post-combat") end
+            elseif event == "PLAYER_ENTERING_WORLD" then
+                for slot = 1, 19 do
+                    lastKnown[slot] = GetInventoryItemID("player", slot)
+                end
+                local sp = RC.db and RC.db.speedSwapPending
+                if sp then
+                    for slot, rec in pairs(sp) do
+                        if rec and rec.item
+                           and GetInventoryItemID("player", slot) == rec.item then
+                            pendingPrev[slot] = { prev = rec.prev, item = rec.item }
+                        else
+                            sp[slot] = nil
+                        end
+                    end
+                end
+                for slot = 1, 19 do
+                    local worn = GetInventoryItemID("player", slot)
+                    if worn and REVERT_ITEMS[worn] and not pendingPrev[slot] then
+                        pendingPrev[slot] = { prev = nil, item = worn }
+                    end
+                end
+                UpdateCastReg()
+            end
+        end)
+        f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+        f:RegisterEvent("PLAYER_ENTERING_WORLD")
+    end
+
+    C_Timer.After(3, function()
+        GM:Initialize()
+    end)
+end)

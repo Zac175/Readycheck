@@ -1,0 +1,1204 @@
+local RCC = _G.Readycheck
+local GetItemCount = GetItemCount or (RCC and RCC.Compat and RCC.Compat.GetItemCount)
+local GetItemSpell = GetItemSpell or (RCC and RCC.Compat and RCC.Compat.GetItemSpell)
+local GetSpellInfo = GetSpellInfo or (RCC and RCC.Compat and RCC.Compat.GetSpellInfo)
+local UnitBuff = UnitBuff or (RCC and RCC.Compat and RCC.Compat.UnitBuff)
+local UnitDebuff = UnitDebuff or (RCC and RCC.Compat and RCC.Compat.UnitDebuff)
+local AddonName = "Readycheck"
+local RC = _G[AddonName]
+
+if not RC then
+    error("Readycheck core not found!")
+    return
+end
+
+local pairs, ipairs, type, tostring, tonumber = pairs, ipairs, type, tostring, tonumber
+local math_floor, math_ceil, math_max, math_min = math.floor, math.ceil, math.max, math.min
+local table_insert, table_remove, table_sort = table.insert, table.remove, table.sort
+local string_format, string_match, string_lower = string.format, string.match, string.lower
+local GetTime = GetTime
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local GetInventoryItemLink = GetInventoryItemLink
+local GetInventoryItemID = GetInventoryItemID
+local GetItemInfo = GetItemInfo or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetItemInfo)
+local GetItemIcon = GetItemIcon or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetItemIcon)
+local C_Container = C_Container
+local C_Timer = C_Timer
+RC._gms = RC._gms or {}
+local _gms = RC._gms
+local GM = RC.GearManager
+local C, GetGMSlotHoverBorder = _gms.C, _gms.GetGMSlotHoverBorder
+------------------------------------------------------------------------
+-- Readycheck - Gear Manager Buttons
+-- Creates/destroys the docked gear buttons (CreateButton/RemoveButton),
+-- their drag-to-dock and manual-position persistence (SaveButtonPosition/
+-- LoadButtonPosition), and the ItemRack set importer at the bottom.
+------------------------------------------------------------------------
+function GM:CreateButton(slot)
+    self:DebugPrint("CreateButton called for slot " .. tostring(slot))
+
+    if self.settings and self.settings.buttonsLocked ~= nil then
+        self.locked = self.settings.buttonsLocked
+    end
+
+    -- Valid ids: 0-19 (inventory slots), 999 (gear-set button), or any
+    -- id >= 1000 with a pinned definition in RC.db.gearPinnedButtons.
+    if not slot then
+        self:DebugPrint("CreateButton rejected: slot is nil")
+        return
+    end
+
+    if slot ~= 999 and not self:GetPinnedDef(slot) and (slot < 0 or slot > 19) then
+        self:DebugPrint("CreateButton rejected: invalid slot " .. tostring(slot))
+        return
+    end
+
+    -- Same defer-to-PLAYER_REGEN_ENABLED pattern as RemoveButton and
+    -- RestoreButtonsFromProfile - creating SecureActionButtonTemplate
+    -- buttons is protected under combat lockdown.
+    if InCombatLockdown() then
+        self:DebugPrint("CreateButton deferred for slot " .. slot .. " - in combat lockdown")
+        if not self.pendingCreateButtons then
+            self.pendingCreateButtons = {}
+            local frame = CreateFrame("Frame")
+            frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            frame:SetScript("OnEvent", function(f)
+                f:UnregisterAllEvents()
+                local pending = self.pendingCreateButtons
+                self.pendingCreateButtons = nil
+                for _, pendingSlot in ipairs(pending) do
+                    self:CreateButton(pendingSlot)
+                end
+            end)
+        end
+        table.insert(self.pendingCreateButtons, slot)
+        return
+    end
+
+    if self.buttons[slot] then
+        self:DebugPrint("Button " .. slot .. " already exists, showing it")
+        self.buttons[slot]:Show()
+        self:UpdateButtonIcon(slot)
+        return
+    end
+
+    self:DebugPrint("Creating new button for slot " .. slot)
+
+    local buttonName = "WRGearButton" .. slot
+    local btnSz = (self.settings and self.settings.buttonSize) or 36
+
+    local button = CreateFrame("Button", buttonName, UIParent, "SecureActionButtonTemplate")
+    button:SetSize(btnSz, btnSz)
+    button:SetID(slot)
+    button:SetMovable(true)
+    button:RegisterForDrag("LeftButton")
+    button:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonDown", "RightButtonUp")
+    -- shift-type*/alt-type* are custom secure action types consumed by
+    -- RC's secure click handler (defined outside this file), not built-in
+    -- Blizzard action types.
+    if GM.settings and GM.settings.shiftCancelQueue ~= false then
+        button:SetAttribute("shift-type1", "cancelqueue")
+        button:SetAttribute("shift-type2", "cancelqueue")
+    end
+    button:SetAttribute("alt-type1", "lockbtn")
+    button:SetAttribute("alt-type2", "lockbtn")
+
+    if slot ~= 999 and not self:GetPinnedDef(slot) then
+        self:UpdateButtonUseAction(slot, button)
+    end
+
+    local iconBg = button:CreateTexture(buttonName .. "IconBg", "BACKGROUND", nil, -8)
+    iconBg:SetAllPoints(button)
+    iconBg:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+    button.iconBg = iconBg
+
+    local icon = button:CreateTexture(buttonName .. "Icon", "BACKGROUND")
+    icon:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+    icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
+
+    if slot == 999 then
+        local currentSet = self:GetCurrentEquippedSet()
+        if currentSet and self.sets[currentSet] and self.sets[currentSet].icon then
+            icon:SetTexture(self.sets[currentSet].icon)
+        else
+            icon:SetTexture("Interface\\Icons\\INV_Chest_Plate16")
+        end
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    elseif self:GetPinnedDef(slot) then
+        local def = self:GetPinnedDef(slot)
+        if def.kind == "set" then
+            local s = self.sets and self.sets[def.set]
+            icon:SetTexture((s and s.icon) or "Interface\\Icons\\INV_Chest_Plate16")
+        else
+            icon:SetTexture(def.texture or GetItemIcon(def.itemId) or "Interface\\Icons\\INV_Misc_QuestionMark")
+        end
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    else
+        icon:SetTexture(self:GetSlotTexture(slot))
+    end
+
+    icon:SetDesaturated(false)
+    icon:SetVertexColor(1, 1, 1, 1)
+    button.icon = icon
+
+    local cooldownFrame = CreateFrame("Cooldown", buttonName .. "Cooldown", button, "CooldownFrameTemplate")
+    cooldownFrame:SetAllPoints(icon)
+    cooldownFrame:SetDrawEdge(false)
+    cooldownFrame:SetDrawSwipe(true)
+    cooldownFrame:SetSwipeColor(0, 0, 0, 0.7)
+    cooldownFrame:SetHideCountdownNumbers(true)
+    cooldownFrame:SetFrameLevel(button:GetFrameLevel() + 2)
+    button.cooldownFrame = cooldownFrame
+
+    local borders = {}
+    borders.top = button:CreateTexture(nil, "OVERLAY")
+    borders.top:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+    borders.top:SetDrawLayer("OVERLAY", 0)
+    borders.top:SetPoint("TOPLEFT", 0, 0)
+    borders.top:SetPoint("TOPRIGHT", 0, 0)
+    borders.top:SetHeight(1)
+
+    borders.bottom = button:CreateTexture(nil, "OVERLAY")
+    borders.bottom:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+    borders.bottom:SetDrawLayer("OVERLAY", 0)
+    borders.bottom:SetPoint("BOTTOMLEFT", 0, 0)
+    borders.bottom:SetPoint("BOTTOMRIGHT", 0, 0)
+    borders.bottom:SetHeight(1)
+
+    borders.left = button:CreateTexture(nil, "OVERLAY")
+    borders.left:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+    borders.left:SetDrawLayer("OVERLAY", 0)
+    borders.left:SetPoint("TOPLEFT", 0, 0)
+    borders.left:SetPoint("BOTTOMLEFT", 0, 0)
+    borders.left:SetWidth(1)
+
+    borders.right = button:CreateTexture(nil, "OVERLAY")
+    borders.right:SetColorTexture(C.black[1], C.black[2], C.black[3], C.black[4])
+    borders.right:SetDrawLayer("OVERLAY", 0)
+    borders.right:SetPoint("TOPRIGHT", 0, 0)
+    borders.right:SetPoint("BOTTOMRIGHT", 0, 0)
+    borders.right:SetWidth(1)
+    button.borders = borders
+
+    local hoverBorder = {}
+    local hoverBorderCol = GetGMSlotHoverBorder()
+    hoverBorder.top = button:CreateTexture(nil, "OVERLAY", nil, 2)
+    hoverBorder.top:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+    hoverBorder.top:SetPoint("TOPLEFT", 0, 0)
+    hoverBorder.top:SetPoint("TOPRIGHT", 0, 0)
+    hoverBorder.top:SetHeight(1)
+    hoverBorder.top:Hide()
+
+    hoverBorder.bottom = button:CreateTexture(nil, "OVERLAY", nil, 2)
+    hoverBorder.bottom:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+    hoverBorder.bottom:SetPoint("BOTTOMLEFT", 0, 0)
+    hoverBorder.bottom:SetPoint("BOTTOMRIGHT", 0, 0)
+    hoverBorder.bottom:SetHeight(1)
+    hoverBorder.bottom:Hide()
+
+    hoverBorder.left = button:CreateTexture(nil, "OVERLAY", nil, 2)
+    hoverBorder.left:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+    hoverBorder.left:SetPoint("TOPLEFT", 0, 0)
+    hoverBorder.left:SetPoint("BOTTOMLEFT", 0, 0)
+    hoverBorder.left:SetWidth(1)
+    hoverBorder.left:Hide()
+
+    hoverBorder.right = button:CreateTexture(nil, "OVERLAY", nil, 2)
+    hoverBorder.right:SetColorTexture(hoverBorderCol.r, hoverBorderCol.g, hoverBorderCol.b, 1)
+    hoverBorder.right:SetPoint("TOPRIGHT", 0, 0)
+    hoverBorder.right:SetPoint("BOTTOMRIGHT", 0, 0)
+    hoverBorder.right:SetWidth(1)
+    hoverBorder.right:Hide()
+    button.hoverBorder = hoverBorder
+
+    local dockGlow = button:CreateTexture(nil, "ARTWORK")
+    dockGlow:SetAllPoints()
+    dockGlow:SetColorTexture(C.yellowHint[1], C.yellowHint[2], C.yellowHint[3], C.yellowHint[4])
+    dockGlow:Hide()
+    button.dockGlow = dockGlow
+
+    local hoverHighlight = button:CreateTexture(nil, "ARTWORK", nil, 7)
+    hoverHighlight:SetAllPoints()
+    hoverHighlight:SetColorTexture(C.whiteHint[1], C.whiteHint[2], C.whiteHint[3], C.whiteHint[4])
+    hoverHighlight:SetBlendMode("ADD")
+    hoverHighlight:Hide()
+    button.hoverHighlight = hoverHighlight
+
+    local cdTextFrame = CreateFrame("Frame", buttonName .. "CooldownText", button)
+    cdTextFrame:SetAllPoints(button)
+    cdTextFrame:SetFrameStrata("HIGH")
+    cdTextFrame:SetFrameLevel(button:GetFrameLevel() + 20)
+
+    local cdText = cdTextFrame:CreateFontString(buttonName .. "Time", "OVERLAY")
+    cdText:SetPoint("CENTER", cdTextFrame, "CENTER", 0, 0)
+    cdText:SetTextColor(1, 1, 0, 1)
+    cdText:SetDrawLayer("OVERLAY", 7)
+    cdText:SetShadowOffset(2, -2)
+    cdText:SetShadowColor(0, 0, 0, 1)
+
+    if RC.ApplyCustomFont then
+        RC:ApplyCustomFont(cdText, 14, "OUTLINE")
+    end
+
+    cdText:Hide()
+    button.cdText = cdText
+    button.cdTextFrame = cdTextFrame
+
+    _G[buttonName .. "Time"] = cdText
+
+    cdTextFrame:Show()
+
+    button.queueIndicator = _gms.AttachQueueIndicator(button, buttonName .. "QueueIndicator", 16, 14, 25)
+
+    local nameText = RC:CreateFontString(button, "OVERLAY", nil, 8)
+    nameText:SetPoint("BOTTOM", 0, 2)
+    nameText:SetWidth(34)
+    nameText:SetHeight(10)
+    nameText:SetTextColor(1, 1, 1, 1)
+    nameText:SetJustifyH("CENTER")
+    nameText:SetJustifyV("BOTTOM")
+    nameText:SetWordWrap(false)
+    nameText:SetShadowOffset(1, -1)
+    nameText:SetShadowColor(0, 0, 0, 1)
+    nameText:Hide()
+    button.nameText = nameText
+
+    if slot == 999 then
+        local currentSet = self:GetCurrentEquippedSet()
+        if currentSet and self.settings.showGearSetName ~= false then
+            nameText:SetText(currentSet)
+
+            local textWidth = nameText:GetStringWidth()
+            local maxWidth = 32
+
+            if textWidth > maxWidth then
+                local truncated = currentSet
+                while nameText:GetStringWidth() > maxWidth and #truncated > 3 do
+                    truncated = string.sub(truncated, 1, -2)
+                    nameText:SetText(truncated .. "...")
+                end
+            end
+
+            nameText:Show()
+        end
+    elseif self:GetPinnedDef(slot) then
+        local def = self:GetPinnedDef(slot)
+        local label = (def.kind == "set") and def.set or def.name
+        if label and self.settings.showGearSetName ~= false then
+            nameText:SetText(label)
+            local maxWidth = 32
+            if nameText:GetStringWidth() > maxWidth then
+                local truncated = label
+                while nameText:GetStringWidth() > maxWidth and #truncated > 3 do
+                    truncated = string.sub(truncated, 1, -2)
+                    nameText:SetText(truncated .. "...")
+                end
+            end
+            nameText:Show()
+        end
+    end
+
+    local closeBtn = CreateFrame("Button", nil, button)
+    closeBtn:SetSize(14, 14)
+    closeBtn:SetPoint("TOPRIGHT", 0, 0)
+    closeBtn:SetFrameLevel(button:GetFrameLevel() + 10)
+    closeBtn:EnableMouse(true)
+
+    local xSize = 7
+    local xThickness = 2
+
+    local x1 = closeBtn:CreateTexture(nil, "ARTWORK")
+    x1:SetSize(xSize, xThickness)
+    x1:SetPoint("CENTER")
+    x1:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    x1:SetRotation(math.rad(45))
+    closeBtn.x1 = x1
+
+    local x2 = closeBtn:CreateTexture(nil, "ARTWORK")
+    x2:SetSize(xSize, xThickness)
+    x2:SetPoint("CENTER")
+    x2:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    x2:SetRotation(math.rad(-45))
+    closeBtn.x2 = x2
+
+    closeBtn:SetScript("OnEnter", function(self)
+        self.x1:SetColorTexture(C.red[1], C.red[2], C.red[3], C.red[4])
+        self.x2:SetColorTexture(C.red[1], C.red[2], C.red[3], C.red[4])
+        GM:CancelHideTimer()
+    end)
+
+    closeBtn:SetScript("OnLeave", function(self)
+        self.x1:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+        self.x2:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    end)
+
+    closeBtn:SetScript("OnClick", function(self, button)
+        GM:HideMenu()
+        GM:RemoveButton(slot)
+    end)
+
+    closeBtn:Hide()
+    button.closeBtn = closeBtn
+
+    local lockBtn = CreateFrame("Button", nil, button)
+    lockBtn:SetSize(10, 10)
+    lockBtn:SetPoint("TOPRIGHT", button, "TOPRIGHT", -14, -2)
+    lockBtn:SetFrameLevel(button:GetFrameLevel() + 10)
+    lockBtn:EnableMouse(true)
+
+    local lockBody = lockBtn:CreateTexture(nil, "ARTWORK")
+    lockBody:SetSize(6, 4)
+    lockBody:SetPoint("BOTTOM", lockBtn, "BOTTOM", 0, 0)
+    lockBody:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    lockBtn.body = lockBody
+
+    local shackleLeft = lockBtn:CreateTexture(nil, "ARTWORK")
+    shackleLeft:SetSize(1, 3)
+    shackleLeft:SetPoint("BOTTOMLEFT", lockBody, "TOPLEFT", 1, 0)
+    shackleLeft:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    lockBtn.shackleLeft = shackleLeft
+
+    local shackleRight = lockBtn:CreateTexture(nil, "ARTWORK")
+    shackleRight:SetSize(1, 3)
+    shackleRight:SetPoint("BOTTOMRIGHT", lockBody, "TOPRIGHT", -1, 0)
+    shackleRight:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    lockBtn.shackleRight = shackleRight
+
+    local shackleTop = lockBtn:CreateTexture(nil, "ARTWORK")
+    shackleTop:SetSize(2, 1)
+    shackleTop:SetPoint("BOTTOM", shackleLeft, "TOP", 1, 0)
+    shackleTop:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    lockBtn.shackleTop = shackleTop
+
+    lockBtn:SetScript("OnEnter", function(self)
+        self.body:SetColorTexture(C.green[1], C.green[2], C.green[3], C.green[4])
+        self.shackleLeft:SetColorTexture(C.green[1], C.green[2], C.green[3], C.green[4])
+        self.shackleRight:SetColorTexture(C.green[1], C.green[2], C.green[3], C.green[4])
+        self.shackleTop:SetColorTexture(C.green[1], C.green[2], C.green[3], C.green[4])
+        GM:CancelHideTimer()
+    end)
+
+    lockBtn:SetScript("OnLeave", function(self)
+        self.body:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+        self.shackleLeft:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+        self.shackleRight:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+        self.shackleTop:SetColorTexture(C.lightGray[1], C.lightGray[2], C.lightGray[3], C.lightGray[4])
+    end)
+
+    lockBtn:SetScript("OnClick", function()
+        GM:Lock()
+    end)
+
+    if self.locked or self.settings.buttonsLocked then
+        lockBtn:Hide()
+        closeBtn:Hide()
+    else
+        lockBtn:Show()
+        closeBtn:Show()
+    end
+
+    button.lockIcon = lockBtn
+
+    self.buttons[slot] = button
+    self.buttonData[slot] = {
+        slot = slot,
+        locked = self.locked or self.settings.buttonsLocked or false,
+        dockTo = nil,
+        dockSide = nil
+    }
+
+    button:SetScript("OnEnter", function(self)
+        local slot = self:GetID()
+
+        self.isHovered = true
+
+        if self.hoverHighlight then
+            self.hoverHighlight:Show()
+        end
+
+        if self.hoverBorder then
+            self.hoverBorder.top:Show()
+            self.hoverBorder.bottom:Show()
+            self.hoverBorder.left:Show()
+            self.hoverBorder.right:Show()
+        end
+
+        GM:CancelHideTimer()
+
+        if GM.menuShowTimer then
+            GM.menuShowTimer:Cancel()
+            GM.menuShowTimer = nil
+        end
+
+        local overCloseBtn = self.closeBtn and self.closeBtn:IsShown() and self.closeBtn:IsMouseOver()
+
+        if overCloseBtn then
+            return
+        end
+
+        if GM:TooltipsAllowed() then
+            GM:AnchorTooltip(self)
+
+            if slot == 999 then
+                GameTooltip:SetText(RCL["Gear Sets"], 1, 1, 1)
+                GameTooltip:AddLine(RCL["Hover to show all your gear sets"], 1, 1, 1)
+            elseif GM:GetPinnedDef(slot) then
+                local def = GM:GetPinnedDef(slot)
+                if def.kind == "set" then
+                    GameTooltip:SetText(RCL["Gear Set: "] .. tostring(def.set), 1, 1, 1)
+                    GameTooltip:AddLine(RCL["Left-click: Equip this set"], 0.8, 0.8, 0.8)
+                else
+                    if def.itemId then
+                        GameTooltip:SetItemByID(def.itemId)
+                    else
+                        GameTooltip:SetText(def.name or RCL["Pinned Item"], 1, 1, 1)
+                    end
+                    GameTooltip:AddLine(RCL["Left-click: Equip this item"], 0.8, 0.8, 0.8)
+                end
+                GameTooltip:AddLine(RCL["Unlock and click the X to remove"], 0.6, 0.6, 0.6)
+            else
+                local slotName = GM.slotInfo[slot] and GM.slotInfo[slot].real or "Unknown Slot"
+                GameTooltip:SetText(slotName, 1, 1, 1)
+
+                local equippedLink = (GM.remoteEquippedBySlot and GM.remoteEquippedBySlot[slot] and GM.remoteEquippedBySlot[slot].link)
+                                  or GetInventoryItemLink("player", slot)
+                if equippedLink then
+                    GameTooltip:SetHyperlink(equippedLink)
+                else
+                    GameTooltip:AddLine(RCL["No item equipped"], 0.7, 0.7, 0.7)
+                end
+            end
+            GameTooltip:Show()
+        end
+
+        if GM:GetPinnedDef(slot) then return end
+
+        if GM.menuFrame and GM.menuFrame:IsShown() then
+            if GM.currentMenuSlot ~= slot then
+                GM:ShowMenu(slot, self)
+            end
+        else
+            GM.menuShowTimer = C_Timer.NewTimer(0.08, function()
+                GM.menuShowTimer = nil
+                if self.isHovered then
+                    local stillOverClose = self.closeBtn and self.closeBtn:IsShown() and self.closeBtn:IsMouseOver()
+                    if not stillOverClose then
+                        GM:ShowMenu(slot, self)
+                    end
+                end
+            end)
+        end
+    end)
+
+    button:SetScript("OnLeave", function(self)
+        local slot = self:GetID()
+
+        self.isHovered = false
+
+        if GM.menuShowTimer then
+            GM.menuShowTimer:Cancel()
+            GM.menuShowTimer = nil
+        end
+
+        if self.hoverHighlight then
+            self.hoverHighlight:Hide()
+        end
+
+        if self.hoverBorder then
+            self.hoverBorder.top:Hide()
+            self.hoverBorder.bottom:Hide()
+            self.hoverBorder.left:Hide()
+            self.hoverBorder.right:Hide()
+        end
+
+        -- Menu hiding is driven by the menu frame's own OnUpdate hover
+        -- poll (GM_Menu.lua), not from here.
+    end)
+
+    if RC.AttachMouseoverFade and RC._GetGearManagerFadeSettings then
+        RC:AttachMouseoverFade(button, RC._GetGearManagerFadeSettings)
+    end
+
+    button:SetScript("OnHide", function(self)
+        if GM.currentMenuAnchor == self and GM.menuFrame and GM.menuFrame:IsShown() then
+            GM:HideMenu()
+        end
+    end)
+
+    button:SetScript("OnDragStart", function(self)
+        local slot = self:GetID()
+        GM._lastDragAttempt = {
+            t = GetTime(), slot = slot,
+            mover = RC._uiMoverActive and true or false,
+            locked = (GM.buttonData[slot] and GM.buttonData[slot].locked) and true or false,
+        }
+        if RC._uiMoverActive
+           or not (GM.buttonData[slot] and GM.buttonData[slot].locked) then
+            if IsShiftKeyDown() then
+                self:StartMoving()
+                GM.buttonMoving = self
+            else
+                local parentSlot = GM:FindParentButton(slot)
+                if GM.buttons[parentSlot] then
+                    GM.buttonMoving = GM.buttons[parentSlot]
+                    GM.movingGroup = {parentSlot}
+                    GM:AddDockedChildren(parentSlot, GM.movingGroup)
+                    GM.buttonMoving:StartMoving()
+                else
+                    self:StartMoving()
+                    GM.buttonMoving = self
+                end
+            end
+
+            self._dockCheckAcc = 0
+            self:SetScript("OnUpdate", function(self, elapsed)
+                self._dockCheckAcc = (self._dockCheckAcc or 0) + elapsed
+                if self._dockCheckAcc < 0.1 then return end
+                self._dockCheckAcc = 0
+
+                local slot = self:GetID()
+                if not GM.buttons[slot] then return end
+
+                local nearDock = GM:CheckNearDock(slot)
+
+                if nearDock and GM.buttons[slot].dockGlow then
+                    GM.buttons[slot].dockGlow:SetAlpha(0.3)
+                    GM.buttons[slot].dockGlow:Show()
+                else
+                    if GM.buttons[slot].dockGlow then
+                        GM.buttons[slot].dockGlow:Hide()
+                    end
+                end
+            end)
+        end
+    end)
+
+    button:SetScript("OnDragStop", function(self)
+        local slot = self:GetID()
+        if RC._uiMoverActive
+           or not (GM.buttonData[slot] and GM.buttonData[slot].locked) then
+            self:SetScript("OnUpdate", nil)
+
+            if GM.buttonMoving then
+                GM.buttonMoving:StopMovingOrSizing()
+            end
+
+            if GM.buttons[slot] and GM.buttons[slot].dockGlow then
+                GM.buttons[slot].dockGlow:Hide()
+            end
+
+            C_Timer.After(0, function()
+                -- Pixel-snap the dropped position so hand-dragged buttons
+                -- land on the physical pixel grid (docked children follow
+                -- their parent's anchor, so the whole group stays aligned).
+                local snap = RC.UIMover and RC.UIMover.SnapToPixel
+                local function Snapped(v) return snap and snap(v) or v end
+                if GM.movingGroup and #GM.movingGroup > 1 then
+                    for _, groupSlot in ipairs(GM.movingGroup) do
+                        if GM.buttons[groupSlot] then
+                            local pt, rel, relPt, x, y = GM.buttons[groupSlot]:GetPoint()
+                            GM.buttons[groupSlot]:ClearAllPoints()
+                            GM.buttons[groupSlot]:SetPoint(pt, rel, relPt, Snapped(x), Snapped(y))
+                            GM:SaveButtonPosition(groupSlot)
+                        end
+                    end
+                    GM.movingGroup = nil
+                else
+                    if GM.buttons[slot] then
+                        local pt, rel, relPt, x, y = GM.buttons[slot]:GetPoint()
+                        GM.buttons[slot]:ClearAllPoints()
+                        GM.buttons[slot]:SetPoint(pt, rel, relPt, Snapped(x), Snapped(y))
+
+                        local docked = GM:CheckAndDock(slot)
+                        if not docked then
+                            GM.buttonData[slot].dockTo = nil
+                            GM.buttonData[slot].dockSide = nil
+                            if GM.buttons[slot].dockGlow then
+                                GM.buttons[slot].dockGlow:Hide()
+                            end
+                        end
+
+                        GM:SaveButtonPosition(slot)
+                    end
+                end
+
+                GM.buttonMoving = nil
+            end)
+        end
+    end)
+
+    button:SetScript("PostClick", function(self, btn, down)
+        if down then return end
+        local slot = self:GetID()
+        if (btn == "LeftButton" or btn == "RightButton") and IsShiftKeyDown()
+                and GM.settings and GM.settings.shiftCancelQueue ~= false then
+            GM:DebugPrint("Shift-cancel invoked for slot " .. tostring(slot), "gear")
+            local q = RC.gearSwapQueue
+            if slot == 999 then
+                local names
+                if q then
+                    for i = #q, 1, -1 do
+                        if type(q[i]) == "string" then
+                            names = names or {}
+                            names[#names + 1] = q[i]
+                            table.remove(q, i)
+                        end
+                    end
+                end
+                if names then
+                    GM:Print(RCL["Cancelled queued gear set: "]
+                        .. table.concat(names, ", ") .. ".")
+                    if GM.queuedSetSlotExclusions then
+                        for _, nm in ipairs(names) do
+                            GM.queuedSetSlotExclusions[nm] = nil
+                        end
+                    end
+                    GM:UpdateQueueIndicators()
+                else
+                    GM:Print(RCL["No queued gear set."])
+                end
+                return
+            end
+            local removed = RC.CancelQueuedSwapsForSlot
+                and RC:CancelQueuedSwapsForSlot(slot) or 0
+            if removed > 0 then
+                GM:Print(RCL["Cancelled "] .. removed .. RCL[" queued swap(s) for that slot."])
+                GM:UpdateQueueIndicators()
+            else
+                local covered
+                if q then
+                    for i = 1, #q do
+                        local e = q[i]
+                        if type(e) == "string" then
+                            local gs = GM.sets and GM.sets[e]
+                            if gs and gs.equip and gs.equip[slot] and gs.equip[slot] ~= 0 then
+                                covered = e
+                                break
+                            end
+                        end
+                    end
+                end
+                if covered then
+                    GM.queuedSetSlotExclusions = GM.queuedSetSlotExclusions or {}
+                    local ex = GM.queuedSetSlotExclusions[covered]
+                    if not ex then
+                        ex = {}
+                        GM.queuedSetSlotExclusions[covered] = ex
+                    end
+                    local slotName = (GM.slotData and GM.slotData[slot]
+                        and GM.slotData[slot].real) or ("slot " .. slot)
+                    if ex[slot] then
+                        ex[slot] = nil
+                        GM:Print(RCL["Restored "] .. slotName .. RCL[" to queued set '"]
+                            .. covered .. "'.")
+                    else
+                        ex[slot] = true
+                        GM:Print(RCL["Removed "] .. slotName .. RCL[" from queued set '"]
+                            .. covered .. RCL["' - that slot will stay as it is."])
+                    end
+                    GM:UpdateQueueIndicators()
+                else
+                    RC:DebugPrint("No queued swap for that slot.", "gear")
+                end
+            end
+            return
+        end
+
+        if btn == "LeftButton" and IsAltKeyDown() then
+            GM.buttonData[slot].locked = not GM.buttonData[slot].locked
+            GM:SaveButtonPosition(slot)
+            GM:DebugPrint((GM.buttonData[slot].locked and "Locked: " or "Unlocked: ")
+                .. (GM.slotInfo[slot] and GM.slotInfo[slot].real or ("button " .. slot)))
+        elseif (btn == "LeftButton" or btn == "RightButton")
+               and not IsAltKeyDown() and GM:GetPinnedDef(slot) then
+            GM:ClickPinned(slot)
+        end
+    end)
+
+    self:LoadButtonPosition(slot)
+    self:UpdateButtonIcon(slot)
+
+    self:DebugPrint("About to show button for slot " .. slot)
+    button:Show()
+    self:DebugPrint("Button shown, should be visible now")
+
+    C_Timer.After(0.1, function()
+        GM:SaveButtonPosition(slot)
+        GM:MarkButtonActive(slot)
+        GM:DebugPrint("Button " .. slot .. " saved and marked active")
+    end)
+
+    -- The status border lives on the frame, so a freshly created button
+    -- has none. Only bag and equipment events used to schedule it, which
+    -- left the gear set button unbordered from creation until the next
+    -- one of those fired - and permanently after a remove/re-add, since
+    -- that builds a brand new frame.
+    if slot == 999 then
+        self:ScheduleGearSetStatusRefresh()
+    end
+
+    self:DebugPrint("Created " .. (self.slotInfo[slot] and self.slotInfo[slot].real or ("pinned " .. slot)) .. " button")
+end
+
+function GM:GetPinnedDef(slot)
+    if type(slot) ~= "number" or slot < 1000 then return nil end
+    return RC.db and RC.db.gearPinnedButtons and RC.db.gearPinnedButtons[slot] or nil
+end
+
+function GM:NextPinnedId()
+    local defs = RC.db.gearPinnedButtons
+    local id = 1000
+    while defs[id] or self.buttons[id] do id = id + 1 end
+    return id
+end
+
+function GM:PinSet(setName)
+    if not setName or not (self.sets and self.sets[setName]) then return end
+    if not RC.db.gearPinnedButtons then RC.db.gearPinnedButtons = {} end
+    for _, def in pairs(RC.db.gearPinnedButtons) do
+        if def.kind == "set" and def.set == setName then
+            self:Print(RCL["Set is already pinned: "] .. setName)
+            return
+        end
+    end
+    local id = self:NextPinnedId()
+    RC.db.gearPinnedButtons[id] = { kind = "set", set = setName }
+    self:CreateButton(id)
+    self:Print(RCL["Pinned set: "] .. setName .. RCL[" - unlock and click its X to remove"])
+end
+
+function GM:PinItem(itemLink, invSlot)
+    local itemId = self:GetItemID(itemLink)
+    if not itemId then return end
+    if not RC.db.gearPinnedButtons then RC.db.gearPinnedButtons = {} end
+    for _, def in pairs(RC.db.gearPinnedButtons) do
+        if def.kind == "item" and def.itemId == itemId and def.invSlot == invSlot then
+            self:Print(RCL["Item is already pinned"])
+            return
+        end
+    end
+    local name = GetItemInfo(itemLink)
+    local id = self:NextPinnedId()
+    RC.db.gearPinnedButtons[id] = {
+        kind = "item", itemId = itemId, invSlot = invSlot,
+        name = name, texture = GetItemIcon(itemId),
+    }
+    self:CreateButton(id)
+    self:Print(RCL["Pinned item: "] .. (name or itemId) .. RCL[" - unlock and click its X to remove"])
+end
+
+function GM:ClickPinned(slot)
+    local def = self:GetPinnedDef(slot)
+    if not def then return end
+
+    if def.kind == "set" then
+        if not (self.sets and self.sets[def.set]) then
+            self:Print(RCL["Pinned set no longer exists: "] .. tostring(def.set))
+            return
+        end
+        if InCombatLockdown() then
+            if RC and RC.QueueGearSwap then
+                RC:QueueGearSwap(def.set)
+            else
+                self:Print(RCL["Cannot equip sets in combat"])
+            end
+            return
+        end
+        self:EquipSet(def.set)
+
+    elseif def.kind == "item" then
+        local invSlot = def.invSlot or 16
+        if GetInventoryItemID("player", invSlot) == def.itemId then
+            self:Print((def.name or "Item") .. RCL[" is already equipped"])
+            return
+        end
+        for bag = 0, 4 do
+            local numSlots = C_Container.GetContainerNumSlots(bag) or 0
+            for bagSlot = 1, numSlots do
+                if C_Container.GetContainerItemID(bag, bagSlot) == def.itemId then
+                    local link = C_Container.GetContainerItemLink(bag, bagSlot)
+                    self:SafeSwapBagToSlot(bag, bagSlot, invSlot, link)
+                    return
+                end
+            end
+        end
+        self:Print((def.name or ("Item " .. def.itemId)) .. RCL[" is not in your bags"])
+    end
+end
+
+function GM:RemoveButton(slot)
+    if not self.buttons[slot] then return end
+
+    if InCombatLockdown() then
+        self:DebugPrint("RemoveButton deferred for slot " .. slot .. " - in combat lockdown")
+        local frame = CreateFrame("Frame")
+        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        frame:SetScript("OnEvent", function(f)
+            f:UnregisterAllEvents()
+            self:RemoveButton(slot)
+        end)
+        return
+    end
+
+    local button = self.buttons[slot]
+    button:Hide()
+    button:SetParent(nil)
+
+    self.buttons[slot] = nil
+    self.buttonData[slot] = nil
+
+    if RC.db and RC.db.gearButtonPositions then
+        RC.db.gearButtonPositions[slot] = nil
+    end
+
+    if RC.db and RC.db.gearButtons then
+        RC.db.gearButtons[slot] = nil
+    end
+
+    if RC.db and RC.db.gearPinnedButtons then
+        RC.db.gearPinnedButtons[slot] = nil
+    end
+
+    if RC.SaveConfigurationToProfile then
+        RC:SaveConfigurationToProfile()
+    end
+
+    self:DebugPrint("Removed " .. (self.slotInfo[slot] and self.slotInfo[slot].real or ("button " .. slot)) .. " button")
+end
+
+function GM:MarkButtonActive(slot)
+    if not RC.db then
+        self:Print(RCL["ERROR: WR.db is nil - cannot save button!"])
+        return
+    end
+    if not RC.db.gearButtons then RC.db.gearButtons = {} end
+    RC.db.gearButtons[slot] = true
+
+    self:DebugPrint("Marked slot " .. slot .. " (" .. (self.slotInfo[slot] and self.slotInfo[slot].real or "pinned") .. ") as active in WR.db.gearButtons")
+
+    if self._restoringButtons then return end
+
+    if RC.SaveConfigurationToProfile then
+        RC:SaveConfigurationToProfile()
+        self:DebugPrint("Called SaveConfigurationToProfile for button " .. slot)
+    else
+        self:Print(RCL["ERROR: WR.SaveConfigurationToProfile is nil!"])
+    end
+end
+
+function GM:SaveButtonPosition(slot)
+    if not self.buttons[slot] then return end
+    if not RC.db then
+        self:Print(RCL["ERROR: WR.db is nil - cannot save position!"])
+        return
+    end
+
+    local button = self.buttons[slot]
+    local point, relativeTo, relativePoint, x, y = button:GetPoint()
+
+    -- Normalize every save to a CENTER/CENTER anchor with pixel-snapped
+    -- offsets. GetPoint() after a drag anchors to whichever screen
+    -- quadrant is nearest, so hand-aligned buttons ended up saved
+    -- against different corners - and when the UI's measured size came
+    -- out slightly different at login, top-anchored and bottom-anchored
+    -- neighbors drifted apart by a pixel or two. One shared anchor means
+    -- they can only ever move together.
+    local cx, cy = button:GetCenter()
+    if cx and cy then
+        local snap = RC.UIMover and RC.UIMover.SnapToPixel
+        x = cx - (UIParent:GetWidth() / 2)
+        y = cy - (UIParent:GetHeight() / 2)
+        if snap then x, y = snap(x), snap(y) end
+        point, relativePoint = "CENTER", "CENTER"
+    end
+
+    if not RC.db.gearButtonPositions then RC.db.gearButtonPositions = {} end
+
+    RC.db.gearButtonPositions[slot] = {
+        point = point or "CENTER",
+        relativePoint = relativePoint or "CENTER",
+        x = x or 0,
+        y = y or 0,
+        locked = self.buttonData[slot].locked or false,
+        dockTo = self.buttonData[slot].dockTo,
+        dockSide = self.buttonData[slot].dockSide,
+    }
+
+    if self._restoringButtons then
+        self:DebugPrint("Saved position for slot " .. slot .. " at " .. (x or 0) .. ", " .. (y or 0) .. " (suppressed during restore)")
+        return
+    end
+
+    if RC.SaveConfigurationToProfile then
+        RC:SaveConfigurationToProfile()
+    end
+
+    self:DebugPrint("Saved position for slot " .. slot .. " at " .. (x or 0) .. ", " .. (y or 0))
+end
+
+function GM:LoadButtonPosition(slot)
+    if not self.buttons[slot] then return end
+    if not RC.db or not RC.db.gearButtonPositions or not RC.db.gearButtonPositions[slot] then
+        self.buttons[slot]:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        return
+    end
+
+    local pos = RC.db.gearButtonPositions[slot]
+
+    if self.buttonData[slot] then
+        if self.locked or self.settings.buttonsLocked then
+            self.buttonData[slot].locked = true
+        else
+            self.buttonData[slot].locked = pos.locked or false
+        end
+        self.buttonData[slot].dockTo = pos.dockTo
+        self.buttonData[slot].dockSide = pos.dockSide
+    end
+
+    self.buttons[slot]:ClearAllPoints()
+
+    if pos.dockTo and pos.dockSide and self.buttons[pos.dockTo] then
+        self:ApplyDocking(slot, pos.dockTo, pos.dockSide)
+    else
+        self.buttons[slot]:SetPoint(pos.point or "CENTER", UIParent, pos.relativePoint or "CENTER", pos.x or 0, pos.y or 0)
+        if self.buttons[slot].dockGlow then
+            self.buttons[slot].dockGlow:Hide()
+        end
+    end
+end
+
+function GM:UpdateButtonIcon(slot)
+    if not self.buttons[slot] then return end
+
+    local button = self.buttons[slot]
+    local icon = button.icon
+
+    if not icon then return end
+
+    self:UpdateButtonUseAction(slot)
+
+    if slot == 999 then
+        local currentSet = self:GetCurrentEquippedSet()
+        if currentSet and self.sets[currentSet] and self.sets[currentSet].icon then
+            icon:SetTexture(self.sets[currentSet].icon)
+
+            if button.nameText then
+                if self.settings.showGearSetName ~= false then
+                    button.nameText:SetText(currentSet)
+
+                    local textWidth = button.nameText:GetStringWidth()
+                    local maxWidth = 32
+
+                    if textWidth > maxWidth then
+                        local truncated = currentSet
+                        while button.nameText:GetStringWidth() > maxWidth and #truncated > 3 do
+                            truncated = string.sub(truncated, 1, -2)
+                            button.nameText:SetText(truncated .. "...")
+                        end
+                    end
+
+                    button.nameText:Show()
+                else
+                    button.nameText:Hide()
+                end
+            end
+        else
+            icon:SetTexture("Interface\\Icons\\INV_Chest_Plate16")
+
+            if button.nameText then
+                button.nameText:Hide()
+            end
+        end
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        if not self.enabled then
+            icon:SetDesaturated(true)
+            icon:SetVertexColor(0.5, 0.5, 0.5, 1)
+        else
+            icon:SetDesaturated(false)
+            icon:SetVertexColor(1, 1, 1, 1)
+        end
+        return
+    end
+
+    local pinnedDef = self:GetPinnedDef(slot)
+    if pinnedDef then
+        if pinnedDef.kind == "set" then
+            local s = self.sets and self.sets[pinnedDef.set]
+            icon:SetTexture((s and s.icon) or "Interface\\Icons\\INV_Chest_Plate16")
+        else
+            icon:SetTexture(pinnedDef.texture or GetItemIcon(pinnedDef.itemId) or "Interface\\Icons\\INV_Misc_QuestionMark")
+        end
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        if button.nameText then
+            local label = (pinnedDef.kind == "set") and pinnedDef.set or pinnedDef.name
+            if label and self.settings.showGearSetName ~= false then
+                button.nameText:SetText(label)
+                local maxWidth = 32
+                if button.nameText:GetStringWidth() > maxWidth then
+                    local truncated = label
+                    while button.nameText:GetStringWidth() > maxWidth and #truncated > 3 do
+                        truncated = string.sub(truncated, 1, -2)
+                        button.nameText:SetText(truncated .. "...")
+                    end
+                end
+                button.nameText:Show()
+            else
+                button.nameText:Hide()
+            end
+        end
+        if not self.enabled then
+            icon:SetDesaturated(true)
+            icon:SetVertexColor(0.5, 0.5, 0.5, 1)
+        else
+            icon:SetDesaturated(false)
+            icon:SetVertexColor(1, 1, 1, 1)
+        end
+        return
+    end
+
+    local texture = GetInventoryItemTexture("player", slot)
+    local itemLink = GetInventoryItemLink("player", slot)
+
+    if texture then
+        icon:SetTexture(texture)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        if button.nameText and self.settings.showButtonNames ~= false then
+            local itemName = itemLink and GetItemInfo(itemLink)
+            if itemName then
+                local abbrevName = RC.GetItemAbbreviation and RC:GetItemAbbreviation(itemName) or itemName:sub(1, 5) .. "."
+                button.nameText:SetText(abbrevName)
+                button.nameText:Show()
+            else
+                button.nameText:Hide()
+            end
+        elseif button.nameText then
+            button.nameText:Hide()
+        end
+    else
+        local emptyTexture = RC:GetSlotEmptyTexture(self.slotInfo[slot].name)
+        icon:SetTexture(emptyTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+        icon:SetTexCoord(0.15, 0.85, 0.15, 0.85)
+
+        if button.nameText then
+            button.nameText:Hide()
+        end
+
+        icon:SetDesaturated(true)
+        icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+        return
+    end
+
+    icon:SetDesaturated(false)
+    icon:SetVertexColor(1, 1, 1, 1)
+end
+
+function GM:UpdateAllButtonIcons()
+    for slot in pairs(self.buttons) do
+        self:UpdateButtonIcon(slot)
+    end
+end
+
+function GM:RefreshAllButtonFonts()
+
+    for slot, button in pairs(self.buttons) do
+        if button.cdText then
+            button.cdText:SetShadowOffset(2, -2)
+            button.cdText:SetShadowColor(0, 0, 0, 1)
+        end
+        if button.nameText then
+            button.nameText:SetShadowOffset(1, -1)
+            button.nameText:SetShadowColor(0, 0, 0, 1)
+        end
+    end
+
+    for _, btn in pairs(self.menuButtons or {}) do
+        if btn.cdText then
+            btn.cdText:SetShadowOffset(2, -2)
+            btn.cdText:SetShadowColor(0, 0, 0, 1)
+        end
+        if btn.nameText then
+            btn.nameText:SetShadowOffset(1, -1)
+            btn.nameText:SetShadowColor(0, 0, 0, 1)
+        end
+    end
+
+    for i = 0, 19 do
+        local slotInfo = self.slotInfo[i]
+        if slotInfo then
+            local slotFrame = _G["Character" .. slotInfo.name]
+            if slotFrame and slotFrame.itemNameText then
+                slotFrame.itemNameText:SetShadowOffset(1, -1)
+                slotFrame.itemNameText:SetShadowColor(0, 0, 0, 1)
+            end
+        end
+    end
+
+    self:DebugPrint("Refreshed shadows on all button fonts")
+end
+
+-- ===== ITEMRACK IMPORT =====
+-- Reconstructs GM_Sets.lua's set.equip schema from ItemRack's raw item ids:
+-- explicit 0 stays 0 (unequip), a real id becomes a resolved item link, and
+-- any slot ItemRack simply never wrote is left absent (leave slot alone).
+function GM:ImportItemRackSets()
+    local src = _G.ItemRackUser and _G.ItemRackUser.Sets
+    if type(src) ~= "table" then
+        RC:Print(RCL["ItemRack data not found. ItemRack must be enabled while importing (its saved sets only load with the addon). Import once, then ItemRack can be disabled."])
+        return 0
+    end
+    local imported, renamed, skipped = 0, 0, 0
+    for name, setData in pairs(src) do
+        if type(name) == "string" and name:sub(1, 1) ~= "~"
+                and type(setData) == "table" and type(setData.equip) == "table" then
+            local target = name
+            if self.sets[target] then
+                target = name .. " (ItemRack)"
+            end
+            if self.sets[target] then
+                skipped = skipped + 1
+            else
+                local gear = {
+                    equip = {},
+                    icon = setData.icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+                }
+                for slot, v in pairs(setData.equip) do
+                    slot = tonumber(slot)
+                    if slot and slot >= 0 and slot <= 19 then
+                        if v == 0 or v == "0" then
+                            gear.equip[slot] = 0
+                        else
+                            local id = tonumber(v) or tonumber(tostring(v):match("^(%d+)"))
+                            if id and id > 0 then
+                                local link = select(2, GetItemInfo(id))
+                                gear.equip[slot] = link or ("item:" .. id)
+                            end
+                        end
+                    end
+                end
+                if next(gear.equip) then
+                    self.sets[target] = gear
+                    imported = imported + 1
+                    if target ~= name then renamed = renamed + 1 end
+                else
+                    skipped = skipped + 1
+                end
+            end
+        end
+    end
+    if imported > 0 then
+        RC:SaveConfigurationToProfile()
+    end
+    RC:Print(RCL["ItemRack import: "] .. imported .. RCL[" set(s) imported"]
+        .. (renamed > 0 and (", " .. renamed .. " kept with an (ItemRack) suffix because the name was taken") or "")
+        .. (skipped > 0 and (", " .. skipped .. " skipped") or "") .. ".")
+    return imported
+end
+
+local _WRm = _G.Readycheck
+if _WRm then
+    _WRm._buildMarks = _WRm._buildMarks or {}
+    _WRm._buildMarks["gm_buttons"] = "dragstop-gate"
+end
