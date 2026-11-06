@@ -53,6 +53,51 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "4.9.0",
+            date = "2026-11-06",
+            title = "TBC Anniversary and WoW Forever, and customize everything",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "Readycheck now runs on TBC Anniversary and WoW Forever as well as Classic Era.",
+                        "Features that only make sense in Classic Era switch themselves off on TBC and Forever, and their pages say why. This covers world buffs, Chronoboon, Classic raid boss setups and raid routes.",
+                        "Type /rc flavor to see which features are on for your game version.",
+                        "Consumables follow your game version. TBC and Forever get their own items, potions, stones, oils and poisons on the bars, in the checker and in the reminders.",
+                        "In TBC, a battle elixir and a guardian elixir no longer count as clashing. A flask covers both.",
+                        "Almost every text can now be moved and reworded: bar button texts and timers, the reminder popup, the raid buff and boss debuff trackers, the TTK display, the stats bar, the route tracker, the repair reminder, nameplate auras, the consumables checker, gear buttons and the World Buffs board.",
+                        "Most bars and windows have fade, opacity, shadow, glow, layer and scale settings.",
+                        "The reminder popup can grow in any direction and has its own look for each state.",
+                        "The raid buff and boss debuff trackers can change their look as time runs low and play an urgent sound.",
+                        "Live previews for every visual feature, including the World Buffs board, the consumables checker window, world map pins, the minimap button, the stats bar buff list and the gear set picker.",
+                        "Move mode now includes the spec popup, the must-have items alert and the gear swap notice, and shows the position while you drag.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "Settings pages are split into tabs, and rows of buttons that picked a value are now dropdowns.",
+                        "Checkboxes and tabs have a cleaner look with a gold tick.",
+                        "Previews take up less room.",
+                        "Settings pages use less memory.",
+                        "In TBC, poisons no longer warn about low charges, since they last an hour.",
+                        "A finished raid route shows the last gear swap, then folds the tracker bar away.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "Weapon stone and oil buttons could click a game popup while you were dead.",
+                        "Consumables bar buttons didn't resize when you changed the button size.",
+                        "Some previews were blank.",
+                        "Previews could flicker while a page resized.",
+                        "\"Can't measure restricted regions\" errors from nameplate auras and animations.",
+                        "Boss buttons on the raid page could overlap.",
+                    },
+                },
+            },
+        },
+        {
             version = "4.8.4",
             date = "2026-10-25",
             title = "Smoother gear swaps and raid config fixes",
