@@ -1310,6 +1310,7 @@ local BACK_PANELS = {
                     end
                 end
             elseif nav.type == "panel" and nav.panelId then
+                if self.ResolvePageId then nav.panelId = self:ResolvePageId(nav.panelId) end
                 for _, category in ipairs(self.MenuStructure) do
                     if category.children then
                         for _, child in ipairs(category.children) do
@@ -1326,6 +1327,9 @@ local BACK_PANELS = {
         elseif self.db and self.db.lastSidebarSelection then
             if self.db.lastSidebarSelection == "home_welcome" then
                 self.db.lastSidebarSelection = "home"
+            end
+            if self.ResolvePageId then
+                self.db.lastSidebarSelection = self:ResolvePageId(self.db.lastSidebarSelection)
             end
             for _, category in ipairs(self.MenuStructure) do
                 if category.id == self.db.lastSidebarSelection then

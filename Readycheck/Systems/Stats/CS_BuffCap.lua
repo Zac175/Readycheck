@@ -1,6 +1,7 @@
 ------------------------------------------------------------------------
 -- Readycheck - Buff Cap: the counter
--- How many of the 32 buff slots are really in use. The buff bar only
+-- How many of the buff slots (Classic Era's 32; another version's limit
+-- is measured, see ResolveCap) are really in use. The buff bar only
 -- shows part of it: a warrior's stance, the Defensive State behind
 -- Revenge, tracking, the second half of some trinkets and a few worn
 -- items all take a slot without an icon. This counts those, learns any
@@ -34,6 +35,23 @@ RC.BuffCap = BC
 
 local CAP = D.CAP
 BC.CAP = CAP
+
+-- Another game version's limit (D.CAP_BY_FLAVOR), read once the flavor is
+-- fixed. Where none is confirmed (TBC, Forever) CAP is nil and the limit
+-- is measured instead: the slots in use when a buff gets pushed off,
+-- believed once two push-offs agree, kept per character and version.
+-- UNMEASURED: before that, push-offs are only looked for this close to
+-- Classic Era's 32 (the lowest limit any version has).
+local UNMEASURED = D.CAP
+local capFlavor
+local function ResolveCap()
+    if capFlavor or not RC.db then return end
+    capFlavor = RC.Flavor and RC:Flavor() or "era"
+    if capFlavor ~= "era" then
+        CAP = D.CAP_BY_FLAVOR and D.CAP_BY_FLAVOR[capFlavor] or nil
+        BC.CAP = CAP
+    end
+end
 
 local DEFAULTS = { countHidden = true, learn = true, chatWarn = true, barText = "used" }
 
@@ -109,11 +127,45 @@ function BC:ClearPushes()
     if m then m.pushes = {} end
 end
 
+-- The measured limit of this version, { cap =, last = } (only where the
+-- limit is not confirmed).
+local function CapMemory()
+    local m = Memory()
+    if not m then return nil end
+    if type(m.caps) ~= "table" then m.caps = {} end
+    local fl = capFlavor or "era"
+    local c = m.caps[fl]
+    if type(c) ~= "table" then
+        c = {}
+        m.caps[fl] = c
+    end
+    return c
+end
+
+-- The limit in use: the confirmed one, else the measured one, else nil.
+local function Limit()
+    if CAP then return CAP end
+    local c = CapMemory()
+    return c and tonumber(c.cap) or nil
+end
+function BC:Limit()
+    ResolveCap()
+    return Limit()
+end
+function BC:LimitMeasured()
+    ResolveCap()
+    return CAP == nil
+end
+
 function BC:ResetLearned()
     local m = Memory()
     if m then
         m.learned = 0
         m.last = nil
+    end
+    if not CAP then
+        local c = CapMemory()
+        if c then c.cap, c.last = nil, nil end
     end
     BC:Request()
 end
@@ -314,9 +366,19 @@ local function PushedOff(lost, before, prevHidden, exact, added)
         -- An exact swap (as many arrived as left) at the cap says how many
         -- slots were really full; believed only when two readings agree.
         if exact and On("countHidden") and On("learn") then
-            local surplus = Clamp(CAP - before - prevHidden, -3, 4)
-            if surplus == m.last then m.learned = surplus end
-            m.last = surplus
+            if CAP then
+                local surplus = Clamp(CAP - before - prevHidden, -3, 4)
+                if surplus == m.last then m.learned = surplus end
+                m.last = surplus
+            else
+                -- no confirmed limit: what was in use is the limit
+                local c = CapMemory()
+                local seen = before + prevHidden
+                if c then
+                    if seen == c.last then c.cap = seen end
+                    c.last = seen
+                end
+            end
         end
     end
     RC:DebugPrint("BuffCap: pushed off " .. #lost .. " (visible before " .. before
@@ -336,7 +398,7 @@ local function Detect(prevList, prevMap, now, gain, prevRaw)
     if #added > 1 then table_sort(added, ByIndex) end
     if remover and remover.NoteAdded and #added > 0 then Call(remover.NoteAdded, added, now) end
     if #removed == 0 or #added + gain < #removed then return end
-    if #prevList < CAP - 8 or UnitIsDeadOrGhost("player") then return end
+    if #prevList < (Limit() or UNMEASURED) - 8 or UnitIsDeadOrGhost("player") then return end
     local out = {}
     local deliberate = false
     for _, r in ipairs(removed) do
@@ -385,7 +447,9 @@ end
 
 local function ClampHidden(h, visible)
     if h < 0 then return 0 end
-    local room = CAP - visible
+    local lim = Limit()
+    if not lim then return h end
+    local room = lim - visible
     if room < 0 then room = 0 end
     if h > room then return room end
     return h
@@ -420,13 +484,23 @@ function BC:Refresh()
     local countHidden = On("countHidden")
     local m = Memory()
     local learned = (countHidden and On("learn") and m) and m.learned or 0
+    if not CAP then learned = 0 end
     state.learned = learned
     state.visible = #list
     state.hidden = ClampHidden(rawHidden + learned, #list)
     state.reserved = (countHidden and defKinds and defUntil <= now) and 1 or 0
     state.used = state.visible + state.hidden
-    state.cap = CAP - state.hidden - state.reserved
-    state.free = state.cap - state.visible
+    if CAP then
+        state.cap = CAP - state.hidden - state.reserved
+        state.free = state.cap - state.visible
+    else
+        -- a version whose limit is still being measured: no cap, no free
+        local lim = Limit()
+        BC.CAP = lim
+        state.limit = lim
+        state.cap = lim and (lim - state.hidden - state.reserved) or nil
+        state.free = state.cap and (state.cap - state.visible) or nil
+    end
     state.at = now
     for _, fn in pairs(subscribers) do Call(fn, state) end
     return state
@@ -445,6 +519,7 @@ end
 -- The numbers right now, for a tooltip or a cell: the running state, or
 -- a one-off read (which never looks for push-offs) when nothing runs.
 function BC:Current()
+    ResolveCap()
     if running and state.at then return state end
     if not playerClass then
         playerClass = select(2, UnitClass("player"))
@@ -512,6 +587,7 @@ local function StopCombatWatch()
 end
 
 local function Start()
+    ResolveCap()
     running = true
     ready = false
     playerClass = select(2, UnitClass("player"))
@@ -541,7 +617,7 @@ local function Stop()
 end
 
 function BC:Want(key, on)
-    -- the 32 buff slots are Classic Era's limit (Core_Flavor)
+    -- off where buffs cannot be read in a fight (Core_Flavor)
     if on and not RC:FeatureOn("buff_pushoff") then on = nil end
     wanted[key] = on and true or nil
     local any = next(wanted) ~= nil

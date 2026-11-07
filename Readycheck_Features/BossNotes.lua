@@ -67,6 +67,13 @@ local function InitializeBossNotes()
         onyxia = "Onyxia's Lair",
         aq20   = "Ruins of Ahn'Qiraj",
     }
+    -- another game version's raids (RaidFlavor.lua)
+    RC:OnRaidFlavor(function(raids)
+        for _, r in ipairs(raids) do
+            RAID_LONG_NAME_BY_KEY[r.code] = r.name
+            for _, z in ipairs(r.zones or { r.name }) do RAID_KEY_BY_NAME[z:lower()] = r.code end
+        end
+    end)
 
     -- Profile names known for a raid (long name); "Default" when none are.
     -- Shared by the one-shot WRN1 profile-isolation migration and by

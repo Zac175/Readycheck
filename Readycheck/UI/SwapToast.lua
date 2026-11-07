@@ -592,7 +592,7 @@ function ST.Sample(kind)
         local many = {}
         for i = 1, 8 do many[i] = three[(i - 1) % 3 + 1] end
         return { label = RCL["Gear set: "] .. "Tank", icon = "Interface\\Icons\\INV_Shield_06",
-                 context = RCL["Boss: "] .. "Patchwerk", items = many }
+                 context = RCL["Boss: "] .. (RC:RaidSample("boss2") or "Patchwerk"), items = many }
     end
     return { label = RCL["Gear set: "] .. "DPS", icon = "Interface\\Icons\\INV_Chest_Plate16",
              context = RCL["Route: "] .. "3x Plague Beast", items = three }

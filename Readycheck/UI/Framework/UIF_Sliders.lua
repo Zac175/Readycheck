@@ -1053,6 +1053,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                     if itemText then itemText:Hide() end
                     if wantPreview then
                         itemText = itemFrame:CreateFontString(nil, "OVERLAY")
+                        -- (each font's name in that font: on purpose)
+                        itemText._rcOwnFace = "font list: each name in its own face"
                     else
                         itemText = CreateProfessionalFontString(itemFrame, "OVERLAY", 11, "OUTLINE")
                     end

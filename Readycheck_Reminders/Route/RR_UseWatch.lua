@@ -348,7 +348,7 @@ local PotionFamily, eventFrame = _rrs.PotionFamily, _rrs.eventFrame
         end)
     end
 
-    -- routes are written for the Classic Era raids (Core_Flavor)
+    -- routes run on the game versions whose raids are listed (Core_Flavor)
     if RC:FeatureOn("raid_route") then
         eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")

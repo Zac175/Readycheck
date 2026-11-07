@@ -352,8 +352,8 @@ if not RC then return end
             return calc.testMode.testRaidName
         end
 
-        -- the configured raids are Classic Era raids: on a game version
-        -- that does not run them no zone counts as one (Core_Flavor)
+        -- the configured raids are this game version's (RaidFlavor.lua):
+        -- on a version with none listed no zone counts as one (Core_Flavor)
         if self.FeatureOn and not self:FeatureOn("raid_configs") then return nil end
 
         local zoneName = GetRealZoneText()
@@ -372,6 +372,16 @@ if not RC then return end
 
         if subZoneName and zoneMap[subZoneName] then
             return zoneMap[subZoneName]
+        end
+        -- another game version's raids also match by instance id, whatever
+        -- the zone text (RaidFlavor.lua)
+        if self._raidFlavorApplied and GetInstanceInfo then
+            local instanceID = select(8, GetInstanceInfo())
+            if instanceID then
+                for raidName, id in pairs(self.raidInstanceIDs or {}) do
+                    if id == instanceID then return raidName end
+                end
+            end
         end
 
         local targetName = UnitName("target")

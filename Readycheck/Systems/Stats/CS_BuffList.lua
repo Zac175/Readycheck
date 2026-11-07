@@ -265,11 +265,17 @@ local function FillList(ui, src)
     end
     for i = n + 1, #ui.rows do ui.rows[i]:Hide() end
 
-    local free = math_max(0, src.free)
-    local col = norm
-    if free <= 0 then col = RC:GetColor("text", "red") elseif free <= 1 then col = RC:GetColor("text", "orange") end
-    ui.foot:SetText(string_format(RCL["%d of %d slots free (real cap %d)"], free, src.cap, src.realCap))
-    ui.foot:SetTextColor(col.r, col.g, col.b)
+    if src.free == nil then
+        -- a version whose buff limit is still being measured
+        ui.foot:SetText(RCL["Buff limit not measured yet: it is learned the first time a buff gets pushed off."])
+        ui.foot:SetTextColor(gray.r, gray.g, gray.b)
+    else
+        local free = math_max(0, src.free)
+        local col = norm
+        if free <= 0 then col = RC:GetColor("text", "red") elseif free <= 1 then col = RC:GetColor("text", "orange") end
+        ui.foot:SetText(string_format(RCL["%d of %d slots free (real cap %d)"], free, src.cap, src.realCap))
+        ui.foot:SetTextColor(col.r, col.g, col.b)
+    end
     ui.foot:ClearAllPoints()
     ui.foot:SetPoint("TOPLEFT", ui, "TOPLEFT", PAD + 2, -(PAD + n * ROW_H + 4))
     local hint = src.hint

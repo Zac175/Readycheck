@@ -340,7 +340,8 @@ local ApplyPayloadStrips, KeyIncluded =
         execute             = {"executeCalc"},
         ttk_display         = {"ttkDisplay", "colors"},
         world_buffs         = {"worldBuffs"},
-        test_consumeremind  = {"consumablesHelper"},
+        consumeremind       = {"consumablesHelper"},
+        test_consumeremind  = {"consumablesHelper"},   -- its id while in testing
     }
     local function InferSaveCategories()
         local f = RC.sidebarConfigFrame

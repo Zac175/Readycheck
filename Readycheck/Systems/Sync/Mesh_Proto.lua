@@ -2392,6 +2392,10 @@ local _mss = RC._mss
         "Molten Core", "Blackwing Lair", "Temple of Ahn'Qiraj",
         "Naxxramas", "Onyxia's Lair", "Zul'Gurub", "Ruins of Ahn'Qiraj",
     }
+    -- another game version's raids sync too (RaidFlavor.lua)
+    RC:OnRaidFlavor(function(raids)
+        for _, r in ipairs(raids) do KNOWN_RAID_KEYS[#KNOWN_RAID_KEYS + 1] = r.name end
+    end)
 
     local function QuickHash(val)
         return string_format("%08x", WalkHash(val, 5381, 0))
@@ -3478,6 +3482,9 @@ local _mss = RC._mss
         aq40 = "Temple of Ahn'Qiraj",
         naxx = "Naxxramas",
     }
+    RC:OnRaidFlavor(function(raids)
+        for _, r in ipairs(raids) do PANEL_TO_RAID_KEY[r.code] = r.name end
+    end)
 
     function MS:NavigateAndRefresh(categoryId)
         if categoryId == "raidProfiles" then

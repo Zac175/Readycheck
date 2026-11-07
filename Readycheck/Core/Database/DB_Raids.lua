@@ -1261,8 +1261,10 @@ RC.encounterAddPhases = {
             chatWarn = true,     -- a chat line when the cap pushes a buff off
             barText = "used",    -- the cell shows "used", "ratio" or "free"
         },
-        -- what this character's counter has measured; never shared
-        buffCapLearned = { learned = 0, pushes = {} },
+        -- what this character's counter has measured; never shared.
+        -- caps: a version's measured buff limit where none is confirmed
+        -- ({ [flavor] = { cap =, last = } }, CS_BuffCap.lua)
+        buffCapLearned = { learned = 0, pushes = {}, caps = {} },
 
         buffPushoffAlert = {
             enabled = false,
@@ -1365,6 +1367,13 @@ RC.encounterAddPhases = {
         -- The popup on the customization standard (anchors / layout /
         -- states / formats); empty = the popup as it always was.
         reminderPopup = {},
+        -- Raid consume reminders (Consumables > Raid Consume Reminders,
+        -- Readycheck_Consumables\Consumables_RaidReminders.lua): in a 40-man
+        -- raid the ticked consumables you are not wearing show in the
+        -- reminders bar. enabled; onlyInBags = only ones you carry. items
+        -- (itemId / "mh" / "oh" -> true) has no default here: it is seeded
+        -- with the class's picks for this game version on first use.
+        consumeRemind = { enabled = true, onlyInBags = true },
         -- The glow on the raid consume reminder icons (RC.UI:CreateEdgeGlow):
         -- style "edge" | "pixel" | "autocast" | "border" | "none"; alpha =
         -- strength; size = how far it reaches; halo = the soft wide layer;

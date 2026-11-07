@@ -547,6 +547,10 @@ local TEXT = _sbs.TEXT
     OT.bwl  = RaidTile("Blackwing Lair")
     OT.aq40 = RaidTile("Temple of Ahn'Qiraj")
     OT.naxx = RaidTile("Naxxramas")
+    -- another game version's raids (RaidFlavor.lua)
+    RC:OnRaidFlavor(function(raids)
+        for _, r in ipairs(raids) do OT[r.code] = RaidTile(r.name) end
+    end)
     OT.boss_notes = { desc = RCL["Notes that show when you target a boss or trash pack."],
         status = EnabledOf("bossNotes") }
 

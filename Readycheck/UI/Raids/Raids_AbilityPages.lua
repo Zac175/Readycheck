@@ -1528,12 +1528,12 @@ end
         if not encounterSettings.abilities[abilityKey] then
             local newConfig = { enabled = true, triggerType = "hp_percent" }
             if isPotionAbility then
-                newConfig.potionType = "mightyRagePotion"
+                newConfig.potionType = RC.defaultPotionType or "mightyRagePotion"
                 newConfig.hpValue = 20
             end
             encounterSettings.abilities[abilityKey] = newConfig
         elseif isPotionAbility and not encounterSettings.abilities[abilityKey].potionType then
-            encounterSettings.abilities[abilityKey].potionType = "mightyRagePotion"
+            encounterSettings.abilities[abilityKey].potionType = RC.defaultPotionType or "mightyRagePotion"
             self:SaveConfigurationToProfile()
         end
         local abilityConfig = encounterSettings.abilities[abilityKey]
@@ -1866,7 +1866,7 @@ end
             self:DebugPrint(string.format(RCL["POTION LOAD: %s.potionType = %s"],
                 tostring(abilityKey), tostring(currentPotion)), "config")
             if not currentPotion or currentPotion == "" or currentPotion == "potion" then
-                currentPotion = "mightyRagePotion"
+                currentPotion = RC.defaultPotionType or "mightyRagePotion"
             end
             local potionName = RC.availablePotions and RC.availablePotions[currentPotion] or currentPotion
             do

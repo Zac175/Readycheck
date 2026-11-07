@@ -355,6 +355,8 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
             -- this game version's consumables list, before anything that
             -- reads it loads (DB_Consumables; nothing on Classic Era)
             RC:ApplyConsumableFlavor()
+            -- and its raids (RaidFlavor.lua; nothing on Classic Era)
+            RC:ApplyRaidFlavor()
 
             local needsReload = nil
             for _, name in ipairs({ "Readycheck_Features", "Readycheck_Consumables",

@@ -113,36 +113,54 @@ end
 -- of the addon calls that go quiet; talk: ones a player types or clicks,
 -- which say why instead.
 ------------------------------------------------------------------------
-local ERA     = RCL["Classic Era content"]
 local CLOG    = RCL["needs the combat log, which Forever does not give addons"]
 local HEALTH  = RCL["Forever hides enemy health from addons in combat"]
 local DEBUFFS = RCL["Forever hides enemy debuffs from addons in combat"]
 local MSG     = RCL["Forever blocks addon messages inside instances; sync waits until you leave"]
-local ERA_ONLY = { tbc = ERA, forever = ERA }
--- the buff counter knows Classic Era's 32 buff slots and the auras that
--- fill them unseen; TBC has 40, and Forever's limit is not known yet
-local BUFF_SLOTS = { tbc = RCL["counts Classic Era's 32 buff slots; TBC has 40"],
-                     forever = RCL["counts Classic Era's 32 buff slots; Forever's buff limit is not known yet"] }
+-- world buffs: TBC's patch 2.1 stops the Classic Era ones above level 63;
+-- Forever strips them at the door of every dungeon and raid
+local WORLD_BUFFS = { tbc = RCL["Classic Era world buffs stop working above level 63 on TBC"],
+                      forever = RCL["Forever removes world buffs inside dungeons and raids"] }
+-- raid features: on wherever the version's raids are listed (TBC now);
+-- RC:ApplyRaidFlavor drops this once Forever's list is filled in
+local RAIDS_LATER = { forever = RCL["Forever raids aren't listed yet"] }
 
 RC.FEATURE_FLAVORS = {
-    -- Era-only content
-    { id = "world_tools", name = RCL["World Tools and world buffs (drop timers, timer network, buff board, summons, turn-ins)"],
-      off = ERA_ONLY, addon = "Readycheck_WorldTools",
-      pages = { "world_tools", "wt_pulltimers", "wt_buffnetwork", "wt_automation", "wt_wbdrops", "world_buffs" } },
-    { id = "chronoboon", name = RCL["Chronoboon reminder"], off = ERA_ONLY, pages = { "boon_reminder" } },
-    { id = "raid_configs", name = RCL["Raid boss and trash configs (Molten Core, Blackwing Lair, AQ40, Naxxramas) and their ability reminders"],
-      off = ERA_ONLY, pages = { "raids", "mc", "bwl", "aq40", "naxx", "remote_raid_cfg" } },
-    { id = "boss_notes", name = RCL["Boss and trash notes"], off = ERA_ONLY, pages = { "boss_notes" } },
-    { id = "polarity", name = RCL["Polarity mode (Thaddius, Sapphiron)"], off = ERA_ONLY },
-    { id = "raid_route", name = RCL["Raid route (per-pull steps, gear sets, trinkets, reminders)"], off = ERA_ONLY },
-    { id = "boss_gear_target", name = RCL["Boss gear set when you target the boss"], off = ERA_ONLY },
-    { id = "boss_gear_kill", name = RCL["Boss gear set after the kill"], off = ERA_ONLY },
-    { id = "boss_gear_prompt", name = RCL["Ask which gear set to wear after a kill"], off = ERA_ONLY },
-    { id = "buff_pushoff", name = RCL["Buff pushoff alert, 32-slot buff counter and Darkmoon fortune watch"], off = BUFF_SLOTS,
+    -- World buffs. The World Tools companion loads wherever either row
+    -- runs; its world buff parts stand down where world_tools is off.
+    { id = "world_tools", name = RCL["World buffs: drop timers, timer network, buff board, summons on a fresh world buff, gossip and turn-ins"],
+      off = WORLD_BUFFS, addon = "Readycheck_WorldTools",
+      pages = { "wt_pulltimers", "wt_buffnetwork", "wt_wbdrops", "world_buffs" } },
+    { id = "world_summons", name = RCL["Auto-accept summons (always, or after a taxi PvP drop)"],
+      off = { forever = RCL["whether an addon may accept a summon there is not confirmed yet"] },
+      addon = "Readycheck_WorldTools", pages = { "world_tools", "wt_automation" } },
+    { id = "chronoboon", name = RCL["Chronoboon reminder"],
+      off = { tbc = RCL["Classic Era world buffs stop working above level 63 on TBC, so there is nothing to store"],
+              forever = RCL["Forever removes world buffs inside dungeons and raids, so there is nothing to keep for a raid"] },
+      pages = { "boon_reminder" } },
+    { id = "raid_configs", name = RCL["Raid boss and trash configs (each game version's raids) and their ability reminders"],
+      off = RAIDS_LATER, raidList = true, pages = { "raids", "mc", "bwl", "aq40", "naxx", "remote_raid_cfg" } },
+    { id = "boss_notes", name = RCL["Boss and trash notes"], off = RAIDS_LATER, raidList = true, pages = { "boss_notes" } },
+    { id = "polarity", name = RCL["Polarity mode (Thaddius, Sapphiron)"],
+      off = { tbc = RCL["Thaddius and Sapphiron are in Classic Era's Naxxramas, which TBC does not have"],
+              forever = RCL["Thaddius and Sapphiron are in Classic Era's Naxxramas, which Forever does not have"] } },
+    -- counts trash kills from the combat log: off on Forever for good
+    { id = "raid_route", name = RCL["Raid route (per-pull steps, gear sets, trinkets, reminders)"],
+      off = { forever = RCL["Forever raids aren't listed yet, and the kill steps need the combat log, which Forever does not give addons"] } },
+    { id = "boss_gear_target", name = RCL["Boss gear set when you target the boss"], off = RAIDS_LATER, raidList = true },
+    { id = "boss_gear_kill", name = RCL["Boss gear set after the kill"], off = RAIDS_LATER, raidList = true },
+    { id = "boss_gear_prompt", name = RCL["Ask which gear set to wear after a kill"], off = RAIDS_LATER, raidList = true },
+    -- Classic Era's limit is 32; on TBC the limit is measured (CS_BuffCap)
+    { id = "buff_pushoff", name = RCL["Buff pushoff alert, buff slot counter and Darkmoon fortune watch"],
+      off = { forever = RCL["Forever hides your buffs from addons in combat, where push-offs happen"] },
       pages = { "buff_pushoff" } },
     -- Built on the combat log, or on values Forever hides in combat
-    { id = "kill_watch", name = RCL["Trash kill counting (route steps, trash notes, Thaddius)"], off = { forever = CLOG } },
-    { id = "overpower_dodge", name = RCL["Overpower glow after a dodge (nameplates)"], off = { forever = CLOG } },
+    { id = "kill_watch", name = RCL["Trash kill counting (route steps, trash notes, Thaddius)"],
+      off = { forever = RCL["needs the combat log; Forever's death event (UNIT_DIED) hides which mob died"] } },
+    -- the glow in Battle Stance comes from Overpower being usable and runs
+    -- everywhere; only the dodge seen while out of Battle Stance is off
+    { id = "overpower_dodge", name = RCL["Overpower glow after a dodge while out of Battle Stance (nameplates)"],
+      off = { forever = RCL["needs the combat log to see your own attack dodged; UNIT_COMBAT does not say whose attack it was"] } },
     { id = "ttk", name = RCL["TTK display and ML kill-time predictions"], off = { forever = HEALTH },
       pages = { "execute", "ttk_display" },
       stubs = { "OnExecuteCombatStart", "OnExecuteCombatEnd", "OnExecuteTargetChanged",
@@ -163,7 +181,8 @@ RC.FEATURE_FLAVORS = {
     { id = "raid_buff_tracker", name = RCL["Raid buff tracker"] },
     { id = "consumable_bars", name = RCL["Consumables, potions and weapons bars, trinket menu (each game version's own items)"] },
     { id = "consumables_checker", name = RCL["Consumables checker and must-have item alert (each game version's own items; the raid-entry check needs the Classic Era raids)"] },
-    { id = "raid_consume_reminders", name = RCL["Raid consume reminders (testing)"] },
+    { id = "raid_consume_reminders", name = RCL["Raid consume reminders (each game version's own items)"],
+      pages = { "consumeremind" } },
     { id = "gear_manager", name = RCL["Gear Manager sets, buttons and /rc gearset"] },
     { id = "trinket_swap", name = RCL["Trinket Manager (trinket rotation)"] },
     { id = "speed_swaps", name = RCL["On-use gear swaps and swap back"] },
@@ -185,7 +204,10 @@ local BY_ID, BY_PAGE, BY_ADDON = {}, {}, {}
 for _, f in ipairs(RC.FEATURE_FLAVORS) do
     BY_ID[f.id] = f
     for _, p in ipairs(f.pages or {}) do BY_PAGE[p] = f end
-    if f.addon then BY_ADDON[f.addon] = f end
+    if f.addon then
+        BY_ADDON[f.addon] = BY_ADDON[f.addon] or {}
+        table.insert(BY_ADDON[f.addon], f)
+    end
 end
 
 -- True when the feature runs on this flavor (and for any id not listed).
@@ -217,10 +239,15 @@ function RC:FeatureOffForPage(menuItem)
     return nil
 end
 
--- A companion addon that this flavor does not load at all.
+-- A companion addon that this flavor does not load at all: every row
+-- that runs in it is off.
 function RC:AddonOffByFlavor(addonName)
-    local f = BY_ADDON[addonName]
-    return (f and not self:FeatureOn(f.id)) and true or false
+    local rows = BY_ADDON[addonName]
+    if not rows then return false end
+    for _, f in ipairs(rows) do
+        if self:FeatureOn(f.id) then return false end
+    end
+    return true
 end
 
 -- Every switched-off feature on a flavor (this one by default), in table
@@ -258,7 +285,7 @@ end
 -- World Tools group back as an entry that shows why.
 function RC:AddFlavorMenuStubs()
     local menu = self.MenuStructure
-    if type(menu) ~= "table" or self:FeatureOn("world_tools") then return end
+    if type(menu) ~= "table" or not self:AddonOffByFlavor("Readycheck_WorldTools") then return end
     for _, item in ipairs(menu) do
         if item.id == "world_tools" then return end
     end
@@ -340,6 +367,10 @@ function RC:FlavorCommand(arg)
     end
     if self._consumableFlavorApplied then
         self:Print(string.format(RCL["Consumables: the %s list (bars, checker, must-have alert, previews)"], self:FlavorName(cur)))
+    end
+    if self._raidFlavorApplied then
+        self:Print(string.format(RCL["Raids: the %s raids (%d) in the raid configs, boss notes, gear swaps and route"],
+            self:FlavorName(cur), #self:FlavorRaids()))
     end
     local off = self:FeaturesOff(cur)
     if #off == 0 then

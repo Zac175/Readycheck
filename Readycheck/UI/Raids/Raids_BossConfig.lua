@@ -397,7 +397,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                 ["Temple of Ahn'Qiraj"] = "Interface\\Icons\\INV_Misc_QirajiCrystal_05",
                 ["Naxxramas"] = "Interface\\Icons\\Achievement_Boss_KelThuzad_01",
             }
-            encounterIcon = wsRaidIcons[raidName] or "Interface\\Icons\\Ability_Creature_Cursed_02"
+            encounterIcon = wsRaidIcons[raidName] or self:RaidIcon(raidName) or "Interface\\Icons\\Ability_Creature_Cursed_02"
         elseif encounterType == "route" then
             encounterIcon = "Interface\\Icons\\INV_Misc_Map_01"
         end
@@ -1044,7 +1044,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
             self:RefreshSidebarProfiles()
             RC:Print(string.format(RCL["Applied %s from %s to %d other %s boss%s."],
                 AbilityDisplayName(abilityKey), encounterName, n,
-                RAID_SHORT[raidName] or raidName, n == 1 and "" or "es"))
+                RAID_SHORT[raidName] or self:RaidAbbr(raidName) or raidName, n == 1 and "" or "es"))
             RC:ShowInlineAbilityConfig(frame, raidName, encounterName, encounterType, raidSettings, true)
         end
 
@@ -1086,7 +1086,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                             if not encounterSettings.abilities[ak] then
                                 local nc = { enabled = true, triggerType = "hp_percent", enableTTS = true }
                                 if ak == "frostBlast" then nc.triggerType = "player_hp_above"; nc.playerHpAboveValue = 8500 end
-                                if type(ak) == "string" and ak:lower():find("potion") then nc.potionType = "mightyRagePotion"; nc.hpValue = 20 end
+                                if type(ak) == "string" and ak:lower():find("potion") then nc.potionType = RC.defaultPotionType or "mightyRagePotion"; nc.hpValue = 20 end
                                 encounterSettings.abilities[ak] = nc
                             elseif not encounterSettings.abilities[ak].enabled then
                                 encounterSettings.abilities[ak].enabled = true
@@ -1288,7 +1288,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                 subtitle:SetPoint("RIGHT", card, "RIGHT", -12, 0)
                 return
             end
-            local short = RAID_SHORT[raidName] or raidName
+            local short = RAID_SHORT[raidName] or self:RaidAbbr(raidName) or raidName
             local applyBtn = self.UI:CreateStyledButton(card, RCL["Apply to all "] .. short .. RCL[" bosses"], 150, 22)
             if applyBtn.text then RC:ApplyCustomFont(applyBtn.text, 10) end
             applyBtn:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -5)

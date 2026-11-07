@@ -653,8 +653,12 @@ local TEXT = _sbs.TEXT
             modes = { { id = "one", label = RCL["One buff"] }, { id = "several", label = RCL["Several"] } },
         })
 
+        -- Classic Era's limit is 32; another version's is measured (CS_BuffCap)
+        local eraCap = self:Flavor() == "era"
         local _, newY = self:CreateSettingsPageHeader(parent, yPos, RCL["Buff Pushoff"],
-            RCL["Track buffs about to fall off the 32-buff limit and warn before they drop"], "Interface\\Icons\\Spell_ChargePositive")
+            eraCap and RCL["Track buffs about to fall off the 32-buff limit and warn before they drop"]
+                or RCL["Track buffs about to fall off the buff limit and warn before they drop"],
+            "Interface\\Icons\\Spell_ChargePositive")
         yPos = newY
 
         yPos = K.Tabs(parent, yPos, {
@@ -695,8 +699,13 @@ local TEXT = _sbs.TEXT
             if tab == "behavior" then
             local capCard = self:CreateSettingsCard(parent, yPos, RCL["Buff cap counter"])
             cardY = -32
+            if eraCap then
             cardY = RC.UI:CreateHelpLine(capCard, 14, cardY, RCL["The Buffs cell counts every one of the 32 buff slots, including the ones that never show an icon: a warrior's stance, the Defensive State after a dodge, parry or block, tracking, druid form passives, the second effect of some trinkets and a few worn items. Click the cell for the full list."],
                 { short = RCL["The Buffs cell counts all 32 buff slots, hidden ones too. Click it for the list."], title = RCL["Buff cap"] })
+            else
+            cardY = RC.UI:CreateHelpLine(capCard, 14, cardY, RCL["The Buffs cell counts every buff slot in use, including the ones that never show an icon: a warrior's stance, the Defensive State after a dodge, parry or block, tracking and druid form passives. This version's buff limit is measured on this character the first time a buff gets pushed off; until then the cell shows the slots used. Click the cell for the full list."],
+                { short = RCL["The Buffs cell counts every buff slot, hidden ones too; the limit is measured at the first push-off."], title = RCL["Buff cap"] })
+            end
 
             local function Check(key, label)
                 local getter, setter = Bound(key)
@@ -717,8 +726,10 @@ local TEXT = _sbs.TEXT
             self.UI:CreateSegmentedControl(capCard, {
                 x = 14, y = cardY, inset = 14, height = 22, label = RCL["The Buffs cell shows"],
                 items = {
-                    { key = "used",  label = RCL["Slots used"],  tooltip = RCL["Buffs on you plus hidden slots, out of 32."] },
-                    { key = "ratio", label = RCL["On you / cap"], tooltip = RCL["Buffs on you, then the real cap once hidden slots are taken off 32."] },
+                    { key = "used",  label = RCL["Slots used"],  tooltip = eraCap and RCL["Buffs on you plus hidden slots, out of 32."]
+                        or RCL["Buffs on you plus hidden slots."] },
+                    { key = "ratio", label = RCL["On you / cap"], tooltip = eraCap and RCL["Buffs on you, then the real cap once hidden slots are taken off 32."]
+                        or RCL["Buffs on you, then the real cap once hidden slots are taken off the measured limit."] },
                     { key = "free",  label = RCL["Slots free"],  tooltip = RCL["How many more buffs fit before one gets pushed off."] },
                 },
                 selected = BC:Setting("barText") or "used",
@@ -734,7 +745,14 @@ local TEXT = _sbs.TEXT
             local function ShowLearned()
                 local m = self.db.buffCapLearned
                 local n = (type(m) == "table" and tonumber(m.learned)) or 0
-                if n == 0 then
+                if not eraCap then
+                    local lim = BC:Limit()
+                    if lim then
+                        learnedText:SetText(string.format(RCL["Buff limit measured on this character: %d slots."], lim))
+                    else
+                        learnedText:SetText(RCL["Buff limit not measured yet: it is learned the first time a buff gets pushed off."])
+                    end
+                elseif n == 0 then
                     learnedText:SetText(RCL["No unseen hidden slots learned."])
                 elseif n > 0 then
                     learnedText:SetText(string.format(RCL["Learned: %d hidden slot(s) it cannot identify."], n))
@@ -850,7 +868,8 @@ local TEXT = _sbs.TEXT
             -- The debuff side of the same problem: a Darkmoon Faire fortune
             -- carried as a debuff sits under the 16-debuff cap.
             yPos = K.Card(parent, yPos, RCL["Darkmoon Faire debuff"], function(card, y)
-                y = K.Desc(card, y, RCL["If you carry Sayge's fortune as a debuff, a boss stacking debuffs on you can push it off at the 16-debuff cap. This prints a chat line, shows a warning on screen and plays the raid warning sound when that happens."])
+                y = K.Desc(card, y, eraCap and RCL["If you carry Sayge's fortune as a debuff, a boss stacking debuffs on you can push it off at the 16-debuff cap. This prints a chat line, shows a warning on screen and plays the raid warning sound when that happens."]
+                    or RCL["If you carry Sayge's fortune as a debuff and it goes early, this prints a chat line, shows a warning on screen and plays the raid warning sound."])
                 y = K.Check(card, y, RCL["Warn when my Darkmoon Faire debuff is pushed off"],
                     function() return A.dmfDebuff ~= false end,
                     function(v) A.dmfDebuff = v and true or false end)
@@ -865,7 +884,8 @@ local TEXT = _sbs.TEXT
             end)
 
             yPos = K.Card(parent, yPos, RCL["Buff pushoff alert"], function(card, y)
-                y = K.Desc(card, y, RCL["Shows an alert when a buff is pushed off by the 32 buff limit."])
+                y = K.Desc(card, y, eraCap and RCL["Shows an alert when a buff is pushed off by the 32 buff limit."]
+                    or RCL["Shows an alert when a buff is pushed off by the buff limit."])
                 local enableCb
                 y, enableCb = K.Check(card, y, RCL["Enable buff pushoff alerts"],
                     function() return A.enabled end,

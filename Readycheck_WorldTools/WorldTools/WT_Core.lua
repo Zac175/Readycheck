@@ -6,11 +6,14 @@
 -- WT_Bars / WT_Timers / WT_Turnins / WT_UI reach settings only through
 -- WT.Store() and WT:GetFactionSettings().
 ------------------------------------------------------------------------
--- World buffs are Classic Era content: TBC and Forever never run this
--- addon (Readycheck Core_Flavor).
-if _G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("world_tools") then return end
+-- World buffs are Classic Era content (Readycheck Core_Flavor). On TBC
+-- only the summon accept runs (always, or after a taxi PvP drop): the
+-- world buff scan, the drop timer events and the boon watch stay off.
+if _G.Readycheck and _G.Readycheck.FeatureOn and not (_G.Readycheck:FeatureOn("world_tools")
+    or _G.Readycheck:FeatureOn("world_summons")) then return end
 local RC = _G.Readycheck
 if not RC then return end
+local WORLD_BUFFS = not RC.FeatureOn or RC:FeatureOn("world_tools")
 
 RC.WorldTools = RC.WorldTools or {}
 local WT = RC.WorldTools
@@ -741,9 +744,11 @@ end
 -- Through the addon-wide aura dispatcher (one UNIT_AURA reader for the
 -- whole addon, coalesced to one call per 0.3s here) rather than a raw
 -- UNIT_AURA registration and a ticker of its own.
-RC:RegisterUnitAuraCallback("WorldToolsSummon", 0.3, function()
-    if Store() then WT:ScanFreshBuffsForSummon() end
-end)
+if WORLD_BUFFS then
+    RC:RegisterUnitAuraCallback("WorldToolsSummon", 0.3, function()
+        if Store() then WT:ScanFreshBuffsForSummon() end
+    end)
+end
 
 ------------------------------------------------------------------------
 -- Events
@@ -872,12 +877,19 @@ local BROADCAST_EVENTS = {
     "PLAYER_FLAGS_CHANGED", "PLAYER_CONTROL_LOST", "PLAYER_CONTROL_GAINED",
     "CHAT_MSG_MONSTER_YELL", "CHAT_MSG_MONSTER_SAY", "QUEST_TURNED_IN",
 }
+-- the drop timer yells and the turn-ins are world buff parts
+local WORLD_BUFF_EVENTS = { CHAT_MSG_MONSTER_YELL = true, CHAT_MSG_MONSTER_SAY = true, QUEST_TURNED_IN = true }
 for _, event in ipairs(BROADCAST_EVENTS) do
-    eventFrame:RegisterEvent(event)
+    if WORLD_BUFFS or not WORLD_BUFF_EVENTS[event] then
+        eventFrame:RegisterEvent(event)
+    end
 end
 
--- Unit scoped so it never fires for anyone but the player.
-eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+-- Unit scoped so it never fires for anyone but the player (the
+-- Chronoboon release, a world buff part).
+if WORLD_BUFFS then
+    eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+end
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     local handler = WT[event]

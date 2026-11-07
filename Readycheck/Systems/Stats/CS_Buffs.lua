@@ -166,14 +166,20 @@ function CS:PaintBuffCapCell(st)
     local mode = BC:Setting("barText")
     local text
     if mode == "ratio" then
-        text = st.visible .. "/" .. st.cap
+        text = st.visible .. "/" .. (st.cap or "?")
     elseif mode == "free" then
-        text = tostring(free)
+        text = st.free and tostring(free) or "?"
     else
         text = tostring(st.used)
     end
-    -- coloured by how full the REAL cap is, whatever the text says
-    local fill = BC.CAP - free
+    -- coloured by how full the REAL cap is, whatever the text says (a
+    -- version's limit still being measured stays uncoloured; the colour
+    -- scale runs 0-32)
+    local fill = 0
+    if BC.CAP and st.free then
+        fill = BC.CAP - free
+        if BC.CAP ~= 32 then fill = fill * 32 / BC.CAP end
+    end
     local sig = text .. ":" .. fill
     local grew = false
     if sig ~= cache.buffs then
@@ -830,8 +836,11 @@ end
 -- push-off is not reported.
 function CS:InitializeBuffPushoffTracking()
     if self.buffTrackingInitialized then return end
-    -- the 32 buff / 16 debuff limits are Classic Era's (Core_Flavor)
+    -- off where buffs cannot be read in a fight (Core_Flavor)
     if not RC:FeatureOn("buff_pushoff") then return end
+    -- the 16-debuff limit is Classic Era's; elsewhere a lost fortune is
+    -- reported as gone, never as pushed off
+    if RC:Flavor() ~= "era" then self.PLAYER_DEBUFF_CAP = nil end
 
     self.buffTrackingInitialized = true
     self.playerDeathTime = nil
@@ -988,7 +997,7 @@ function CS:AnnounceDmfDebuffLost(prev, left, count)
     local cap = self.PLAYER_DEBUFF_CAP
     local name = (prev and prev.name) or "Sayge's Dark Fortune"
     -- pushed off: the debuffs are still at the cap after it went
-    local pushed = (count or 0) >= cap - 1 or ((prev and prev.count) or 0) >= cap
+    local pushed = cap ~= nil and ((count or 0) >= cap - 1 or ((prev and prev.count) or 0) >= cap)
 
     local msg, short
     if pushed then
@@ -1044,8 +1053,8 @@ end
 -- What the Buff Pushoff page's Test button shows.
 function CS:TestDmfDebuffAlert()
     local icon = GetSpellTexture and GetSpellTexture(23768)
-    self:AnnounceDmfDebuffLost({ name = "Sayge's Dark Fortune of Damage", icon = icon, count = self.PLAYER_DEBUFF_CAP },
-        72 * 60, self.PLAYER_DEBUFF_CAP)
+    self:AnnounceDmfDebuffLost({ name = "Sayge's Dark Fortune of Damage", icon = icon, count = self.PLAYER_DEBUFF_CAP or 0 },
+        72 * 60, self.PLAYER_DEBUFF_CAP or 0)
 end
 
 function CS:InitializeDmfDebuffWatch()

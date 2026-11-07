@@ -525,6 +525,8 @@ local _sbr = RC._sbr
                 "Naxxramas", "Temple of Ahn'Qiraj", "Blackwing Lair",
                 "Molten Core", "Onyxia's Lair", "Zul'Gurub", "Ruins of Ahn'Qiraj",
             }
+            -- another game version lists its own raids (RaidFlavor.lua)
+            if RC._raidFlavorApplied then raidOrder = RC:RaidNames() end
             for _, raidKey in ipairs(raidOrder) do
                 if self.raidData and self.raidData[raidKey] then
                     local cached  = CachedFor(raidKey)

@@ -221,6 +221,12 @@ local GetConfiguredBg, GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTab
             ["frostProtectionPotion"] = 13456, ["natureProtectionPotion"] = 13458,
             ["shadowProtectionPotion"] = 13459, ["arcaneProtectionPotion"] = 13461
         }
+        -- another game version's potions (RaidFlavor.lua)
+        if RC._raidFlavorApplied and RC.potionData then
+            for k, p in pairs(RC.potionData.potions or {}) do
+                if potionKeyToItemId[k] == nil then potionKeyToItemId[k] = p.itemId end
+            end
+        end
 
         -- Row list on the ZacUI grid: 24px rows in two columns anchored to
         -- the card's centre (so they follow the card width), a white 0.03
@@ -647,7 +653,7 @@ local GetConfiguredBg, GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTab
                 local isPotionAbility = (type(abilityKey) == "string" and abilityKey:lower():find("potion"))
                 local newConfig = { enabled = true, triggerType = "hp_percent", enableTTS = true }
                 if isPotionAbility then
-                    newConfig.potionType = "mightyRagePotion"
+                    newConfig.potionType = RC.defaultPotionType or "mightyRagePotion"
                     newConfig.hpValue = 20
                 end
                 es.abilities[abilityKey] = newConfig

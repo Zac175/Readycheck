@@ -206,6 +206,11 @@ local _srr = RC._srr
                            "route tracker", "warcraft logs" }
         local RID_RAID = { mc = "Molten Core", bwl = "Blackwing Lair",
                            aq40 = "Temple of Ahn'Qiraj", naxx = "Naxxramas" }
+        -- another game version's raids (RaidFlavor.lua)
+        if RC._raidFlavorApplied then
+            RID_RAID = {}
+            for _, r in ipairs(RC:FlavorRaids()) do RID_RAID[r.code] = r.name end
+        end
         for rid, raidKey in pairs(RID_RAID) do
             RC.UI:RegisterSidebarSearch({
                 keywords = ROUTE_KW,

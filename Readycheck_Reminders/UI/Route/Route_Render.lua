@@ -40,10 +40,11 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
         local view = setmetatable({}, { __index = function(_, k) local s = RR:GetSettings() return s and s[k] end })
         view.enabled, view.trackerEnabled, view.trackerUnlocked = true, true, false
         st.rr = setmetatable({
-            trackerFrame = sf, raidName = "Naxxramas", active = 3, finished = false,
-            activeReminders = {}, counts = { ["Living Monstrosity"] = 3, ["Stitched Spewer"] = 1, ["Embalming Slime"] = 0 },
+            trackerFrame = sf, raidName = RC:RaidSample("raid") or "Naxxramas", active = 3, finished = false,
+            activeReminders = {}, counts = RC:RaidSample("routeCounts")
+                or { ["Living Monstrosity"] = 3, ["Stitched Spewer"] = 1, ["Embalming Slime"] = 0 },
             _stepBase = {},
-            GetSteps = function() return RT_STEPS end,
+            GetSteps = function() return RC:RaidSample("routeSteps") or RT_STEPS end,
             GetSettings = function() return view end,
         }, { __index = RR })
         return st.rr

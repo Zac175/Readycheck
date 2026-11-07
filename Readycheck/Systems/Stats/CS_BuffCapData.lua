@@ -30,6 +30,10 @@ RC.BuffCapData = D
 
 -- the client's buff limit; hidden slots come off this
 D.CAP = 32
+-- Each game version's buff limit, where it is confirmed (Classic Era: 32).
+-- A version without one (TBC, Forever) has its limit measured instead,
+-- from the first push-offs on that character (CS_BuffCap.lua).
+D.CAP_BY_FLAVOR = { era = 32 }
 
 D.CATEGORIES = {
     { id = "world", label = "World buffs" },

@@ -447,9 +447,10 @@ local NotifySettingChanged, CopyValue = _uif.NotifySettingChanged, _uif.CopyValu
     --     get = fn() -> font spec | nil,  set = fn(spec),
     --     defaults = { size = 12, outline = "OUTLINE", shadow = true },
     --     minSize = 6, maxSize = 32, sample = "USE  REMOVE" })
-    -- Face ("Readycheck font" = follow the global font), outline, size,
-    -- shadow, and a sample line drawn with exactly what the feature will
-    -- draw (RC:ApplyFontSpec).
+    -- Outline, size, shadow, and a sample line drawn with exactly what the
+    -- feature will draw (RC:ApplyFontSpec). The face is Readycheck's one
+    -- font (Appearance > Fonts): the face box is shown disabled with a
+    -- note, and a face an older save picked stays in the spec, ignored.
     local function OutlineLabel(id)
         for _, o in ipairs(RC.FONT_OUTLINES or {}) do
             if o.id == id then return o.label end
@@ -478,18 +479,17 @@ local NotifySettingChanged, CopyValue = _uif.NotifySettingChanged, _uif.CopyValu
         end
 
         local faceW = math_floor(math_min(220, W * 0.52))
-        local face = self:CreateScrollableDropdown(holder, faceW, RCL["Readycheck font"], 10)
+        local face = self:CreateScrollableDropdown(holder, faceW, RC.ONE_FONT_NOTE, 10)
         face:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -LABEL_H)
         local outline = self:CreateScrollableDropdown(holder, 140, OutlineLabel("OUTLINE"), 5)
         outline:SetPoint("LEFT", face, "RIGHT", 8, 0)
 
-        local function FaceItems()
-            local items = { { text = RCL["Readycheck font"], value = "" } }
-            local list = opts.faces and opts.faces() or (RC.GetAvailableFonts and RC:GetAvailableFonts()) or {}
-            for _, name in ipairs(list) do items[#items + 1] = { text = name, value = name } end
-            return items
-        end
-        face:SetItems(FaceItems(), function(v) Put("face", (v ~= "" and v) or nil) end, { fontPreview = true })
+        -- one font: the face box is a disabled note, not a choice
+        face:SetItems({ { text = RC.ONE_FONT_NOTE, value = "" } }, function() end)
+        face:EnableMouse(false)
+        face:SetAlpha(0.5)
+        if face.arrow then face.arrow:Hide() end
+        face.tooltipText = RC.ONE_FONT_NOTE
         local olItems = {}
         for _, o in ipairs(RC.FONT_OUTLINES or {}) do olItems[#olItems + 1] = { text = o.label, value = o.id } end
         outline:SetItems(olItems, function(v) Put("outline", v) end)
@@ -522,12 +522,7 @@ local NotifySettingChanged, CopyValue = _uif.NotifySettingChanged, _uif.CopyValu
         function holder:Refresh()
             local s = Spec()
             self.syncing = true
-            local f = s.face
-            if f == nil or f == "" or f == "default" then
-                face:SetSelectedValue("", RCL["Readycheck font"])
-            else
-                face:SetSelectedValue(f, f)
-            end
+            face:SetSelectedValue("", RC.ONE_FONT_NOTE)
             local ol = s.outline
             if ol == nil then ol = defaults.outline or "OUTLINE" end
             outline:SetSelectedValue(ol, OutlineLabel(ol))

@@ -6,7 +6,8 @@
 ------------------------------------------------------------------------
 -- World buffs are Classic Era content: TBC and Forever never run this
 -- addon (Readycheck Core_Flavor).
-if _G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("world_tools") then return end
+if _G.Readycheck and _G.Readycheck.FeatureOn and not (_G.Readycheck:FeatureOn("world_tools")
+    or _G.Readycheck:FeatureOn("world_summons")) then return end
 local RC = _G.Readycheck
 if not RC then return end
 local WT = RC.WorldTools
@@ -509,14 +510,21 @@ local function BuildSummonSection(self, parent, yPos, Rerender)
     if not fs then return yPos end
     local as = fs.autoSummon
 
+    -- world buffs are Classic Era's (Core_Flavor): elsewhere only the
+    -- always / taxi accepts, no buff triggers
+    local worldBuffs = RC:FeatureOn("world_tools")
     local card = self:CreateSettingsCard(parent, yPos, "Auto-accept summon |cff777777(testing)|r")
     local cy = -35
 
+    if worldBuffs then
     cy = AddDesc(card, cy,
         "Automatically accept a pending summon when a selected tracked buff is freshly "
         .. "gained. A buff is fresh if it was not previously active (not from un-booning) "
         .. "or if its duration jumped significantly. The accept window runs from the "
         .. "moment the fresh buff is detected.")
+    else
+    cy = AddDesc(card, cy, RCL["Accept a pending summon on its own: every time, or after your PvP flag drops on a taxi."])
+    end
 
     local summonCb
     cy, summonCb = AddCheck(card, cy, "Enable auto-accept summon", as.enabled == true, function(v)
@@ -554,6 +562,13 @@ local function BuildSummonSection(self, parent, yPos, Rerender)
     -- after the label, however wide the font makes it
     winBox:SetPoint("TOPLEFT", card, "TOPLEFT", math.max(265, 15 + math.ceil(winLbl:GetStringWidth() or 0) + 10), cy)
     cy = cy - 32
+    if not worldBuffs then
+        local off = RC:FeatureOffNote("world_tools")
+        if off then cy = AddDesc(card, cy, RCL["Accepting on a fresh world buff:"] .. " " .. off) end
+        RC.UI:BindDependents(summonCb, RC.UI:CardSince(card, summonMark))
+        card:SetContentHeight(math.abs(cy))
+        return yPos - card:GetHeight() - 15
+    end
 
     local trigHdr = RC:CreateFontString(card, "OVERLAY", nil, 11)
     trigHdr:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy - 2)
@@ -744,7 +759,8 @@ function RC:ShowSidebarWTAutomation(frame, preserveScroll)
     local yPos = -20
     local _, newY = self:CreateSettingsPageHeader(parent, yPos,
         "Automation",
-        "Auto-accept summon, auto-gossip and auto quest turn-ins",
+        RC:FeatureOn("world_tools") and "Auto-accept summon, auto-gossip and auto quest turn-ins"
+            or RCL["Auto-accept summons"],
         "Interface\\Icons\\INV_Misc_EngGizmos_20")
     yPos = newY
 
@@ -767,11 +783,13 @@ function RC:ShowSidebarWTAutomation(frame, preserveScroll)
     yPos = yPos - 38
 
     local tab = RC._wtAutoTab or "summon"
-    yPos = self:BuildSettingsTabBar(parent, yPos, {
-        { "summon", "Accept Summon" },
-        { "gossip", "Gossip" },
-        { "quest",  "Quest" },
-    }, tab, function(key)
+    -- the gossip and the turn-ins pick world buffs (Core_Flavor)
+    local tabs = { { "summon", "Accept Summon" }, { "gossip", "Gossip" }, { "quest",  "Quest" } }
+    if not RC:FeatureOn("world_tools") then
+        tabs = { { "summon", "Accept Summon" } }
+        tab = "summon"
+    end
+    yPos = self:BuildSettingsTabBar(parent, yPos, tabs, tab, function(key)
         RC._wtAutoTab = key
         Rerender()
     end)

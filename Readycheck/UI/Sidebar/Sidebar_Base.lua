@@ -224,6 +224,14 @@ local _sbs = RC._sbs
     -- ids never change (saved selections, tests and the tour use them);
     -- a renamed page keeps its old name in its aliases so search finds it.
     -- World Tools registers itself just above Mesh Network (WT_UI.lua).
+    -- A page whose id did change: old id -> new id, read wherever a saved
+    -- or passed-in page id is looked up (RC:ResolvePageId).
+    RC.PAGE_ID_RENAMES = {
+        test_consumeremind = "consumeremind",   -- Raid Consume Reminders, out of testing
+    }
+    function RC:ResolvePageId(id)
+        return (id and RC.PAGE_ID_RENAMES[id]) or id
+    end
     RC.MenuStructure = {
         {
             id = "reminders",
@@ -255,6 +263,7 @@ local _sbs = RC._sbs
                 {id = "consumables_bar",     name = RCL["Consumables Bar"],     icon = "Interface\\Icons\\INV_Potion_41",  panel = "ShowSidebarConsumablesHelperConfig", lodAddon = "Readycheck_Consumables",  aliases = {"consumable", "bar", "elixir", "flask", "food", "scroll", "consumables", "glow", "expiry glow", "fade"}, enabledKey = {"consumablesHelper", "enabled"}},
                 {id = "potions_bar",         name = RCL["Potions Bar"],         icon = "Interface\\Icons\\INV_Potion_54",  panel = "ShowSidebarPotionsBarConfig", lodAddon = "Readycheck_Consumables",         aliases = {"potion", "pot", "mana potion", "healing potion", "greater healing"},      enabledKey = {"potionsBar", "enabled"}},
                 {id = "weapons_bar",         name = RCL["Weapons Bar"],         icon = "Interface\\Icons\\INV_Stone_02",   panel = "ShowSidebarWeaponsBarConfig", lodAddon = "Readycheck_Consumables",          aliases = {"weapon", "stone", "oil", "poison", "imbue", "temp enchant"},             enabledKey = {"weaponsBar", "enabled"}},
+                {id = "consumeremind",       name = RCL["Raid Consume Reminders"], icon = "Interface\\Icons\\INV_Potion_62", panel = "ShowSidebarConsumeRemind", lodAddon = "Readycheck_Consumables",           aliases = {"missing consumables", "consume reminder", "consumes", "flask reminder", "raid consume reminders", "raid consumes"}},
             }
         },
         {
@@ -419,6 +428,7 @@ local _sbs = RC._sbs
                 end
             end
         elseif nav.type == "panel" and nav.panelId then
+            nav.panelId = self:ResolvePageId(nav.panelId)
             for _, category in ipairs(self.MenuStructure) do
                 if category.children then
                     for _, child in ipairs(category.children) do

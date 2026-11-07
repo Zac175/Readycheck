@@ -273,10 +273,12 @@ local _sbr = RC._sbr
             boon_reminder = hasReminders, custom_reminders = hasReminders,
             equipment_reminder = hasReminders, execute = hasReminders,
             ttk_display = hasReminders,
-            -- Readycheck_Consumables: the four bars and the checker
+            -- Readycheck_Consumables: the four bars, the checker and the
+            -- raid consume reminders
             consumables = hasConsumables, consumables_checker = hasConsumables,
             consumables_bar = hasConsumables, potions_bar = hasConsumables,
             weapons_bar = hasConsumables, trinket_bar = hasConsumables,
+            consumeremind = hasConsumables,
             -- Readycheck_Features
             nameplate_auras = hasFeatures, smart_macros = hasFeatures,
             boss_notes = hasFeatures,
@@ -545,6 +547,11 @@ local _sbr = RC._sbr
                     ["Temple of Ahn'Qiraj"] = "aq40",
                     ["Naxxramas"]            = "naxx",
                 }
+                -- another game version's raids (RaidFlavor.lua)
+                for _, r in ipairs(RC:FlavorRaids()) do
+                    raidIcons[r.name] = raidIcons[r.name] or r.icon
+                    raidMenuIds[r.name] = raidMenuIds[r.name] or r.code
+                end
                 local bossResults = {}
                 for raidName, raidBosses in pairs(RC.raidMobConfigs) do
                     for bossName, bossData in pairs(raidBosses) do

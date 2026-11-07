@@ -55,6 +55,8 @@ end
 local function GetBossPickerItems()
     local items = { { text = RCL["(type a custom name below)"], value = "" } }
     local raids = { "Naxxramas", "Ahn'Qiraj", "Blackwing Lair", "Molten Core" }
+    -- another game version lists its own raids (RaidFlavor.lua)
+    if RC._raidFlavorApplied then raids = RC:RaidNames() end
     local seen = {}
     for _, raid in ipairs(raids) do
         local cfg = RC.raidMobConfigs and RC.raidMobConfigs[raid]

@@ -1124,7 +1124,7 @@ local _rrs = RC._rrs
     end
 
     function RR:UpdateArming()
-        -- routes are written for the Classic Era raids (Core_Flavor)
+        -- routes run on the game versions whose raids are listed (Core_Flavor)
         if not RC:FeatureOn("raid_route") then return end
         local settings = self:GetSettings()
         local realRaid = RC.GetEffectiveRaidName and RC:GetEffectiveRaidName() or nil

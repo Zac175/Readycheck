@@ -76,3 +76,9 @@ UI\Cons_PotionsCfg.lua
 UI\Cons_WeaponsCfg.lua
 UI\Cons_TrinketCfg.lua
 UI\Cons_Items.lua
+
+# ---------- Raid consume reminders ----------
+# In a 40-man raid, the ticked consumables you are not wearing show in the
+# reminders bar (Consumables > Raid Consume Reminders). Reads the buff and
+# weapon readers above; its page is listed in the main addon's sidebar.
+Consumables_RaidReminders.lua

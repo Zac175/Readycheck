@@ -393,6 +393,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             eb:SetMultiLine(true)
             eb:SetAutoFocus(false)
             eb:SetFontObject("ChatFontNormal")
+            -- (Readycheck's font, like every text; the size the box always had)
+            if RC.ApplyCustomFont then RC:ApplyCustomFont(eb, 14, "") end
             scrollFrame:SetScrollChild(eb)
             container.scrollFrame = scrollFrame
 

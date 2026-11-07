@@ -172,6 +172,17 @@ function RC:ApplyCustomFont(fontString, size, outline)
     if size then fontString._wrFontSize = fontSize end
     if outline then fontString._wrFontOutline = fontOutline end
 
+    -- ONE FONT: every string dressed here follows the Appearance > Fonts
+    -- choice from now on - it joins RC.trackedFonts (once), and a change of
+    -- font re-dresses it (UpdateAllFonts). The face it wears now is noted:
+    -- a string something later gives a face of its own is left alone.
+    fontString._rcFontSpec = nil
+    fontString._rcFace = (fontString:GetFont())
+    if not fontString._rcFontTracked then
+        fontString._rcFontTracked = true
+        table.insert(self.trackedFonts, fontString)
+    end
+
     -- Font system loads after ADDON_LOADED but before other systems create
     -- their fontStrings; queue those calls until CompleteInitialization drains them.
     if not self.fontSystem.initialized then
@@ -206,17 +217,17 @@ RC.FONT_OUTLINES = {
     { id = "OUTLINE, MONOCHROME", label = RCL["Outline + Mono"] },
 }
 
-local function IsGlobalFace(face)
-    return face == nil or face == "" or face == "default"
-end
+-- ONE FONT: every Readycheck text wears the Appearance > Fonts font (ZacUI's
+-- when ZacUI is installed - it pushes its font there). A face saved in a
+-- feature's spec (the per-feature pickers of old) stays in the settings and
+-- is ignored; the per-feature pickers show this note where the face was.
+RC.ONE_FONT_NOTE = RCL["Uses Readycheck's font (Appearance > Fonts)"]
 
 function RC:ResolveFontSpec(spec, defaults)
     spec = type(spec) == "table" and spec or {}
     defaults = type(defaults) == "table" and defaults or {}
     local fs = self.db and self.db.fontSettings
-    local face = spec.face
-    if IsGlobalFace(face) then face = defaults.face end
-    local path = self:GetFontPath(not IsGlobalFace(face) and face or nil)
+    local path = self:GetFontPath(nil)
     local size = tonumber(spec.size) or tonumber(defaults.size)
         or (fs and tonumber(fs.fontSize)) or 12
     local flags = spec.outline
@@ -677,7 +688,8 @@ function RC:UpdateAllFonts()
             seen[fontString] = true
             if fontString._rcFontSpec ~= nil then
                 self:ApplyFontSpec(fontString, fontString._rcFontSpec or nil, fontString._rcFontDefaults)
-            else
+            elseif fontString._rcFace == nil or fontString:GetFont() == fontString._rcFace then
+                -- (one given a face of its own since is not ours to redo)
                 local size = fontString._wrFontSize or fontString.wrFontSize or 12
                 local outline = fontString._wrFontOutline or fontString.wrFontOutline or "OUTLINE"
                 self:ApplyCustomFont(fontString, size, outline)

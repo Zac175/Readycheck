@@ -137,6 +137,11 @@ Systems\EquipEngine.lua
 Systems\AuraIndex.lua
 Systems\SpecDetection.lua
 Systems\RaidData\RaidConfigs.lua
+# Each game version's raids (TBC; Forever's slot is empty for now) and
+# the switch that puts them in place of Classic Era's at load.
+Systems\RaidData\RaidConfigsTBC.lua
+Systems\RaidData\RaidConfigsForever.lua
+Systems\RaidData\RaidFlavor.lua
 Systems\RaidData\RaidProfilesSystem.lua
 Systems\RaidData\NaxxDuplicateHandler.lua
 # Boss/add/trash name resolution, lifted out of TE_Triggers and TTK_Model

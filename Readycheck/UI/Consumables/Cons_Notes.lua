@@ -516,6 +516,7 @@ local TEXT = _sbc.TEXT
             local mTex = mBtn:CreateFontString(nil,"OVERLAY")
             mTex:SetPoint("CENTER",0,0)
             mTex:SetFontObject(GameFontNormalSmall)
+            RC:ApplyCustomFont(mTex, 10, "")
             mTex:SetText(rm.tex)
             local rmt = rm
             mBtn:SetScript("OnClick", function()
@@ -567,6 +568,26 @@ local TEXT = _sbc.TEXT
         zg     = "Zul'Gurub",
         onyxia = "Onyxia's Lair",
     }
+
+    -- another game version lists its own raids, bosses and trash (RaidFlavor.lua)
+    RC:OnRaidFlavor(function(raids)
+        for i = #BOSS_NOTES_RAIDS, 1, -1 do BOSS_NOTES_RAIDS[i] = nil end
+        for i = #TRASH_NOTES_RAIDS, 1, -1 do TRASH_NOTES_RAIDS[i] = nil end
+        for _, r in ipairs(raids) do
+            RAID_KEY_TO_NAME[r.code] = r.name
+            local rd = RC.raidData and RC.raidData[r.name]
+            local bosses = {}
+            for i, b in ipairs(rd and rd.bosses or {}) do bosses[i] = b end
+            BOSS_NOTES_RAIDS[#BOSS_NOTES_RAIDS + 1] = { key = r.code, label = RCL[r.abbr or r.name], bosses = bosses }
+            local mobs = {}
+            for _, s in ipairs(r.sections or {}) do
+                for _, m in ipairs(s[2]) do mobs[#mobs + 1] = m end
+            end
+            if #mobs > 0 then
+                TRASH_NOTES_RAIDS[#TRASH_NOTES_RAIDS + 1] = { key = r.code, label = RCL[r.abbr or r.name], mobs = mobs }
+            end
+        end
+    end)
 
     local function BuildRaidProfileSwitcher(parent, frame, currentRaid, rerenderKind, yPos)
         local raidName = RAID_KEY_TO_NAME[currentRaid.key]

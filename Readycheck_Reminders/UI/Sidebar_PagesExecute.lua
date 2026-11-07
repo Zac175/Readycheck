@@ -454,6 +454,10 @@ end
             ["Temple of Ahn'Qiraj"] = "Interface\\Icons\\INV_Misc_AhnQirajTrinket_01",
             ["Naxxramas"] = "Interface\\Icons\\Achievement_Boss_KelThuzad_01"
         }
+        -- another game version's raids (RaidFlavor.lua)
+        if self._raidFlavorApplied then
+            for _, r in ipairs(self:FlavorRaids()) do raidIcons[r.name] = r.icon end
+        end
 
         if currentTab == "settings" then
             local settingsCard = self:CreateSettingsCard(parent, yPos, RCL["General"])
@@ -506,7 +510,7 @@ end
 
                 local selRaid = frame.executeAddKillRaid
                 if not (selRaid and self.raidMobConfigs and self.raidMobConfigs[selRaid]) then
-                    selRaid = "Naxxramas"
+                    selRaid = self._raidFlavorApplied and self:RaidNames()[1] or "Naxxramas"
                     if not (self.raidMobConfigs and self.raidMobConfigs[selRaid]) then
                         selRaid = self.raidMobConfigs and next(self.raidMobConfigs) or "Naxxramas"
                     end
@@ -581,7 +585,8 @@ end
                 local raidDD = self.UI:CreateScrollableDropdown(addCard, 165, "", 8)
                 raidDD:SetPoint("LEFT", raidLbl, "RIGHT", 8, 0)
                 local raidItems = {}
-                for _, rn in ipairs({ "Molten Core", "Blackwing Lair", "Temple of Ahn'Qiraj", "Naxxramas" }) do
+                for _, rn in ipairs(self._raidFlavorApplied and self:RaidNames()
+                        or { "Molten Core", "Blackwing Lair", "Temple of Ahn'Qiraj", "Naxxramas" }) do
                     if self.raidMobConfigs and self.raidMobConfigs[rn] then
                         raidItems[#raidItems + 1] = { text = rn, value = rn }
                     end
@@ -896,6 +901,10 @@ end
                     ["Temple of Ahn'Qiraj"] = 3,
                     ["Naxxramas"] = 4
                 }
+                -- another game version's raids (RaidFlavor.lua)
+                if self._raidFlavorApplied then
+                    for i, n in ipairs(self:RaidNames()) do raidOrder[n] = i end
+                end
                 local sortedRaids = {}
                 for raidName in pairs(raidData) do
                     table.insert(sortedRaids, raidName)
@@ -1507,6 +1516,11 @@ end
                 "Molten Core", "Blackwing Lair", "Temple of Ahn'Qiraj",
                 "Naxxramas", "Onyxia's Lair", "Zul'Gurub", "Ruins of Ahn'Qiraj",
             }
+            -- another game version's raids (RaidFlavor.lua)
+            if self._raidFlavorApplied then
+                RAID_ORDER = self:RaidNames()
+                for _, r in ipairs(self:FlavorRaids()) do RAID_SHORT[r.name] = r.abbr end
+            end
 
             local validRaids = {}
             for _, rn in ipairs(RAID_ORDER) do
@@ -1619,9 +1633,9 @@ end
     local TTK_PV_W, TTK_PV_H = 106, 56   -- update sizes the canvas to the HUD
     local TTK_NONE = { style = "none" }
     local TTK_SAMPLES = {
-        fight = { boss = "Patchwerk", exp = "3:05", expSec = 185, conf = 82, left = "2:41", leftSec = 161, hp = 64, pace = "6% faster", paceKey = "paceFaster" },
-        slow  = { boss = "Thaddius", exp = "4:10", expSec = 250, conf = 71, left = "3:52", leftSec = 232, hp = 81, pace = "9% slower", paceKey = "paceSlower" },
-        new   = { boss = "Sapphiron", nodata = true, left = "--:--" },
+        fight = { boss = RC:RaidSample("boss") or "Patchwerk", exp = "3:05", expSec = 185, conf = 82, left = "2:41", leftSec = 161, hp = 64, pace = "6% faster", paceKey = "paceFaster" },
+        slow  = { boss = RC:RaidSample("boss2") or "Thaddius", exp = "4:10", expSec = 250, conf = 71, left = "3:52", leftSec = 232, hp = 81, pace = "9% slower", paceKey = "paceSlower" },
+        new   = { boss = RC:RaidSample("boss3") or "Sapphiron", nodata = true, left = "--:--" },
     }
     local function TTKPreviewUpdate(canvas, P)
         local T = RC.TTKDisplay
@@ -1988,13 +2002,30 @@ end
             {key = "AQ40", name = "Temple of Ahn'Qiraj", short = "AQ40"},
             {key = "Naxx", name = "Naxxramas", short = "Naxx"}
         }
+        -- another game version's raids (RaidFlavor.lua)
+        if self._raidFlavorApplied then
+            raids = {}
+            for i, r in ipairs(self:FlavorRaids()) do
+                raids[i] = { key = r.abbr or r.code, name = r.name, short = r.abbr or r.code }
+            end
+        end
 
-        if not frame.classicMultiplierTab then
-            frame.classicMultiplierTab = "MC"
+        local known = false
+        for _, raid in ipairs(raids) do
+            if raid.key == frame.classicMultiplierTab then known = true end
+        end
+        if not known then
+            frame.classicMultiplierTab = raids[1] and raids[1].key or "MC"
         end
 
         local tabX = 10
+        local rowRight = (parent.GetWidth and parent:GetWidth() or 0) - 10
         for _, raid in ipairs(raids) do
+            -- nine TBC raids wrap onto a second row
+            if tabX > 10 and rowRight > 0 and tabX + 68 > rowRight then
+                tabX = 10
+                yPos = yPos - 28
+            end
             local isSelected = (frame.classicMultiplierTab == raid.key)
 
             local tabBtn = self.UI:CreateStyledButton(parent, raid.short, 68, 24)
@@ -2027,7 +2058,7 @@ end
         end
 
         if not selectedRaid then
-            selectedRaid = "Molten Core"
+            selectedRaid = raids[1] and raids[1].name or "Molten Core"
         end
 
         local bossCard = self:CreateSettingsCard(parent, yPos, selectedRaid)

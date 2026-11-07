@@ -486,6 +486,16 @@ RC.raidInstanceIDs = {
     ["Ruins of Ahn'Qiraj"]  = 509,
 }
 
+-- fn(raids) runs once another game version's raid list has replaced
+-- Classic Era's (RC:ApplyRaidFlavor, RaidFlavor.lua), so a file holding
+-- its own raid tables can add that version's raids. Never runs on Era.
+function RC:OnRaidFlavor(fn)
+    if self._raidFlavorApplied then fn(self._flavorRaids) return end
+    if self._raidFlavorApplied == false then return end
+    self._raidFlavorHooks = self._raidFlavorHooks or {}
+    self._raidFlavorHooks[#self._raidFlavorHooks + 1] = fn
+end
+
 -- Canonical raid name (an RC.availableRaids string) for the raid instance
 -- the player is standing in, or nil anywhere else. Only called from the
 -- debounced visibility checks, so no caching.

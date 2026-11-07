@@ -205,6 +205,7 @@ RC.SETTINGS = {
     { key = "statsBarLook", cat = "statsBar", label = RCL["Stats bar look"] },
     { key = "reminderPopup", cat = "general", label = RCL["Reminder popup layout"] },
     { key = "consumeRemindGlow", cat = "consumablesHelper", label = RCL["Raid consume reminder glow"] },
+    { key = "consumeRemind", cat = "consumablesHelper", label = RCL["Raid consume reminders"] },
 }
 
 -- Settings that deliberately never export or sync, with the reason. Listed
@@ -1624,3 +1625,9 @@ RC.SETTING_FIELD_LABELS["consumeRemindGlow.depth"]     = RCL["Consume reminder p
 RC.SETTING_FIELD_LABELS["consumeRemindGlow.lines"]     = RCL["Consume reminder glow lines"]
 RC.SETTING_FIELD_LABELS["consumeRemindGlow.length"]    = RCL["Consume reminder glow line length"]
 RC.SETTING_FIELD_LABELS["consumeRemindGlow.lineSpeed"] = RCL["Consume reminder glow line speed"]
+
+-- Raid consume reminders: on/off, bags only, and the ticked items (one unit)
+RC.SETTING_OPAQUE_PATHS["consumeRemind.items"] = true
+RC.SETTING_FIELD_LABELS["consumeRemind.enabled"]    = RCL["Raid consume reminders on"]
+RC.SETTING_FIELD_LABELS["consumeRemind.onlyInBags"] = RCL["Raid consume reminders: only what is in my bags"]
+RC.SETTING_FIELD_LABELS["consumeRemind.items"]      = RCL["Raid consume reminder items"]

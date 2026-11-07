@@ -578,7 +578,7 @@ end
         end
 
     elseif event == "ENCOUNTER_START" then
-        local _, encounterName = ...
+        local encounterID, encounterName = ...
         RC:DebugPrint("ENCOUNTER_START: " .. (encounterName or "?"), "trigger")
 
         -- the next boss is engaged: a gear set picker still up is stale
@@ -588,7 +588,7 @@ end
         -- key, so match lowercased with a leading "the" stripped. On no match the
         -- raw encounter name is used and raidName stays nil.
         local bossName, raidName = nil, nil
-        -- only a configured (Classic Era) raid boss is matched (Core_Flavor)
+        -- only a configured raid boss of this game version is matched (Core_Flavor)
         if encounterName and RC.raidMobConfigs and RC:FeatureOn("raid_configs") then
             local function strip(s) return s:lower():gsub("^the%s+", "") end
             local lookup = strip(encounterName)
@@ -601,6 +601,11 @@ end
                     end
                 end
                 if bossName then break end
+            end
+            -- a version whose list carries encounter ids (TBC) also matches by id
+            if not bossName and RC.RaidBossByEncounterId then
+                local hit = RC:RaidBossByEncounterId(encounterID)
+                if hit then bossName, raidName = hit.name, hit.raid end
             end
         end
         bossName = bossName or encounterName

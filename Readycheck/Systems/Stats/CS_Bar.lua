@@ -706,6 +706,8 @@ local function MeasureText(fs, text)
         -- one hidden string for the live bar and the preview alike
         m = UIParent:CreateFontString(nil, "OVERLAY")
         m:Hide()
+        -- (it takes the font of whatever text it measures)
+        m._rcOwnFace = "hidden measuring string: wears the font of the text it measures"
         CS._barMeasure = m
     end
     local path, size, flags = fs:GetFont()

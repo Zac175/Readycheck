@@ -447,7 +447,7 @@ local function InitializeRaidProfiles()
                 ["Zul'Gurub"] = "zg", ["Onyxia's Lair"] = "onyxia",
                 ["Ruins of Ahn'Qiraj"] = "aq20",
             }
-            local short = shortFromLong[raidName]
+            local short = shortFromLong[raidName] or RC:RaidCode(raidName)
             local moved = 0
             local function rekeyMap(map, matchFn, buildFn)
                 if type(map) ~= "table" then return end
@@ -875,7 +875,9 @@ local function InitializeRaidProfiles()
         end
         local fixed = false
         for raidName, structure in pairs(RC.db.raidProfiles) do
-            if type(structure) == "table" and type(structure.profiles) == "table" then
+            -- another game version's raids are left as saved
+            if type(structure) == "table" and type(structure.profiles) == "table"
+               and RC:RaidShownHere(raidName) then
                 local curName = structure.activeProfile
                 local cur = curName and structure.profiles[curName]
                 if Score(cur) <= 0 then
@@ -923,7 +925,7 @@ local function InitializeRaidProfiles()
     local PICKER_GENERIC_ICON = "Interface\\Icons\\Spell_Shadow_DeathsEmbrace"
 
     local function PickerRaidIcon(raidName)
-        return PICKER_RAID_ICONS[raidName] or PICKER_GENERIC_ICON
+        return PICKER_RAID_ICONS[raidName] or RC:RaidIcon(raidName) or PICKER_GENERIC_ICON
     end
 
     -- Picker geometry (ZacUI grid): 30px title bar, 18px page margin,

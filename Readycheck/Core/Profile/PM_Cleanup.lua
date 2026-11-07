@@ -46,6 +46,9 @@ RC._pms = RC._pms or {}
             "routeMap",
             -- Tank Marks (testing), scrapped
             "tankMarks",
+            -- Raid consume reminders while in testing; carried into
+            -- consumeRemind first (RC:MigrateConsumeRemind)
+            "testConsumeRemind",
         },
         executeSettings = {
             "dpsProfiles",
@@ -306,6 +309,31 @@ RC._pms = RC._pms or {}
         return cleaned
     end
 
+    -- The raid consume reminders came out of testing: their settings move
+    -- from profile.testConsumeRemind to profile.consumeRemind, once, with
+    -- every pick kept. A consumeRemind that already has its own items (set
+    -- up live, or imported) wins and the old table just goes. Flask of the
+    -- Titans comes off a table that never had its one-time "titans off"
+    -- pass, as testing did on load.
+    function RC:MigrateConsumeRemind(profile)
+        if type(profile) ~= "table" or profile.testConsumeRemind == nil then return false end
+        local old = profile.testConsumeRemind
+        profile.testConsumeRemind = nil
+        if type(old) ~= "table" then return true end
+        local cur = profile.consumeRemind
+        if type(cur) == "table" and type(cur.items) == "table" then return true end
+        local new = (RC.DeepCopy and RC.DeepCopy(old)) or old
+        if type(new.items) ~= "table" then new.items = {} end
+        if not new.titansOff1 then new.items[13510] = nil end
+        new.titansOff1 = nil
+        local dflt = RC.defaults and RC.defaults.consumeRemind
+        for k, v in pairs(type(dflt) == "table" and dflt or {}) do
+            if new[k] == nil then new[k] = v end
+        end
+        profile.consumeRemind = new
+        return true
+    end
+
     function RC:AutoCleanupProfile(charKey)
     if self.db and self.db.raidRoute and self.db.raidRoute.reminderPos ~= nil then
         self.db.raidRoute.reminderPos = nil
@@ -333,6 +361,8 @@ RC._pms = RC._pms or {}
         RC._autoCleanupDone[charKey] = true
 
         local cleaned = 0
+        -- before the dead-field pass below drops the old key
+        if self:MigrateConsumeRemind(profile) then cleaned = cleaned + 1 end
 
         -- Bump this and add a new "if profileVersion < N then ... end" block
         -- below for each one-time migration; each block sets
@@ -1208,6 +1238,7 @@ RC._pms = RC._pms or {}
         local cleaned = 0
         local details = {}
 
+        if not dryRun then self:MigrateConsumeRemind(profile) end
         for _, field in ipairs(DEAD_FIELDS.root) do
             if profile[field] ~= nil then
                 if not dryRun then
