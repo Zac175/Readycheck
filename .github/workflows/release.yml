@@ -1,0 +1,73 @@
+# Releases Readycheck whenever the version in Readycheck/Readycheck.toc changes.
+#
+# Push a commit that bumps "## Version:" and this workflow:
+#   1. tags the commit with that version (e.g. 4.8.5),
+#   2. takes that version's notes from Readycheck_Extras/Changelog.lua,
+#   3. builds the zip and publishes it as a GitHub release, and to
+#      CurseForge / Wago when their keys are added to the repo's secrets
+#      (CF_API_KEY, WAGO_API_TOKEN) and their project ids are in the TOC.
+# Pushes that don't change the version do nothing.
+name: Release
+
+on:
+  push:
+    branches: [main, master]
+    paths: ["Readycheck/Readycheck.toc"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version
+        id: ver
+        run: |
+          v=$(grep -m1 -E '^## Version:' Readycheck/Readycheck.toc | sed -E 's/^## Version:[[:space:]]*//; s/[[:space:]\r]+$//')
+          if [ -z "$v" ]; then echo "No version in Readycheck.toc"; exit 1; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          # The version before this push (none on the very first push).
+          before="${{ github.event.before }}"
+          old=""
+          if [ -n "$before" ] && git cat-file -e "$before" 2>/dev/null; then
+            old=$(git show "$before:Readycheck/Readycheck.toc" 2>/dev/null | grep -m1 -E '^## Version:' | sed -E 's/^## Version:[[:space:]]*//; s/[[:space:]\r]+$//')
+          fi
+          if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then
+            echo "Version $v is already released - nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" != "workflow_dispatch" ] && { [ -z "$old" ] || [ "$old" = "$v" ]; }; then
+            echo "The version didn't change in this push ($v) - nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing $v (was ${old:-none})."
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag this version
+        if: steps.ver.outputs.new == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.version }}" -m "Readycheck ${{ steps.ver.outputs.version }}"
+          git push origin "${{ steps.ver.outputs.version }}"
+
+      - name: Write the release notes
+        if: steps.ver.outputs.new == 'true'
+        run: |
+          sudo apt-get install -y -qq lua5.1 >/dev/null
+          lua5.1 .github/tools/changelog_md.lua "${{ steps.ver.outputs.version }}" > CHANGELOG.md
+          cat CHANGELOG.md
+
+      - name: Build and publish
+        if: steps.ver.outputs.new == 'true'
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}

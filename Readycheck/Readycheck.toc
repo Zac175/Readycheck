@@ -6,6 +6,7 @@
 ## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
 ## SavedVariables: ReadycheckDB, WarriorReminderDB
 ## X-Category: Combat
+## X-Curse-Project-ID: 1359976
 ## OptionalDeps: LibSharedMedia-3.0, ElvUI
 
 # WoW Forever: the old API names, put back where that client removed them (nothing on Era)
