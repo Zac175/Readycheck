@@ -1169,4 +1169,7 @@ local function InitializeBossNotes()
     RC:DebugPrint("BossNotes module loaded (v2: per-raid/per-pack/nameplate)", "system")
 end
 
-C_Timer.After(0.5, InitializeBossNotes)
+-- not on a game version whose raids are not in Readycheck (Core_Flavor)
+if not (_G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("boss_notes")) then
+    C_Timer.After(0.5, InitializeBossNotes)
+end

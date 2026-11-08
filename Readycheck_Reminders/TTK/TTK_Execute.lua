@@ -1339,9 +1339,12 @@ local _ttk = RC._ttk
     RC:DebugPrint("Execute Calculator initialized", "execute")
     RC:DebugPrint("  Use /rc sim to test with reminders", "execute")
 
+-- not where the game hides enemy health (Core_Flavor): nothing loaded
+if not (_G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("ttk")) then
 C_Timer.After(0.1, function()
     local WR2 = _G.Readycheck
     if WR2 and WR2.LoadExecuteSettings then
         WR2:LoadExecuteSettings()
     end
 end)
+end

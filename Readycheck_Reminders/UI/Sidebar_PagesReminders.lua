@@ -39,8 +39,18 @@ local TEXT = _sbs.TEXT
     }
     local PV_W, PV_H = 100, 98   -- one 80 px icon; update sizes the canvas to the icons
 
+    -- another game version (Core_Flavor) samples only what loads there:
+    -- no Chronoboon (no world buffs to keep), no Kel'Thuzad's Frost Blast
+    -- (Classic Era's Naxxramas); a custom alert and a plain debuff instead
+    local SAMPLES_OTHER = {
+        { key = "deathwish", icon = "Interface\\Icons\\Spell_Shadow_DeathPact", text = "USE", color = "green" },
+        { key = "custom", icon = "Interface\\Icons\\INV_Misc_Bell_01", text = RCL["ALERT"], color = "gold" },
+        { key = "debuff", icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges", text = "REMOVE", color = "orange" },
+    }
     local function SampleList(P)
-        return SAMPLES[(P and P.mode) or "one"] or SAMPLES.one
+        local mode = (P and P.mode) or "one"
+        if mode == "several" and RC.Flavor and RC:Flavor() ~= "era" then return SAMPLES_OTHER end
+        return SAMPLES[mode] or SAMPLES.one
     end
 
     local function PreviewBuild(canvas, P)
@@ -509,7 +519,8 @@ local TEXT = _sbs.TEXT
             frame._rpStateMem=frame._rpStateMem or {}
             local sg,ss=self.UI:CustomAccess(PopupRoot,"states",nil,PopupChanged)
             local se=self.UI:CreateStateEditor(stCard,{ width=CardW(stCard), get=sg, set=ss,
-                states={ {id="ready",label=RCL["Ready to use (USE)"]}, {id="alert",label=RCL["Boon and custom alerts"]},
+                states={ {id="ready",label=RCL["Ready to use (USE)"]},
+                         {id="alert",label=RC:FeatureOn("chronoboon") and RCL["Boon and custom alerts"] or RCL["Custom alerts"]},
                          {id="remove",label=RCL["Remove a debuff (REMOVE)"]} },
                 defaults=RC.REMINDER_STATE_DEFAULTS, remember=frame._rpStateMem,
                 fields={ textColor=true, glow=true, desat=true, alpha=true, anim=true } })

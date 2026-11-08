@@ -1,8 +1,8 @@
 ## Interface: 11509, 20506, 16001
-## Title: |cffd6a640Readycheck|r |cff999999v4.9.0|r
+## Title: |cffd6a640Readycheck|r |cff999999v5.0.0|r
 ## Notes: The Complete Character Toolkit - reminders, consumables, gear, trinket swaps, TTK modeling and more
 ## Author: Zac
-## Version: 4.9.0
+## Version: 5.0.0
 ## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
 ## SavedVariables: ReadycheckDB, WarriorReminderDB
 ## X-Category: Combat
@@ -36,8 +36,14 @@ Locales\zhTW.lua
 
 # Core (must load first)
 Core\Core_Boot.lua
+# Hidden-value checks (WoW Forever's secret values); nothing on Era / TBC
+Core\Core_Secret.lua
 # Which client this is (Classic Era / TBC / Forever) and which features run on it.
 Core\Core_Flavor.lua
+# SETUP2: every CVar Readycheck writes goes through RC.CVar (recorded, put back
+# when the feature is off or on uninstall), and the one-time hints registry.
+Core\Core_CVar.lua
+Core\Core_Hints.lua
 # Stubs must load before anything that might call a companion method.
 Core\Core_Stubs.lua
 Core\Core_Position.lua
@@ -111,6 +117,7 @@ UI\Raids\Raids_Hotswap.lua
 UI\Raids\Raids_BulkTrash.lua
 UI\Raids\Raids_Nav.lua
 UI\Sidebar\Sidebar_Search.lua
+UI\Sidebar\Sidebar_SearchBox.lua
 UI\Raids\Raids_BossConfig.lua
 UI\Raids\Raids_AbilityPages.lua
 UI\Raids\Raids_Remote.lua

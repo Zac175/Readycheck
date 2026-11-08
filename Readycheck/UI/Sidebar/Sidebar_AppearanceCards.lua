@@ -235,9 +235,13 @@ local ColorPreviews = _sbs.ColorPreviews
         end
 
         local entries = {}
+        local CSo = RC.CharacterStats
         for _, statKey in ipairs(STATS_GRADIENT_ORDER) do
+            -- (no Buffs cell where there is no buff limit: Core_Flavor)
+            if not (CSo and CSo.StatOffHere and CSo.StatOffHere(statKey)) then
             table_insert(entries, MakeStatsGradientEntry(statKey, "low"))
             table_insert(entries, MakeStatsGradientEntry(statKey, "high"))
+            end
         end
 
         local card
@@ -409,7 +413,7 @@ local ColorPreviews = _sbs.ColorPreviews
             { custom = BuildStatsBarCard },
         },
         raid = {
-            { cat = "raids", label = RCL["Raid config"],
+            { cat = "raids", label = RCL["Raid config"], feature = "raid_configs",
               desc = RCL["Boss rows, enabled/disabled states and ability boxes on the raid pages."] },
             { cat = "consumables", label = RCL["Consumables checker"],
               desc = RCL["The raid-ready consumables checklist: items, counts and hover."] },
@@ -417,17 +421,17 @@ local ColorPreviews = _sbs.ColorPreviews
               desc = RCL["Gear set rows, slots and equip states."] },
             { cat = "battleShoutReminder", label = RCL["Battle Shout reminder"],
               desc = RCL["The Battle Shout uptime reminder display."] },
-            { cat = "battleShoutPartyTracker", label = RCL["Battle Shout party tracker"],
+            { cat = "battleShoutPartyTracker", label = RCL["Battle Shout party tracker"], feature = "battle_shout_party",
               desc = RCL["The party coverage tracker rows."] },
             -- The trackers live in Readycheck_Reminders, which loads
             -- after this file, so the gate is checked at render time.
             { cat = "auraTracker", label = RCL["Buff & debuff trackers"],
               desc = RCL["The raid buff and boss debuff timer lists: frame, stack counts and row stripe."],
               whenAddon = "Readycheck_Reminders" },
-            { custom = BuildPushoffCard },
+            { custom = BuildPushoffCard, feature = "buff_pushoff" },
             { cat = "nameplate", label = RCL["Nameplate auras"],
               desc = RCL["Aura icons and text drawn on enemy nameplates."] },
-            { custom = BuildTTKCard },
+            { custom = BuildTTKCard, feature = "ttk" },
             { cat = "trinketSwap", label = RCL["Trinket swap"],
               desc = RCL["Trinket auto-swap indicators and queue markers."] },
         },
@@ -441,10 +445,18 @@ local ColorPreviews = _sbs.ColorPreviews
         bars = { { cat = "actionBars", label = RCL["Shared Bar Elements"] }, { cat = "weaponBar", label = RCL["Weapon Bar"] },
                  { cat = "consumablesBar", label = RCL["Consumables Bar"] }, { cat = "potionsBar", label = RCL["Potions Bar"] },
                  { own = "statsbar", label = RCL["Stats Bar"] } },
-        raid = { { cat = "raids", label = RCL["Raid Config"] }, { cat = "consumables", label = RCL["Consumables Checker"] },
+        raid = { { cat = "raids", label = RCL["Raid Config"], feature = "raid_configs" }, { cat = "consumables", label = RCL["Consumables Checker"] },
                  { cat = "gearManager", label = RCL["Gear Manager"] }, { cat = "battleShoutReminder", label = RCL["Battle Shout Reminder"] },
-                 { own = "pushoff", label = RCL["Buff Pushoff Alert"] } },
+                 { own = "pushoff", label = RCL["Buff Pushoff Alert"], feature = "buff_pushoff" } },
     }
+    -- a colour group of a feature this game version does not run is not
+    -- there (Core_Flavor: feature = its row)
+    local function Here(e) return not (e.feature and RC.FeatureOn and not RC:FeatureOn(e.feature)) end
+    local function Sections(tab)
+        local out = {}
+        for _, sec in ipairs(PANE_SECTIONS[tab]) do if Here(sec) then out[#out + 1] = sec end end
+        return out
+    end
     local PANE_W, SEC_H, LBL_H = 320, 55, 16
     local STATS_SAMPLE = { buffs = 15, hit = 4, crit = 25, ap = 1800, dmg = 104, durability = 76 }
     local PUSH_SAMPLE = { { name = "Flask of the Titans", icon = "Interface\\Icons\\INV_Potion_62", by = { "Battle Shout" } } }
@@ -454,14 +466,14 @@ local ColorPreviews = _sbs.ColorPreviews
     local function PaneHeight(tab) return SEC_H + LBL_H + 10 end
     local function PaneModes(tab)
         local out = {}
-        for _, sec in ipairs(PANE_SECTIONS[tab]) do out[#out + 1] = { id = SecId(sec), label = sec.label } end
+        for _, sec in ipairs(Sections(tab)) do out[#out + 1] = { id = SecId(sec), label = sec.label } end
         return out
     end
     local function PaneBuild(tab)
         return function(canvas, P)
             local y = -4
             P.store.secs = {}
-            for i, sec in ipairs(PANE_SECTIONS[tab]) do
+            for i, sec in ipairs(Sections(tab)) do
                 local lbl = RC:CreateFontString(canvas, "OVERLAY", nil, 10)
                 lbl:SetPoint("TOPLEFT", canvas, "TOPLEFT", 6, y)
                 lbl:SetText(sec.label)
@@ -548,8 +560,9 @@ local ColorPreviews = _sbs.ColorPreviews
         local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
         local card
         for _, entry in ipairs(list) do
-            if entry.whenAddon and isLoaded and not isLoaded(entry.whenAddon) then
-                -- Colour group for a feature this install does not have.
+            if (entry.whenAddon and isLoaded and not isLoaded(entry.whenAddon)) or not Here(entry) then
+                -- Colour group for a feature this install (or this game
+                -- version) does not have.
             elseif entry.custom then
                 yPos = entry.custom(self, parent, yPos, frame)
             else

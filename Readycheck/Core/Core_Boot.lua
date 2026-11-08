@@ -85,7 +85,14 @@ do
 
     function CP.ReadPlayerBuff(unit, i)
         if C_UnitAuras and C_UnitAuras.GetBuffDataByIndex then
-            local a = C_UnitAuras.GetBuffDataByIndex(unit, i)
+            local a
+            if issecretvalue then
+                -- (Forever can refuse the read outright while tainted: no aura)
+                local ok, r = pcall(C_UnitAuras.GetBuffDataByIndex, unit, i)
+                a = ok and r or nil
+            else
+                a = C_UnitAuras.GetBuffDataByIndex(unit, i)
+            end
             if not a then return nil end
             -- WoW Forever hides auras in combat ("secret" values that may
             -- not be compared): read that as no aura, like the shims

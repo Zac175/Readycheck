@@ -7,7 +7,10 @@
 ## LoadOnDemand: 1
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 
-SetupWizard.lua
+# SETUP2: the layout presets, then the step-by-step setup (SetupWizard.lua
+# stays on disk one release, not loaded).
+SetupLayouts.lua
+SetupWizard2.lua
 Tutorial.lua
 Changelog.lua
 ExtrasSidebar.lua

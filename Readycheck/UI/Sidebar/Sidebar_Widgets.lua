@@ -51,9 +51,18 @@ local _sbs = RC._sbs
         local accentColor = self:GetColor("ui", "accentGold")
         accent:SetVertexColor(accentColor.r, accentColor.g, accentColor.b, 0.8)
 
+        -- IN THE /rc WINDOW (5.0) a card is a section of rows on the panel,
+        -- as in ZacUI's /zui: no fill, ring or bar; the title at 12, white
+        -- 0.41, over a 1 px white 0.02 rule; under the rule the card's rows
+        -- on alternating black 0.10 / 0.20 bands (laid when the page sets
+        -- the card's height). Every row keeps the place the page gave it.
+        local S = RC.UI.S
+        local set = RC.UI:InSettings(parent)
+        card._rcSet = set or nil
+
         if title then
             local titleText = self:CreateFontString(card, "OVERLAY", nil, 12)
-            titleText:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -9)
+            titleText:SetPoint("TOPLEFT", card, "TOPLEFT", set and 1 or 12, set and -8 or -9)
             titleText:SetText(title)
             local titleColor = self:GetColor("text", "gold")
             titleText:SetTextColor(titleColor.r, titleColor.g, titleColor.b)
@@ -64,6 +73,16 @@ local _sbs = RC._sbs
         card.bgTexture = bgTexture
         card.accent = accent
         card.contentY = -32 -- default first-row offset for callers building rows manually
+
+        if set then
+            local rule = card:CreateTexture(nil, "BORDER")
+            rule:SetTexture(FLAT)
+            rule:SetHeight(1)
+            rule:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -S.SECTION_RULE_Y)
+            rule:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, -S.SECTION_RULE_Y)
+            card.rule = rule
+            card.bands = {}
+        end
 
         -- Pages must call this once layout is done; height feeds directly into the
         -- outer scrollbar math via UpdateSidebarScrollbar.
@@ -104,14 +123,87 @@ local _sbs = RC._sbs
             end
             return low and (top - low) or nil
         end
+        -- THE ROW BANDS: what the page put under the rule, grouped into rows
+        -- by where it sits (pieces that overlap in height are one row), each
+        -- row a band from halfway to the row above to halfway to the next.
+        local function LayBands()
+            if not card._rcSet then return end
+            local top = card:GetTop()
+            local h = card:GetHeight() or 0
+            for _, b in ipairs(card.bands) do b:Hide() end
+            if not top or h <= S.SECTION_RULE_Y + 2 then return end
+            local spans = {}
+            local function Take(o)
+                if o == card.bgTexture or o == card.accent or o == card.title or o == card.rule or not o:IsShown() then return end
+                if AnchoredToBottom(o) or (o.GetNumPoints and o:GetNumPoints() or 0) == 0 then return end
+                local b, t = o:GetBottom(), o:GetTop()
+                if not (b and t) or t - b < 4 then return end
+                local y0, y1 = top - t, top - b
+                if y1 <= S.SECTION_RULE_Y + 1 or y0 >= h then return end
+                spans[#spans + 1] = { math.max(y0, S.SECTION_RULE_Y + 1), math.min(y1, h) }
+            end
+            for _, o in ipairs({ card:GetRegions() }) do
+                if not (o.GetObjectType and o:GetObjectType() == "Texture" and (o:GetDrawLayer() == "BACKGROUND" or o:GetDrawLayer() == "BORDER")) then Take(o) end
+            end
+            for _, o in ipairs({ card:GetChildren() }) do
+                if (o.GetNumPoints and o:GetNumPoints() or 0) == 0 then
+                    for _, k in ipairs({ o:GetChildren() }) do Take(k) end
+                elseif not o._rcLockCover then
+                    Take(o)
+                end
+            end
+            if #spans == 0 then return end
+            table.sort(spans, function(a, b) return a[1] < b[1] end)
+            local rows = {}
+            for _, sp in ipairs(spans) do
+                local last = rows[#rows]
+                if last and sp[1] < last[2] - 2 then
+                    if sp[2] > last[2] then last[2] = sp[2] end
+                else
+                    rows[#rows + 1] = { sp[1], sp[2] }
+                end
+            end
+            local from = S.SECTION_RULE_Y + 1
+            for i, row in ipairs(rows) do
+                local nxt = rows[i + 1]
+                local to = nxt and math.floor((row[2] + nxt[1]) / 2 + 0.5) or h
+                local band = card.bands[i]
+                if not band then
+                    band = card:CreateTexture(nil, "BACKGROUND", nil, 1)
+                    band:SetTexture(FLAT)
+                    card.bands[i] = band
+                end
+                band:ClearAllPoints()
+                band:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -from)
+                band:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, -from)
+                band:SetHeight(math.max(1, to - from))
+                band:SetVertexColor(RC.UI:SCol("shade", (i % 2 == 1) and S.ROW_ODD or S.ROW_EVEN))
+                band:Show()
+                from = to
+            end
+        end
+        card.LayBands = LayBands
+
         function card:SetContentHeight(h)
             local measured = ContentBottom()
             if measured and measured > 0 and measured < h then h = measured end
             self:SetHeight(math.max(36, h + 14))
+            if self._rcSet then LayBands() end
         end
 
         -- Repaints fill/ring/accent/title from the theme (RefreshUIColors).
         function card:Repaint()
+            if self._rcSet then
+                self.bgTexture:SetVertexColor(0, 0, 0, 0)
+                RC.UI:UpdateBorderColor(self.border, RC:GetColor("ui", "borderNormal"), 0)
+                self.accent:SetVertexColor(0, 0, 0, 0)
+                self.rule:SetVertexColor(RC.UI:SCol("text", S.SECTION_RULE_A))
+                if self.title then self.title:SetTextColor(RC.UI:SCol("text", S.SECTION_A)) end
+                for i, b in ipairs(self.bands) do
+                    b:SetVertexColor(RC.UI:SCol("shade", (i % 2 == 1) and S.ROW_ODD or S.ROW_EVEN))
+                end
+                return
+            end
             local cb = RC:GetColor("ui", "cardBackground")
             self.bgTexture:SetVertexColor(cb.r, cb.g, cb.b, cb.a or 1)
             RC.UI:UpdateBorderColor(self.border, RC:GetColor("ui", "borderNormal"), 0.55)
@@ -124,6 +216,7 @@ local _sbs = RC._sbs
         end
 
         card._rcSettingsCard = true
+        if set then card:Repaint() end
         return card
     end
 
@@ -151,6 +244,7 @@ local _sbs = RC._sbs
                 shade:SetAllPoints()
                 shade:SetTexture(FLAT)
                 shade:SetVertexColor(shadeCol.r, shadeCol.g, shadeCol.b, 0.72)
+                if card._rcSet then shade:SetVertexColor(RC.UI:SCol("windowBackground", 0.72)) end
                 if first and message then
                     -- the note sits in its own solid strip, so it never lies
                     -- on top of a dimmed row or the card title: at the top of
@@ -162,6 +256,7 @@ local _sbs = RC._sbs
                     band:SetHeight(20)
                     band:SetTexture(FLAT)
                     band:SetVertexColor(shadeCol.r, shadeCol.g, shadeCol.b, 0.97)
+                    if card._rcSet then band:SetVertexColor(RC.UI:SCol("windowBackground", 0.97)) end
                     local note = self:CreateFontString(cover, "OVERLAY", nil, 10)
                     note:SetDrawLayer("OVERLAY", 2)
                     note:SetPoint("LEFT", band, "LEFT", 14, 0)
@@ -254,7 +349,62 @@ local _sbs = RC._sbs
     -- and a 1px gold rule (alpha 0.6) across the bottom. Height is
     -- measured from the subtitle so a two-line sentence never has the
     -- rule drawn through it. Returns (frame, nextY).
+    -- In the /rc window (5.0) it is the window's header, as in ZacUI's
+    -- /zui: the title at 36, white, 20 under the header's top (35 under
+    -- the window's when it sits 15 down, as pages put it), the line under
+    -- it at 14, white 0.53, two lines at most, no icon and no rule; 113
+    -- tall at least, so pinned (UIF_Preview) the page starts at 138.
+    local function SetPageHeader(self, parent, yPos, title, subtitle, iconPath)
+        local S = RC.UI.S
+        local headerFrame = CreateFrame("Frame", nil, parent)
+        headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, yPos)
+        headerFrame:SetPoint("RIGHT", parent, "RIGHT", -18, 0)
+        headerFrame._rcSet = true
+        local titleText = self:CreateFontString(headerFrame, "OVERLAY", nil, S.F_TITLE)
+        titleText:SetPoint("TOPLEFT", headerFrame, "TOPLEFT", 0, -20)
+        titleText:SetPoint("RIGHT", headerFrame, "RIGHT", 0, 0)
+        titleText:SetJustifyH("LEFT")
+        titleText:SetWordWrap(false)
+        titleText:SetText(title)
+        headerFrame.title = titleText
+        local need = 20 + math.ceil(titleText:GetStringHeight() or S.F_TITLE) + 16
+        if subtitle then
+            local subtitleText = self:CreateFontString(headerFrame, "OVERLAY", nil, S.F_DESC)
+            subtitleText:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 2, -12)
+            subtitleText:SetPoint("RIGHT", headerFrame, "RIGHT", 0, 0)
+            subtitleText:SetJustifyH("LEFT")
+            subtitleText:SetWordWrap(true)
+            if subtitleText.SetMaxLines then subtitleText:SetMaxLines(2) end
+            subtitleText:SetText(subtitle)
+            headerFrame.subtitle = subtitleText
+            need = need + 12 + math.ceil(math.min(subtitleText:GetStringHeight() or S.F_DESC, 2.6 * S.F_DESC))
+        end
+        local height = math.max(S.HEADER - 25, need)
+        headerFrame:SetHeight(height)
+        -- (kept, hidden: older code reads them)
+        if iconPath then
+            local icon = headerFrame:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(1, 1)
+            icon:SetPoint("TOPLEFT")
+            icon:Hide()
+            headerFrame.icon = icon
+        end
+        local line = headerFrame:CreateTexture(nil, "BORDER")
+        line:SetPoint("BOTTOMLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
+        line:SetPoint("BOTTOMRIGHT", headerFrame, "BOTTOMRIGHT", 0, 0)
+        line:SetHeight(1)
+        line:Hide()
+        headerFrame.accentLine = line
+        function headerFrame:Repaint()
+            self.title:SetTextColor(RC.UI:SCol("text", 1))
+            if self.subtitle then self.subtitle:SetTextColor(RC.UI:SCol("text", S.DIM_A)) end
+        end
+        headerFrame:Repaint()
+        return headerFrame, yPos - height - 12
+    end
+
     function RC:CreateSettingsPageHeader(parent, yPos, title, subtitle, iconPath)
+        if RC.UI:InSettings(parent) then return SetPageHeader(self, parent, yPos, title, subtitle, iconPath) end
         local FLAT = (RC.UI and RC.UI.FLAT) or "Interface\\Buttons\\WHITE8X8"
         local headerFrame = CreateFrame("Frame", nil, parent)
         headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, yPos)
@@ -325,10 +475,12 @@ local _sbs = RC._sbs
     function RC:BuildSettingsTabBar(parent, yPos, tabs, selectedKey, onClick)
         local defs = {}
         for i, td in ipairs(tabs) do defs[i] = { key = td[1], label = td[2] } end
+        -- (in the /rc window: the window's 40 px tab bar, 10 above the page)
+        local bar = RC.UI:InSettings(parent)
         local _, newY = RC.UI:CreateTabGroup(parent, {
             y = yPos, tabs = defs, selected = selectedKey, onClick = onClick,
-            inset = 18,
-            advance = 22 + 12, -- tab height (22) + gap before content (12)
+            inset = 18, bar = bar,
+            advance = bar and (RC.UI.S.TABS + RC.UI.S.TOP_PAD) or (22 + 12), -- tab height + gap before content
         })
         return newY
     end

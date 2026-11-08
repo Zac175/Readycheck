@@ -1126,7 +1126,7 @@ function GM:UpdateMenuCooldowns()
             if itemID then
                 local start, duration
                 if btn.itemData.invSlot and btn.itemData.invSlot >= 1 then
-                    start, duration = GetInventoryItemCooldown("player", btn.itemData.invSlot)
+                    start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", btn.itemData.invSlot))
                 else
                     start, duration = RC:GetItemCooldownSafe(itemID)
                 end

@@ -49,6 +49,33 @@ local UnitClassification, UnitLevel = UnitClassification, UnitLevel
 local GetWeaponEnchantInfo = GetWeaponEnchantInfo
 local UnitAttackPower, UnitAttackSpeed = UnitAttackPower, UnitAttackSpeed
 local GetCritChance, GetHitModifier = GetCritChance, GetHitModifier
+-- (2026-11-07) WoW Forever hands your own power, attack power, attack
+-- speed and stats back hidden too, and other units' casts: a hidden number
+-- reads as 0 and a hidden cast as no cast, so the condition is simply not met.
+if issecretvalue then
+    local function Zero(fn)
+        return fn and function(...)
+            local a, b, c, d, e = fn(...)
+            if issecretvalue(a) then a = 0 end
+            if issecretvalue(b) then b = 0 end
+            if issecretvalue(c) then c = 0 end
+            if issecretvalue(d) then d = 0 end
+            if issecretvalue(e) then e = 0 end
+            return a, b, c, d, e
+        end
+    end
+    UnitPower, UnitPowerMax = Zero(UnitPower), Zero(UnitPowerMax)
+    UnitAttackPower, UnitAttackSpeed = Zero(UnitAttackPower), Zero(UnitAttackSpeed)
+    GetCritChance, GetHitModifier = Zero(GetCritChance), Zero(GetHitModifier)
+    local function NoCast(fn)
+        return fn and function(...)
+            local t = { fn(...) }
+            for i = 1, 10 do if issecretvalue(t[i]) then return nil end end
+            return unpack(t, 1, 10)
+        end
+    end
+    UnitCastingInfo, UnitChannelInfo = NoCast(UnitCastingInfo), NoCast(UnitChannelInfo)
+end
 local IsInRaid, IsInGroup, IsInInstance = IsInRaid, IsInGroup, IsInInstance
 local C_Timer, loadstring, pcall = C_Timer, loadstring, pcall
 
@@ -443,7 +470,7 @@ local function InitializeCustomReminders()
             end
 
             if r.customNpcIds and #r.customNpcIds > 0 then
-                local guid = UnitGUID("target")
+                local guid = Readycheck.SafeGUID("target")
                 if guid then
                     local npcId = tonumber(guid:match("%-(%d+)%-%x+$"))
                     if npcId then
@@ -495,14 +522,14 @@ local function InitializeCustomReminders()
         elseif itemId then
             local eq = cdEquipSlot[itemId]
             if eq and GetInventoryItemID("player", eq) == itemId then
-                local s, d = GetInventoryItemCooldown("player", eq)
+                local s, d = Readycheck.PlainCD(GetInventoryItemCooldown("player", eq))
                 return s, d
             end
             cdEquipSlot[itemId] = nil
             for slot = 1, 19 do
                 if GetInventoryItemID("player", slot) == itemId then
                     cdEquipSlot[itemId] = slot
-                    local s, d = GetInventoryItemCooldown("player", slot)
+                    local s, d = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
                     return s, d
                 end
             end
@@ -577,11 +604,11 @@ local function InitializeCustomReminders()
             if not id then return false end
             local ItemSpell = (C_Item and C_Item.GetItemSpell) or GetItemSpell
             if ItemSpell and not ItemSpell(id) then return false end
-            local start, duration = GetInventoryItemCooldown("player", slot)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
             return not start or start == 0 or (GetTime() - start) >= duration
 
         elseif cond == "item_on_cd" then
-            local start, duration = GetInventoryItemCooldown("player", slot)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
             return start and start > 0 and duration and (start + duration - GetTime()) > 0
 
         elseif cond == "has_temp_enchant" then

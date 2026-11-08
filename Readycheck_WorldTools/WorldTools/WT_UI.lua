@@ -531,7 +531,7 @@ local function BuildSummonSection(self, parent, yPos, Rerender)
         as.enabled = v
     end)
     local summonMark = RC.UI:MarkCard(card)
-    cy = AddCheck(card, cy, "Always accept summon (ignore buff triggers)", as.alwaysAccept == true, function(v)
+    cy = AddCheck(card, cy, worldBuffs and "Always accept summon (ignore buff triggers)" or RCL["Always accept summon"], as.alwaysAccept == true, function(v)
         as.alwaysAccept = v
     end)
     cy = AddCheck(card, cy, "Taxi PVP drop (accept when PVP flag drops on a taxi)", as.taxiPvpDrop == true, function(v)
@@ -563,8 +563,8 @@ local function BuildSummonSection(self, parent, yPos, Rerender)
     winBox:SetPoint("TOPLEFT", card, "TOPLEFT", math.max(265, 15 + math.ceil(winLbl:GetStringWidth() or 0) + 10), cy)
     cy = cy - 32
     if not worldBuffs then
-        local off = RC:FeatureOffNote("world_tools")
-        if off then cy = AddDesc(card, cy, RCL["Accepting on a fresh world buff:"] .. " " .. off) end
+        -- (no buff triggers where world buffs are off: Core_Flavor lists
+        -- why on the Game version page, nowhere else)
         RC.UI:BindDependents(summonCb, RC.UI:CardSince(card, summonMark))
         card:SetContentHeight(math.abs(cy))
         return yPos - card:GetHeight() - 15

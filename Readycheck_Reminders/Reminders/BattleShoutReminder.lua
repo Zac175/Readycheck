@@ -1,7 +1,8 @@
 ------------------------------------------------------------------------
 -- Readycheck - Battle Shout Reminder
 -- Two frames: a small missing/low-AP warning icon, and a party roster
--- tracker listing Battle Shout status and Bloodrage per unit.
+-- tracker listing Battle Shout status and Bloodrage per unit (not made on
+-- WoW Forever, where the shout reaches the whole raid: PartyTrackerOn).
 -- Both scan only warriors/rogues (BATTLE_SHOUT_CLASSES) and both poll on
 -- bounded tickers rather than any per-frame or high-frequency event.
 ------------------------------------------------------------------------
@@ -46,6 +47,18 @@ local function InitializeBattleShoutReminder()
         lastWarningState = false
     }
 
+    -- WoW Forever: Battle Shout reaches every raid member within 20 yards
+    -- (Core_Flavor battle_shout_party), so the party tracker is not made
+    -- there - no frame, ticker, timer or mover; the raid buff tracker shows
+    -- who has the shout - and the reminder can watch the whole raid
+    -- (trackScope "raid", its default there). Everywhere else both are as
+    -- they always were.
+    local function PartyTrackerOn()
+        return not (RC.FeatureOn and not RC:FeatureOn("battle_shout_party"))
+    end
+    local RAID_UNITS = {}
+    for i = 1, 40 do RAID_UNITS[i] = "raid" .. i end
+
     function RC:InitializeBattleShoutReminderDB()
         if not self.db.battleShoutReminder then
             self.db.battleShoutReminder = {}
@@ -80,6 +93,9 @@ local function InitializeBattleShoutReminder()
             greedSkipIfImpCleave = false,
             rangeCheck = false,
         }
+        -- "raid" = everyone in your raid (Forever only, where the shout
+        -- reaches them all); a choice already saved stays as it is
+        if not PartyTrackerOn() then defaults.trackScope = "raid" end
 
         for key, value in pairs(defaults) do
             if self.db.battleShoutReminder[key] == nil then
@@ -283,6 +299,8 @@ local function InitializeBattleShoutReminder()
 
                     if doRangeCheck and unit ~= "player" then
                         local _inRange, _checked = UnitInRange(unit)
+                        -- (WoW Forever hands the range back hidden: unknown)
+                        if RC.Hidden(_inRange, _checked) then _inRange, _checked = true, false end
                         if _checked and not _inRange then
                             outOfRange = outOfRange + 1
                             if wantNames then
@@ -322,7 +340,12 @@ local function InitializeBattleShoutReminder()
         -- still counts as covered - re-shouting over it would not help.)
         local selfOnly = (self.db.battleShoutReminder.trackScope == "self")
         if not selfOnly and (IsInRaid() or IsInGroup()) then
-            for _, unit in ipairs(self.battleShoutReminder.partyUnits) do
+            local units = self.battleShoutReminder.partyUnits
+            -- Forever, "My Raid": every raid member (raidN includes you)
+            if self.db.battleShoutReminder.trackScope == "raid" and not PartyTrackerOn() and IsInRaid() then
+                units = RAID_UNITS
+            end
+            for _, unit in ipairs(units) do
                 checkUnit(unit)
             end
         else
@@ -849,7 +872,7 @@ local function InitializeBattleShoutReminder()
                 self:StopBattleShoutReminderUpdates()
             end
         end
-        if self.db.battleShoutPartyTracker and self.db.battleShoutPartyTracker.enabled then
+        if PartyTrackerOn() and self.db.battleShoutPartyTracker and self.db.battleShoutPartyTracker.enabled then
             if self:ShouldShowPartyTracker() then
                 self:StartBattleShoutPartyTrackerUpdates()
             else
@@ -924,6 +947,7 @@ local function InitializeBattleShoutReminder()
     end
 
     function RC:ShouldShowPartyTracker()
+        if not PartyTrackerOn() then return false end
         if self._uiMoverActive then return true end
         if not PlayerIsWarrior() then return false end
         if not self.db.battleShoutPartyTracker or not self.db.battleShoutPartyTracker.enabled then
@@ -1104,6 +1128,7 @@ local function InitializeBattleShoutReminder()
 
     function RC:CreateBattleShoutPartyTrackerFrame()
         if self.battleShoutPartyTracker.frame then return end
+        if not PartyTrackerOn() then return end
         local db = self.db.battleShoutPartyTracker
 
         local frame = self:BuildBattleShoutTracker(UIParent, "WRBattleShoutPartyTrackerFrame")
@@ -1209,6 +1234,7 @@ local function InitializeBattleShoutReminder()
                     local hasBuff, remaining, apValue, expTime = self:UnitBattleShoutStatus(unit)
                     local belowThreshold = hasBuff and threshold > 0 and remaining <= threshold
                     local _inRng, _chkRng = UnitInRange(unit)
+                    if RC.Hidden(_inRng, _chkRng) then _inRng, _chkRng = true, false end   -- (WoW Forever)
                     local outOfRange = doRangeCheck and unit ~= "player"
                                        and _chkRng and not _inRng
 
@@ -1588,7 +1614,7 @@ local function InitializeBattleShoutReminder()
 
     RC:InitializeBattleShoutPartyTrackerDB()
     RC:CreateBattleShoutPartyTrackerFrame()
-    if RC.db.battleShoutPartyTracker and RC.db.battleShoutPartyTracker.enabled then
+    if PartyTrackerOn() and RC.db.battleShoutPartyTracker and RC.db.battleShoutPartyTracker.enabled then
         C_Timer.After(1.2, function()
             RC:StartBattleShoutPartyTrackerUpdates()
         end)

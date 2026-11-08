@@ -143,9 +143,9 @@ end
                     local deadTargetIsBoss = false
                     if UnitExists("target") and UnitIsDead("target") then
                         if RC.gearSwapState.engagedBossGUID then
-                            deadTargetIsBoss = (UnitGUID("target") == RC.gearSwapState.engagedBossGUID)
+                            deadTargetIsBoss = (Readycheck.SafeGUID("target") == RC.gearSwapState.engagedBossGUID)
                         elseif RC.gearSwapState.lastBossTarget then
-                            deadTargetIsBoss = (UnitName("target") == RC.gearSwapState.lastBossTarget)
+                            deadTargetIsBoss = (Readycheck.SafeName("target") == RC.gearSwapState.lastBossTarget)
                         end
                     end
 
@@ -186,7 +186,7 @@ end
             return
         end
 
-        local targetName = UnitName("target")
+        local targetName = Readycheck.SafeName("target")
         if targetName then
 
             if not InCombatLockdown()
@@ -416,7 +416,7 @@ end
                     C_Timer.After(1.0, function()
                         if InCombatLockdown() then return end
                         if not UnitExists("target") or UnitIsDead("target") then return end
-                        if UnitName("target") ~= capturedBoss then return end
+                        if Readycheck.SafeName("target") ~= capturedBoss then return end
                         RC:EquipGearSetFast(capturedSet, RC:GetOnTargetOverrideSlots(capturedBoss))
                         RC:DebugPrint(
                             "Re-equipping on-target set after self-buff combat exit: " .. capturedSet,
@@ -435,7 +435,7 @@ end
                     C_Timer.After(1.2, function()
                         if InCombatLockdown() then return end
                         if not UnitExists("target") or UnitIsDead("target") then return end
-                        if UnitName("target") ~= capturedBoss then return end
+                        if Readycheck.SafeName("target") ~= capturedBoss then return end
                         RC:ApplyBossForceEquipSlots(pendingSlots,
                             "deferred on-target (self-buff exit): " .. (pendingReason or "?"),
                             pendingEnch)
@@ -515,7 +515,7 @@ end
                 local sct = RC.spellCastTriggers
                 if sct then
                     if UnitExists("target") then
-                        local targetGUID = UnitGUID("target")
+                        local targetGUID = Readycheck.SafeGUID("target")
                         if targetGUID and sct.usedAbilities
                            and sct.usedAbilities[targetGUID] then
                             sct.usedAbilities[targetGUID][trinketKey] = nil
@@ -558,13 +558,13 @@ end
                and not InCombatLockdown()
                and UnitExists("target")
                and not UnitIsDead("target")
-               and UnitName("target") == bossName then
+               and Readycheck.SafeName("target") == bossName then
                 local capturedSet  = gs.lastEquippedSet
                 local capturedBoss = bossName
                 C_Timer.After(1.5, function()
                     if InCombatLockdown() then return end
                     if not UnitExists("target") or UnitIsDead("target") then return end
-                    if UnitName("target") ~= capturedBoss then return end
+                    if Readycheck.SafeName("target") ~= capturedBoss then return end
                     local gs2 = RC.gearSwapState
                     if gs2 and gs2.lastEquippedSet == capturedSet
                        and gs2.lastBossTarget == capturedBoss then

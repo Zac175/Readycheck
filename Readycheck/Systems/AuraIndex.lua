@@ -46,7 +46,8 @@ local buffById, buffByName, debuffById, debuffByName = {}, {}, {}, {}
 -- or used as a key); treated as the end of the list, like the shims do.
 local issecret = issecretvalue
 local function FromData(a, i)
-    if issecret ~= nil and (issecret(a.name) or issecret(a.spellId)) then return nil end
+    if issecret ~= nil and (issecret(a.name) or issecret(a.spellId) or issecret(a.expirationTime)
+        or issecret(a.duration) or issecret(a.applications)) then return nil end
     return {
         name = a.name, icon = a.icon, count = a.applications or a.charges or 0,
         dispelType = a.dispelName, duration = a.duration or 0,
@@ -69,7 +70,15 @@ local function Read(getData, unitAura)
     for i = 1, MAX_AURAS do
         local e
         if getData then
-            local a = getData("player", i)
+            local a
+            if _G.READYCHECK_IS_FOREVER then
+                -- (Forever can refuse the read outright: "Auras cannot be
+                -- accessed when secret while tainted" - the end of the list)
+                local ok, r = pcall(getData, "player", i)
+                a = ok and r or nil
+            else
+                a = getData("player", i)
+            end
             e = a and FromData(a, i)
         else
             e = FromUnitAura(i, unitAura("player", i))

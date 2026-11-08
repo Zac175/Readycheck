@@ -45,7 +45,7 @@ local function InitializeCooldownManager()
         for slot = 1, 19 do
             local equippedId = GetInventoryItemID("player", slot)
             if equippedId == itemId then
-                local start, duration = GetInventoryItemCooldown("player", slot)
+                local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
                 if start and start > 0 then
                     return start, duration
                 end
@@ -143,7 +143,7 @@ local function InitializeCooldownManager()
                     if IsPlayerSpell(id) then sid = id; break end
                 end
             end
-            local start, duration = GetSpellCooldown(sid)
+            local start, duration = Readycheck.PlainCD(GetSpellCooldown(sid))
             -- duration > 1.5 excludes global-cooldown blips, which also
             -- report a start/duration through this API but aren't a real cooldown.
             if start and duration and start > 0 and duration > 1.5 then
@@ -179,13 +179,13 @@ local function InitializeCooldownManager()
         -- Slots 13/14 are the two trinket slots; these two keys bypass
         -- abilityData entirely since trinkets are matched by slot, not spellId/itemId.
         if abilityKey == "trinket1" then
-            local start, duration = GetInventoryItemCooldown("player", 13)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", 13))
             if start and start > 0 and duration and duration > 1.5 then
                 return math.max(0, (start + duration) - currentTime)
             end
             return 0
         elseif abilityKey == "trinket2" then
-            local start, duration = GetInventoryItemCooldown("player", 14)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", 14))
             if start and start > 0 and duration and duration > 1.5 then
                 return math.max(0, (start + duration) - currentTime)
             end
@@ -263,7 +263,7 @@ local function InitializeCooldownManager()
 
         for abilityKey, abilityData in pairs(self.abilityData) do
             if abilityData.spellId then
-                local start, duration = GetSpellCooldown(abilityData.spellId)
+                local start, duration = Readycheck.PlainCD(GetSpellCooldown(abilityData.spellId))
                 if start and duration and start > 0 and duration > 1.5 then
                     self.cooldownTracker.abilityLastUsed[abilityKey] = {
                         timestamp = start,

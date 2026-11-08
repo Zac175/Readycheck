@@ -21,6 +21,7 @@ local NotifySettingChanged, WrapNotify = _uif.NotifySettingChanged, _uif.WrapNot
 local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNormal, GetBorderSelected, GetButtonConfiguredBG, GetButtonConfiguredHover, GetButtonDisabledBG, GetButtonHoverBG, GetButtonNormalBG, GetButtonPressedBG, GetButtonTextConfigured, GetButtonTextDisabled, GetButtonTextNormal, GetButtonTexture, GetCheckboxBG, GetCheckboxBorder, GetCheckboxCheckmark, GetCheckboxHoverBorder, GetCloseHover, GetScrollThumb, GetScrollTrack, GetSidebarSelected, GetSidebarTextNormal, GetSidebarTextSelected, GetTextGray, GetXHover, GetXNormal, RegisterTexture =
       _uif.BASE, _uif.C, _uif.FLAT, _uif.CreateProfessionalFontString, _uif.GetAccentGold, _uif.GetBorderNormal, _uif.GetBorderSelected, _uif.GetButtonConfiguredBG, _uif.GetButtonConfiguredHover, _uif.GetButtonDisabledBG, _uif.GetButtonHoverBG, _uif.GetButtonNormalBG, _uif.GetButtonPressedBG, _uif.GetButtonTextConfigured, _uif.GetButtonTextDisabled, _uif.GetButtonTextNormal, _uif.GetButtonTexture, _uif.GetCheckboxBG, _uif.GetCheckboxBorder, _uif.GetCheckboxCheckmark, _uif.GetCheckboxHoverBorder, _uif.GetCloseHover, _uif.GetScrollThumb, _uif.GetScrollTrack, _uif.GetSidebarSelected, _uif.GetSidebarTextNormal, _uif.GetSidebarTextSelected, _uif.GetTextGray, _uif.GetXHover, _uif.GetXNormal, _uif.RegisterTexture
 local GetTextNormal = _uif.GetTextNormal
+local S = _uif.S
     -- Returns a table of 4 edge textures (top/bottom/left/right) drawn
     -- OVERLAY on frame, colored from theme "borderNormal". Caller must
     -- keep the returned table if it wants to recolor via UpdateBorderColor.
@@ -172,9 +173,53 @@ local GetTextNormal = _uif.GetTextNormal
         if not bar or bar._rcScrollStyled then return bar end
         bar._rcScrollStyled = true
         opts = opts or {}
+        -- (a bar inside a page of the /rc window wears the window's bar)
+        if opts.settings == nil and bar.GetParent and RC.UI:InSettings(bar:GetParent()) then
+            opts = { settings = true, inset = opts.inset }
+        end
         local thumb = bar.thumb or (bar.GetThumbTexture and bar:GetThumbTexture())
         if not thumb then return bar end
         bar.thumb = thumb
+        -- THE /rc WINDOW'S BAR (opts.settings): a thin rail (white 0.02)
+        -- and thumb (white 0.27, 30 at least) in the middle of a wider hit
+        -- area; brighter while the mouse is on it or it is dragged
+        if opts.settings then
+            local w = opts.width or S.SCROLL_W
+            local trackA, thumbA = opts.track or S.SCROLL_TRACK_A, opts.thumb or S.SCROLL_THUMB_A
+            thumb:SetWidth(w)
+            if bar.bg then
+                bar.bg:ClearAllPoints()
+                bar.bg:SetPoint("TOP", bar, "TOP", 0, 0)
+                bar.bg:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
+                bar.bg:SetWidth(w)
+            end
+            if bar.border then RC.UI:UpdateBorderColor(bar.border, GetBorderNormal(), 0) end
+            local hot, drag = false, false
+            local function SPaint()
+                if bar.bg then bar.bg:SetVertexColor(RC.UI:SCol("text", trackA)) end
+                thumb:SetVertexColor(RC.UI:SCol("text", (hot or drag) and math_min(1, thumbA + 0.2) or thumbA))
+            end
+            bar._rcPaintThumb = SPaint
+            if bar.HookScript then
+                bar:HookScript("OnEnter", function() hot = true SPaint() end)
+                bar:HookScript("OnLeave", function() hot = false SPaint() end)
+                bar:HookScript("OnMouseDown", function() drag = true SPaint() end)
+                bar:HookScript("OnMouseUp", function() drag = false SPaint() end)
+            end
+            function bar:SizeThumb(contentH, viewH)
+                local bh = self:GetHeight() or 0
+                if not (contentH and viewH and contentH > 0 and bh > 0) then return end
+                local h = math_max(30, math_min(bh, bh * viewH / contentH))
+                thumb:SetHeight(math_floor(h + 0.5))
+            end
+            local oldRepaint = bar.Repaint
+            function bar:Repaint()
+                if oldRepaint then oldRepaint(self) end
+                SPaint()
+            end
+            SPaint()
+            return bar
+        end
         local w = bar:GetWidth() or 16
         local slim = math_max(4, math_floor(w - (opts.inset or 6)))
         thumb:SetWidth(slim)
@@ -228,6 +273,40 @@ local GetTextNormal = _uif.GetTextNormal
         end
         Paint()
         return bar
+    end
+
+    -- The /rc window's wheel: `step` a notch, eased (each frame a share of
+    -- what is left, 12 a second, done under 0.3 px). The easing runs only
+    -- while it is moving; a value set from elsewhere (a page change, a
+    -- jump) stops it where that put the bar.
+    function RC.UI:SmoothWheel(area, bar, step)
+        step = step or S.WHEEL
+        local target, last
+        local runner = CreateFrame("Frame", nil, area)
+        runner:Hide()
+        runner:SetScript("OnUpdate", function(self, dt)
+            local cur = bar:GetValue()
+            if last and math_abs(cur - last) > 0.01 then self:Hide() return end
+            local diff = target - cur
+            if math_abs(diff) < 0.3 then
+                bar:SetValue(target)
+                self:Hide()
+                return
+            end
+            last = cur + diff * math_min(1, S.LERP * (dt or 0.016))
+            bar:SetValue(last)
+        end)
+        runner:SetScript("OnHide", function() last = nil end)
+        area:SetScript("OnMouseWheel", function(_, delta)
+            local mn, mx = bar:GetMinMaxValues()
+            if (mx or 0) <= 0 then return end
+            local base = (runner:IsShown() and target) or bar:GetValue()
+            target = math_max(mn, math_min(mx, base - delta * step))
+            last = nil
+            runner:Show()
+        end)
+        area._rcWheel = runner
+        return runner
     end
 
     -- Chromeless X: two rotated 2px bars (.x1/.x2) and nothing else - no
@@ -493,8 +572,50 @@ local GetTextNormal = _uif.GetTextNormal
     --             text.buttonActive (button.isConfigured, see
     --             SetButtonConfigured / button:SetActive)
     -- Caller anchors and sizes further if defaults don't fit.
+    -- THE /rc WINDOW'S BUTTONS (self._rcSet): a warm dark fill, a white
+    -- edge and a white label at stepped alphas, brighter under the mouse;
+    -- "footer" and "close" are the footer's (the close one in the
+    -- accent), and fade 0.10 s between rest and hover.
+    local function Lerp(a, b, t) return a + (b - a) * t end
+    local function PaintSetButton(self, hot)
+        local st = self._rcSet
+        local t = self._rcFadeT or (hot and 1 or 0)
+        local text = RC:GetColor("settings", "text")
+        if not self:IsEnabled() then
+            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", S.BTN_BG_A * 0.5))
+            if self.text then self.text:SetTextColor(RC.UI:SCol("text", S.BTN_TXT_A * S.OFF_A)) end
+            if self.border then RC.UI:UpdateBorderColor(self.border, text, S.BTN_BRD_A * 0.5) end
+            return
+        end
+        local A = RC.UI:SAccent()
+        if st == "close" or self.isConfigured then
+            local fa = (st == "close") and S.FOOT_BG_A or Lerp(S.BTN_BG_A, S.BTN_BG_HA, t)
+            self.bg:SetVertexColor(RC.UI:SCol(st == "close" and "windowBackground" or "buttonBackground", fa))
+            local a = Lerp(S.CLOSE_A, 1, t)
+            if self.border then RC.UI:UpdateBorderColor(self.border, A, a) end
+            if self.text then self.text:SetTextColor(A.r, A.g, A.b, a) end
+        elseif st == "footer" then
+            self.bg:SetVertexColor(RC.UI:SCol("windowBackground", S.FOOT_BG_A))
+            if self.border then RC.UI:UpdateBorderColor(self.border, text, Lerp(S.FOOT_BRD_A, S.FOOT_BRD_HA, t)) end
+            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(S.FOOT_TXT_A, S.FOOT_TXT_HA, t))) end
+        else
+            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", Lerp(S.BTN_BG_A, S.BTN_BG_HA, t)))
+            if self.border then RC.UI:UpdateBorderColor(self.border, text, Lerp(S.BTN_BRD_A, S.BTN_BRD_HA, t)) end
+            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(S.BTN_TXT_A, S.BTN_TXT_HA, t))) end
+        end
+    end
     local function PaintStyledButton(self, hot)
         if not self.bg then return end
+        if self._rcSet then
+            local to = hot and 1 or 0
+            if self._rcFade and self._rcFadeT and self._rcFadeT ~= to and self:IsVisible() then
+                self._rcFadeTo = to
+                self._rcFade:Show()
+            else
+                self._rcFadeT = self._rcFade and to or nil
+            end
+            return PaintSetButton(self, hot)
+        end
         if not self:IsEnabled() then
             local disabledBg = GetButtonDisabledBG()
             local txtDisabled = GetButtonTextDisabled()
@@ -705,6 +826,37 @@ local GetTextNormal = _uif.GetTextNormal
 
         button:EnableMouse(true)
 
+        if RC.UI:InSettings(parent) then RC.UI:StyleSettingsButton(button) end
+
+        return button
+    end
+
+    -- A button in the /rc window's look (CreateStyledButton does this for
+    -- every button built on the page or in the sidebar). style: nil (a
+    -- page button), "footer" or "close" (the footer's two kinds, which
+    -- fade 0.10 s between rest and hover).
+    function RC.UI:StyleSettingsButton(button, style)
+        if not (button and button.bg) then return button end
+        button._rcSet = style or "button"
+        if button.highlight then button.highlight:SetAlpha(0) end
+        if button.pushed then button.pushed:SetAlpha(0) end
+        if button.text then RC:ApplyCustomFont(button.text, (style and S.F_VALUE) or BASE.FONT_SIZE_SMALL, "OUTLINE") end
+        if style and not button._rcFade then
+            local fade = CreateFrame("Frame", nil, button)
+            fade:Hide()
+            fade:SetScript("OnUpdate", function(f, dt)
+                local to = button._rcFadeTo or 0
+                local cur = button._rcFadeT or to
+                local step = (dt or 0.016) / S.FADE
+                if cur < to then cur = math_min(to, cur + step) else cur = math_max(to, cur - step) end
+                button._rcFadeT = cur
+                PaintSetButton(button, to == 1)
+                if cur == to then f:Hide() end
+            end)
+            button._rcFade = fade
+            button._rcFadeT = 0
+        end
+        PaintStyledButton(button, false)
         return button
     end
 
@@ -761,6 +913,12 @@ local GetTextNormal = _uif.GetTextNormal
         -- "you are here / open" accent and green is the "this is on"
         -- state, and a gold outline around a green fill made every active
         -- control read as two competing signals at once.
+        -- (in the /rc window: the accent edge and label, PaintStyledButton)
+        if button._rcSet then
+            button.isConfigured = isConfigured and true or false
+            PaintStyledButton(button, button.IsMouseOver and button:IsMouseOver())
+            return
+        end
         local configBg = GetButtonConfiguredBG()
         local txtConfig = GetButtonTextConfigured()
         local btnNorm = GetButtonNormalBG()
@@ -1008,6 +1166,25 @@ local GetTextNormal = _uif.GetTextNormal
     -- shade, white label, a gold line along its foot. Exposes
     -- tab:GetText()/SetText() (SetText also re-sizes the tab).
     local function PaintTab(self, hot)
+        if self._rcSet then
+            -- (a segment: a page button's box; the one picked has the
+            -- accent edge and a full-white label, and its accent foot)
+            local text = RC:GetColor("settings", "text")
+            local A = RC.UI:SAccent()
+            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", hot and S.BTN_BG_HA or S.BTN_BG_A))
+            if self.isSelected then
+                RC.UI:UpdateBorderColor(self.border, A, S.CLOSE_A)
+                self.text:SetTextColor(RC.UI:SCol("text", 1))
+            else
+                RC.UI:UpdateBorderColor(self.border, text, hot and S.BTN_BRD_HA or S.BTN_BRD_A)
+                self.text:SetTextColor(RC.UI:SCol("text", hot and S.NAV_HOVER or S.BTN_TXT_A))
+            end
+            if self.underline then
+                self.underline:SetColorTexture(A.r, A.g, A.b, 1)
+                self.underline:SetShown(self.isSelected and true or false)
+            end
+            return
+        end
         local fill, txt
         if self.isSelected then
             fill = GetButtonHoverBG()
@@ -1076,6 +1253,10 @@ local GetTextNormal = _uif.GetTextNormal
 
         tab:SetScript("OnEnter", function(self) PaintTab(self, true) end)
         tab:SetScript("OnLeave", function(self) PaintTab(self, false) end)
+        if RC.UI:InSettings(parent) then
+            tab._rcSet = true
+            tab.highlight:SetAlpha(0)
+        end
         PaintTab(tab, false)
 
         function tab:GetText()
@@ -1113,6 +1294,21 @@ local GetTextNormal = _uif.GetTextNormal
         local fontSize  = opts.fontSize or BASE.FONT_SIZE_SMALL
         local spacing   = opts.spacing or 1
         local inset     = opts.inset or 10
+        -- In the /rc window: text tabs, white 0.53 / 0.86 under the mouse /
+        -- 1.0 open, an accent line (the label + 14 wide) under the open one.
+        -- The page's own row (opts.bar) is the window's tab bar: 40 high on
+        -- a black 0.20 band, labels at 16, each tab its label + 30, 6 apart.
+        local set = RC.UI:InSettings(parent)
+        -- (a row of tabs straight on the page is the page's own row)
+        local isBar = set and (opts.bar or parent._rcSetRoot) and true or false
+        -- a caller that counted on a shorter row: the page goes down by the
+        -- difference, so nothing under the row moves under it
+        local extraH = 0
+        if isBar and not opts.bar then extraH = math_max(0, S.TABS - tabHeight) end
+        if isBar then
+            height, tabHeight, fontSize, spacing = S.TABS, S.TABS, S.F_TAB, 6
+            inset = 9
+        end
 
         -- opts.palette still overrides any of these for a caller with a
         -- reason; the defaults are the framework's button palette.
@@ -1139,9 +1335,32 @@ local GetTextNormal = _uif.GetTextNormal
         end
 
         local group = { container = container, buttons = {}, _order = {} }
+        if isBar then
+            local band = container:CreateTexture(nil, "BACKGROUND")
+            band:SetTexture(FLAT)
+            band:SetPoint("TOPLEFT", container, "TOPLEFT", -inset - 20, 0)
+            band:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", inset + 20, 0)
+            band:SetVertexColor(RC.UI:SCol("shade", S.TAB_BAND_A))
+            container.band = band
+            group.isBar = true
+        end
 
         local function paint(btn, lbl, isAct)
             btn.isTabSelected = isAct
+            if set then
+                btn.bg:SetVertexColor(0, 0, 0, 0)
+                RC.UI:UpdateBorderColor(btn.border, GetBorderNormal(), 0)
+                lbl:SetTextColor(RC.UI:SCol("text", isAct and 1 or (btn._rcHot and S.NAV_HOVER or S.DIM_A)))
+                if btn.underline then
+                    local A = RC.UI:SAccent()
+                    btn.underline:SetColorTexture(A.r, A.g, A.b, 1)
+                    btn.underline:ClearAllPoints()
+                    btn.underline:SetPoint("BOTTOM", btn, "BOTTOM", 0, 0)
+                    btn.underline:SetWidth(math.ceil(lbl:GetStringWidth() or 0) + 14)
+                    btn.underline:SetShown(isAct and true or false)
+                end
+                return
+            end
             local fill = isAct and selBg or normBg
             btn.bg:SetVertexColor(fill.r, fill.g, fill.b, 1)
             if isAct then
@@ -1186,12 +1405,19 @@ local GetTextNormal = _uif.GetTextNormal
 
             paint(tab, lbl, isAct)
 
+            if set then
+                tab.highlight:SetAlpha(0)
+                tab:SetScript("OnEnter", function(self) self._rcHot = true paint(self, lbl, self.isTabSelected) end)
+                tab:SetScript("OnLeave", function(self) self._rcHot = nil paint(self, lbl, self.isTabSelected) end)
+                function tab:Repaint() paint(self, lbl, self.isTabSelected) end
+            else
             RC.UI:AttachHover(tab, normBg, hoverBg, {
                 skipWhen = "isTabSelected",
                 text = lbl,
                 normTextColor  = normTxt,
                 hoverTextColor = hoverTxt,
             })
+            end
 
             local capturedKey = tKey
             tab:SetScript("OnClick", function()
@@ -1224,12 +1450,14 @@ local GetTextNormal = _uif.GetTextNormal
             local nat, widest = {}, 0
             for i = 1, numTabs do
                 local e = self.buttons[self._order[i]]
-                nat[i] = math.ceil(e.lbl:GetStringWidth() or 0) + 12
+                nat[i] = math.ceil(e.lbl:GetStringWidth() or 0) + (isBar and 30 or 12)
                 widest = math.max(widest, nat[i])
             end
             local rows = {}
             local totalGaps = (numTabs - 1) * spacing
             local equalW = math.floor((w - totalGaps) / numTabs)
+            -- (the window's tab bar: each tab its own width, from the left)
+            if isBar then equalW = -1 end
             if equalW >= widest then
                 rows[1] = { from = 1, to = numTabs }
             else
@@ -1248,7 +1476,7 @@ local GetTextNormal = _uif.GetTextNormal
                 local count = row.to - row.from + 1
                 local sum = 0
                 for i = row.from, row.to do sum = sum + nat[i] end
-                local slack = math.max(0, w - sum - (count - 1) * spacing)
+                local slack = isBar and 0 or math.max(0, w - sum - (count - 1) * spacing)
                 local prev
                 for i = row.from, row.to do
                     local btn = self.buttons[self._order[i]].btn
@@ -1264,6 +1492,10 @@ local GetTextNormal = _uif.GetTextNormal
             end
             self.rows = #rows
             container:SetHeight(math.max(height, #rows * tabHeight + (#rows - 1) * ROW_GAP))
+            -- (the open tab's line follows its label's width)
+            if set then
+                for _, e in pairs(self.buttons) do paint(e.btn, e.lbl, e.btn.isTabSelected) end
+            end
         end
         group:Recalc()
         container:SetScript("OnSizeChanged", function() group:Recalc() end)
@@ -1276,7 +1508,7 @@ local GetTextNormal = _uif.GetTextNormal
         container:SetScript("OnShow", function() if not group.rows then group:Recalc() end end)
 
         -- (rows past the first push what follows down)
-        return group, yPos - advance - ((group.rows or 1) - 1) * (tabHeight + ROW_GAP)
+        return group, yPos - advance - extraH - ((group.rows or 1) - 1) * (tabHeight + ROW_GAP)
     end
 
     -- Segment buttons (CreateSegmentedControl with opts.buttons): a compact row of equal-width segments
@@ -2026,10 +2258,30 @@ local GetTextNormal = _uif.GetTextNormal
     -- and ringed green read as a solid green block next to the gold UI).
     -- Under the mouse the fill lifts and the ring goes gold.
     local function PaintCheckbox(self, hot)
+        -- the /rc window's box: 18 px, a warm dark fill and a white 0.05
+        -- edge, both at 0.8 while unticked and not under the mouse; ticked,
+        -- the edge goes to the accent at 0.15. The label is white, 0.8
+        -- while unticked (1.0 under the mouse). The tick stays the mark.
+        if self._rcSet then
+            local on = self:GetChecked() and true or false
+            local k = (on or hot) and 1 or S.CB_REST
+            self.bg:SetVertexColor(RC.UI:SCol("checkboxBackground", k))
+            if on then
+                RC.UI:UpdateBorderColor(self.border, RC.UI:SAccent(), S.CB_ACT_BRD_A)
+            else
+                RC.UI:UpdateBorderColor(self.border, RC:GetColor("settings", "text"), S.CB_BRD_A * k)
+            end
+            if type(rawget(self, "Text")) == "table" and not self._rcLabelColor then
+                self._rcPainting = true
+                self.Text:SetTextColor(RC.UI:SCol("text", (on or hot) and 1 or S.CB_REST))
+                self._rcPainting = nil
+            end
+        else
         local fill = hot and GetButtonHoverBG() or GetCheckboxBG()
         self.bg:SetVertexColor(fill.r, fill.g, fill.b, fill.a or 1)
         local ring = hot and GetCheckboxHoverBorder() or GetCheckboxBorder()
         RC.UI:UpdateBorderColor(self.border, ring, 1)
+        end
         local tex = RC.UI:CheckmarkTexture()
         if self.check._rcTex ~= tex then
             self.check:SetTexture(tex)
@@ -2046,12 +2298,15 @@ local GetTextNormal = _uif.GetTextNormal
     end
 
     function RC.UI:CreateCheckbox(parent, text, checked)
+        local set = RC.UI:InSettings(parent)
+        local size = set and S.CHECK or BASE.CHECKBOX_SIZE
         local checkboxFrame = CreateFrame("Frame", nil, parent)
-        checkboxFrame:SetSize(BASE.CHECKBOX_SIZE + 200, BASE.CHECKBOX_SIZE)
+        checkboxFrame:SetSize(size + 200, size)
 
         local checkbox = CreateFrame("CheckButton", nil, checkboxFrame)
-        checkbox:SetSize(BASE.CHECKBOX_SIZE, BASE.CHECKBOX_SIZE)
+        checkbox:SetSize(size, size)
         checkbox:SetPoint("LEFT")
+        checkbox._rcSet = set or nil
 
         checkbox.bg = checkbox:CreateTexture(nil, "BACKGROUND")
         checkbox.bg:SetAllPoints()
@@ -2060,7 +2315,7 @@ local GetTextNormal = _uif.GetTextNormal
         checkbox.border = self:CreateSimpleBorder(checkbox)
 
         checkbox.check = checkbox:CreateTexture(nil, "ARTWORK")
-        checkbox.check:SetSize(BASE.CHECKBOX_SIZE - 6, BASE.CHECKBOX_SIZE - 6)
+        checkbox.check:SetSize(size - (set and 4 or 6), size - (set and 4 or 6))
         checkbox.check:SetPoint("CENTER")
         PaintCheckbox(checkbox, false)
 
@@ -2095,17 +2350,26 @@ local GetTextNormal = _uif.GetTextNormal
         end
 
         checkbox.Text = CreateProfessionalFontString(checkboxFrame, "OVERLAY", BASE.FONT_SIZE_SMALL, "OUTLINE")
-        checkbox.Text:SetPoint("LEFT", checkbox, "RIGHT", 7, 0)
+        local gap = set and 10 or 7
+        checkbox.Text:SetPoint("LEFT", checkbox, "RIGHT", gap, 0)
         checkbox.Text:SetText(text)
         local txtNorm = GetButtonTextNormal()
         checkbox.Text:SetTextColor(txtNorm.r, txtNorm.g, txtNorm.b, 1)
+        if set then
+            PaintCheckbox(checkbox, false)
+            -- a page that colours the label itself (a warning, a dimmed
+            -- row) keeps its colour
+            hooksecurefunc(checkbox.Text, "SetTextColor", function()
+                if not checkbox._rcPainting then checkbox._rcLabelColor = true end
+            end)
+        end
 
         -- Whole-row click: extend the hit rect rightwards over the label.
         -- Re-measured whenever the label changes so a relabelled row
         -- keeps the right reach.
         local function SyncHitRect()
             local w = checkbox.Text:GetStringWidth() or 0
-            checkbox:SetHitRectInsets(0, -(7 + math.max(10, w)), 0, 0)
+            checkbox:SetHitRectInsets(0, -(gap + math.max(10, w)), 0, 0)
         end
         SyncHitRect()
         hooksecurefunc(checkbox.Text, "SetText", SyncHitRect)
@@ -2147,6 +2411,21 @@ local GetTextNormal = _uif.GetTextNormal
     --   row:Repaint()                            re-read theme colours
     local function PaintColorRow(row, hot)
         local sel = row.isSelected
+        -- the /rc window's swatch row: a 22 px swatch with a white edge,
+        -- the name in white (the accent under the mouse or open), the hex
+        -- white 0.53; the row lifts white 0.06 under the mouse
+        if row._rcSet then
+            if sel then row.bg:SetVertexColor(RC.UI:SCol("buttonBackground", S.BTN_BG_HA))
+            elseif hot then row.bg:SetVertexColor(RC.UI:SCol("text", S.NAV_HL))
+            elseif row.isStriped then row.bg:SetVertexColor(RC.UI:SCol("text", 0.03))
+            else row.bg:SetVertexColor(1, 1, 1, 0) end
+            local A = RC.UI:SAccent()
+            if sel or hot then row.label:SetTextColor(A.r, A.g, A.b, 1) else row.label:SetTextColor(RC.UI:SCol("text", 1)) end
+            row.hex:SetTextColor(RC.UI:SCol("text", S.DIM_A))
+            row.dot:SetVertexColor(A.r, A.g, A.b, 1)
+            row.swatch.ring:SetVertexColor(RC.UI:SCol("text", 1))
+            return
+        end
         local fill
         if sel then
             fill = GetButtonConfiguredBG()
@@ -2184,7 +2463,8 @@ local GetTextNormal = _uif.GetTextNormal
         -- only so the tooltip can anchor to it; hover and clicks are
         -- forwarded to the row.
         local swatch = CreateFrame("Button", nil, row)
-        swatch:SetSize(22, 14)
+        row._rcSet = RC.UI:InSettings(parent) or nil
+        swatch:SetSize(22, row._rcSet and 22 or 14)
         swatch:SetPoint("LEFT", row, "LEFT", 6, 0)
         swatch:RegisterForClicks("LeftButtonUp")
         swatch.ring = swatch:CreateTexture(nil, "BACKGROUND")

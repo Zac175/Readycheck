@@ -659,6 +659,8 @@ WRF._chInit[#WRF._chInit + 1] = function()
         if not spellName then
             spellName, _, _, startTime, endTime = UnitChannelInfo("player")
         end
+        -- (WoW Forever may hand your own cast back hidden: no cast reading)
+        if RC.Hidden(spellName, startTime, endTime) then spellName = nil end
 
         if spellName and startTime and endTime then
             local showCastTime = false

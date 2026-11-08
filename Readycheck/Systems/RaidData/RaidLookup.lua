@@ -384,7 +384,7 @@ if not RC then return end
             end
         end
 
-        local targetName = UnitName("target")
+        local targetName = Readycheck.SafeName("target")
         if targetName and self.encounterAddPhases then
             for encounterName, config in pairs(self.encounterAddPhases) do
                 if encounterName == targetName and config.zone then

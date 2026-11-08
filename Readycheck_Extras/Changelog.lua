@@ -53,6 +53,35 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.0",
+            date = "2026-11-08",
+            title = "A new settings window",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "A new settings window: bigger, with a sidebar, the page title pinned at the top, banded rows, round sliders and a thin scrollbar. Drag it from anywhere, fold it down to its name, and change its scale from the bottom bar.",
+                        "Search every setting from the box at the top of the sidebar, with each result showing where it lives.",
+                        "Raid consume reminders: in a raid, the important consumables you are not using show in the reminders bar.",
+                        "More features now work on TBC Anniversary and WoW Forever instead of switching off.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "On WoW Forever, the Battle Shout tracker counts the whole raid, since the shout reaches everyone nearby there.",
+                        "A reworked first-time setup.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "An error from the minimap button some players saw at login.",
+                    },
+                },
+            },
+        },
+        {
             version = "4.9.0",
             date = "2026-11-06",
             title = "TBC Anniversary and WoW Forever, and customize everything",
@@ -1507,6 +1536,15 @@ local function InitializeChangelog()
     end
 
     function RC.Changelog:CheckOnLogin()
+        -- SETUP2: a fresh install's first login has nothing to compare
+        -- against (and the setup wizard is on screen): it only writes the
+        -- version down, so the popup first shows after a real update.
+        local t = ReadycheckDB and ReadycheckDB.tutorial
+        local acct = ReadycheckDB and ReadycheckDB.account
+        if type(t) == "table" and t.fresh and (type(acct) ~= "table" or acct.lastSeenVersion == nil) then
+            self:MarkAsSeen()
+            return
+        end
         if self:ShouldShowPopup() then
             C_Timer.After(3, function()
                 if not UnitAffectingCombat("player") then

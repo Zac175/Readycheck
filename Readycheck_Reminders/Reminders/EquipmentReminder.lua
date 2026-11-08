@@ -279,6 +279,7 @@ local function InitializeEquipmentReminder()
         end
 
         local mainSpeed = UnitAttackSpeed("player")
+        if RC.IsSecret(mainSpeed) then mainSpeed = nil end   -- (hidden on WoW Forever)
 
         local hasShield = false
         if db.detectShields ~= false and offId and ConditionMet("detectShieldsCondition") then

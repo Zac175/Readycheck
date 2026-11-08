@@ -73,10 +73,19 @@ function CS:GetEffectiveStatKeys()
     return self:GetDefaultStatKeys()
 end
 
+-- A stat a game version does not have: the Buffs cell is the buff slot
+-- counter, and where there is no buff limit (TBC, Forever) there is
+-- nothing to count (Core_Flavor, buff_pushoff). It is left out of the bar,
+-- the stat picker and the preview there; the saved list keeps it.
+local function StatOffHere(key)
+    return key == "buffs" and RC.FeatureOn and not RC:FeatureOn("buff_pushoff")
+end
+CS.StatOffHere = StatOffHere
+
 function CS:GetStatList()
     local result, seen = {}, {}
     for _, key in ipairs(self:GetEffectiveStatKeys()) do
-        local ok = STAT_DEFS[key] ~= nil and not seen[key]
+        local ok = STAT_DEFS[key] ~= nil and not seen[key] and not StatOffHere(key)
         if key == "durability" then ok = ok and RC.db and RC.db.statsBarDurability ~= false end
         if key == "gold" then ok = ok and RC.db and RC.db.statsBarGold == true end
         if ok then
@@ -104,6 +113,10 @@ function CS:MoveStatTo(fromIndex, toSlot)
     local insertAt = (fromIndex < toSlot) and (toSlot - 1) or toSlot
     insertAt = math.max(1, math.min(#order + 1, insertAt))
     table.insert(order, insertAt, item)
+    -- a stat left off on this game version keeps its place in the saved list
+    for i, key in ipairs(self:GetEffectiveStatKeys()) do
+        if StatOffHere(key) then table.insert(order, math.min(i, #order + 1), key) end
+    end
     RC.db.statsBarStats = order
     if RC.db.showStatsBar and self.RebuildStatsBar then self:RebuildStatsBar() end
     if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
@@ -141,7 +154,7 @@ end
 function CS:GetAllStatOptions()
     local out = {}
     for _, key in ipairs(STAT_ORDER) do
-        if STAT_DEFS[key] then table.insert(out, { key = key, label = STAT_DEFS[key].label }) end
+        if STAT_DEFS[key] and not StatOffHere(key) then table.insert(out, { key = key, label = STAT_DEFS[key].label }) end
     end
     table.insert(out, { key = "durability", label = STAT_DEFS.durability.label })
     table.insert(out, { key = "gold", label = STAT_DEFS.gold.label })
@@ -149,6 +162,7 @@ function CS:GetAllStatOptions()
 end
 
 function CS:IsStatEnabled(key)
+    if StatOffHere(key) then return false end
     if key == "durability" then return RC.db ~= nil and RC.db.statsBarDurability ~= false end
     if key == "gold" then return RC.db ~= nil and RC.db.statsBarGold == true end
     for _, k in ipairs(self:GetEffectiveStatKeys()) do
@@ -1363,7 +1377,9 @@ function CS:UpdatePanelStats()
     yOffset = self:CreateHeader("MELEE STATS", yOffset)
 
     local ap, posBuff, negBuff = UnitAttackPower("player")
-    local totalAP = ap + posBuff + negBuff
+    -- (WoW Forever can hand your stats back hidden: a hidden one shows "?"
+    -- or goes to the text as it is, with no maths on it)
+    local totalAP = RC.Hidden(ap, posBuff, negBuff) and "?" or (ap + posBuff + negBuff)
     yOffset = self:CreateStat("Attack Power", tostring(totalAP), yOffset)
 
     local mainSpeed, offSpeed = UnitAttackSpeed("player")
@@ -1385,19 +1401,19 @@ function CS:UpdatePanelStats()
     yOffset = self:CreateStat("Hit %", string.format("%.2f%%", hitFromGear), yOffset)
 
     local missChanceSame = self:GetMissChance(0)
-    yOffset = self:CreateStat("Miss (Same Level)", string.format("%.2f%%", missChanceSame), yOffset)
+    yOffset = self:CreateStat("Miss (Same Level)", missChanceSame and string.format("%.2f%%", missChanceSame) or "?", yOffset)
 
     local missChanceBoss = self:GetMissChance(3)
-    yOffset = self:CreateStat("Miss (Boss +3)", string.format("%.2f%%", missChanceBoss), yOffset)
+    yOffset = self:CreateStat("Miss (Boss +3)", missChanceBoss and string.format("%.2f%%", missChanceBoss) or "?", yOffset)
 
     yOffset = yOffset - 5
     yOffset = self:CreateHeader("DEFENSIVE STATS", yOffset)
 
     local base, effectiveArmor, armor, posBuff, negBuff = UnitArmor("player")
-    yOffset = self:CreateStat("Armor", tostring(effectiveArmor), yOffset)
+    yOffset = self:CreateStat("Armor", RC.IsSecret(effectiveArmor) and string.format("%d", effectiveArmor) or tostring(effectiveArmor), yOffset)
 
     local defense = self:GetDefenseSkill()
-    yOffset = self:CreateStat("Defense", tostring(defense), yOffset)
+    yOffset = self:CreateStat("Defense", defense and tostring(defense) or "?", yOffset)
 
     local dodge = GetDodgeChance()
     yOffset = self:CreateStat("Dodge", string.format("%.2f%%", dodge), yOffset)

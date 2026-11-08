@@ -271,6 +271,16 @@ local BASE, FLAT, CreateProfessionalFontString = _uif.BASE, _uif.FLAT, _uif.Crea
         RC.UI:UpdateBorderColor(view.border, bn, 0.55)
         local gr = RC:GetColor("text", "gray")
         label:SetTextColor(gr.r, gr.g, gr.b, 1)
+        -- (in the /rc window, 5.0: the /zui preview band - black 0.10, no
+        -- box, a white 0.06 line along its foot; the sample box a white
+        -- 0.05 edge; the word "Preview" white 0.45)
+        if pane._rcSetRoot then
+            pane.bg:SetVertexColor(RC.UI:SCol("shade", 0.10))
+            RC.UI:UpdateBorderColor(pane.border, bn, 0)
+            if pane.border.bottom then pane.border.bottom:SetColorTexture(RC.UI:SCol("text", 0.06)) end
+            RC.UI:UpdateBorderColor(view.border, RC:GetColor("settings", "text"), 0.05)
+            label:SetTextColor(RC.UI:SCol("text", 0.45))
+        end
         if scaleLabel then scaleLabel:SetTextColor(gr.r, gr.g, gr.b, 1) end
         local ar = RC:GetColor("dropdown", "arrow")
         for _, t in ipairs({ foldArrow, playTex, upTex, downTex }) do t:SetVertexColor(ar.r, ar.g, ar.b, 1) end
@@ -758,6 +768,9 @@ local BASE, FLAT, CreateProfessionalFontString = _uif.BASE, _uif.FLAT, _uif.Crea
         pane.border = RC.UI:CreateSimpleBorder(pane)
         pane:EnableMouse(true)
         pane:Hide()
+        -- its controls wear the /rc window's look; the samples on the
+        -- canvas below keep their own (they are the real thing, shrunk)
+        if parent == (host and host.holder) then pane._rcSetRoot = true end
 
         -- THE CONTROL LINE along the top edge
         bar = CreateFrame("Frame", nil, pane)
@@ -847,6 +860,7 @@ local BASE, FLAT, CreateProfessionalFontString = _uif.BASE, _uif.FLAT, _uif.Crea
 
         -- The sample box: backdrop and canvases, clipped to the box.
         view = CreateFrame("Frame", nil, pane)
+        view._rcSetStop = true
         view.base = view:CreateTexture(nil, "BACKGROUND", nil, -6)
         view.base:SetTexture(FLAT)
         view.base:SetAllPoints()
@@ -1162,7 +1176,9 @@ local BASE, FLAT, CreateProfessionalFontString = _uif.BASE, _uif.FLAT, _uif.Crea
     -- when the title is not the page's top piece; Pin() then does it the
     -- old way once the page has built.
     local function EarlyPin(hf, y)
-        if pinnedHeader or not (declared and endPending and host and host.holder) then return nil end
+        -- (5.0: every page's title is pinned in the window's header, as in
+        -- ZacUI's /zui, with or without a preview under it)
+        if pinnedHeader or not (endPending and host and host.holder) then return nil end
         local p, rel, _, hx, hy = hf:GetPoint(1)
         hy = hy or -15
         if hy < -40 or (rel ~= nil and rel ~= realChild) then return nil end

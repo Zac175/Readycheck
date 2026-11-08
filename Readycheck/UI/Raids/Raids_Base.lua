@@ -98,6 +98,9 @@ local _sbr = RC._sbr
         -- the old General and Tracker tabs are both Behavior now
         { keywords = {"tracker", "party tracker", "battle shout tracker", "shout tracker", "bloodrage", "bloodrage indicator", "only me", "track my own", "my own battle shout", "track scope", "tracker show in", "tracker which raids",
                       "greed mode", "greed", "long battle shout", "15 min shout", "range check", "battle shout general", "battle shout show in", "shout everywhere", "shout raids only", "shout any group", "shout which raids", "improved cleave"},
+          -- the party tracker's words, left out where it does not run (Forever: Core_Flavor)
+          featureWords = { battle_shout_party = { "tracker", "party tracker", "battle shout tracker", "shout tracker",
+                           "bloodrage", "bloodrage indicator", "tracker show in", "tracker which raids" } },
           parentId = "battle_shout", tabKey = "behavior", tabLabel = RCL["Behavior"],
           setTab   = function(f) _cf(f).bsTab = "behavior" end },
         { keywords = {"battle shout appearance", "shout appearance", "shout icon"},

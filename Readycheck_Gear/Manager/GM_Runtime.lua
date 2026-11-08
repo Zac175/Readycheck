@@ -623,7 +623,7 @@ function GM:UpdateButtonCooldowns()
                 -- falls back to core's bag-scan shim when it does not.
                 local start, duration
                 if slot >= 1 and slot <= 19 then
-                    start, duration = GetInventoryItemCooldown("player", slot)
+                    start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
                 else
                     start, duration = RC:GetItemCooldownSafe(itemID)
                 end
@@ -944,7 +944,7 @@ initFrame:SetScript("OnEvent", function()
         local RESOLVE_STEP = 0.05
 
         local function CooldownStart(slot)
-            local start, dur = GetInventoryItemCooldown("player", slot)
+            local start, dur = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
             if start and start > 0 and dur and dur > 1.5 then return start end
             return 0
         end

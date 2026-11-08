@@ -386,7 +386,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         local gearswapConfig = ResolveGearSwapConfig(self, targetName, isTrash)
         if not gearswapConfig then return end
 
-        if UnitExists("target") and UnitName("target") == targetName and not UnitAffectingCombat("player") then
+        if UnitExists("target") and Readycheck.SafeName("target") == targetName and not UnitAffectingCombat("player") then
             self:CheckGearSwapForTarget(targetName, isTrash)
         end
     end

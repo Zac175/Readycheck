@@ -1330,4 +1330,7 @@ local function InitializePolarityMode()
     RC:DebugPrint("PolarityMode module loaded", "polarity")
 end
 
-C_Timer.After(0.5, InitializePolarityMode)
+-- not on a game version without Naxxramas (Core_Flavor)
+if not (_G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("polarity")) then
+    C_Timer.After(0.5, InitializePolarityMode)
+end

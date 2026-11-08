@@ -189,7 +189,10 @@ local function InitializeTutorial()
         spec_detection      = RCL["reads Arms, Fury or Protection from your talents so reminders match"],
         stats_bar           = RCL["a small live bar of your attack power, crit, hit and more"],
         buff_pushoff        = RCL["warns when you are at the buff cap and something is about to be pushed off"],
-        battle_shout        = RCL["reminds you to shout and tracks who in the party has it"],
+        -- (Forever: the shout reaches the whole raid, no party tracker - Core_Flavor)
+        battle_shout        = (not RC.FeatureOn or RC:FeatureOn("battle_shout_party"))
+                                and RCL["reminds you to shout and tracks who in the party has it"]
+                                or RCL["reminds you to shout when anyone your shout reaches is missing it"],
         boon_reminder       = RCL["reminds you to release your Chronoboon before a pull"],
         trinkets            = RCL["auto-swap trinkets around cooldowns and fights"],
         gear_manager        = RCL["gear sets and the on-screen buttons that equip them"],
@@ -308,7 +311,9 @@ local function InitializeTutorial()
         Page("reminders", "reminder_settings", RCL["Reminder Settings"],
             RCL["Every reminder popup shares these: where it sits on screen, how it animates, the sound it plays and the spoken voice if you want one. The Test Reminder card at the bottom fires a sample so you can see and hear a change right away."]),
         Page("reminders", "battle_shout", RCL["Battle Shout"],
-            RCL["Warns when your shout is about to fall off, and the party tracker shows who has it and the attack power it gives - it knows about T2 and other shout gear. Every reminder page looks like this: the switch at the top, then cards for timing, sound and display."]),
+            (not RC.FeatureOn or RC:FeatureOn("battle_shout_party"))
+                and RCL["Warns when your shout is about to fall off, and the party tracker shows who has it and the attack power it gives - it knows about T2 and other shout gear. Every reminder page looks like this: the switch at the top, then cards for timing, sound and display."]
+                or RCL["Warns when your shout is about to fall off or anyone it reaches is missing it - on Forever it reaches the whole raid within 20 yards. Every reminder page looks like this: the switch at the top, then cards for timing, sound and display."]),
         Page("reminders", "buff_pushoff", RCL["Buff Pushoff"],
             RCL["Classic drops the oldest buff once you pass 32. This watches the count and warns when a consumable buff is about to be, or just was, pushed off, with an icon on the stats bar."]),
         Page("reminders", "raid_buff_tracker", RCL["Raid Buff Tracker"],
@@ -359,12 +364,17 @@ local function InitializeTutorial()
             RCL["The on-screen frame that shows the predicted time to kill, counting down during a boss fight. Size, font and position are here; Edit Mode moves it too."]),
 
         -- World Tools -------------------------------------------------
+        -- (where this game version has no world buffs worth timing, only
+        -- the summon accept is left: Core_Flavor)
         Group("world_tools", RCL["World Tools"],
-            RCL["Everything around world buffs outside the raid."]),
+            (not RC.FeatureOn or RC:FeatureOn("world_tools")) and RCL["Everything around world buffs outside the raid."]
+                or RCL["Accepting summons on your own terms."]),
         Page("world_tools", "wt_pulltimers", RCL["Buff Drops"],
             RCL["Timers for upcoming world buff drops, with alerts before each one lands so you are in position when the head goes in."]),
         Page("world_tools", "wt_automation", RCL["Automation"],
-            RCL["The chores around world buffs: accepting summons, skipping gossip, turning in heads and quests. Each one is a switch."]),
+            (not RC.FeatureOn or RC:FeatureOn("world_tools"))
+                and RCL["The chores around world buffs: accepting summons, skipping gossip, turning in heads and quests. Each one is a switch."]
+                or RCL["Accept a summon on its own: every time, or after your PvP flag drops on a taxi."]),
 
         -- Mesh --------------------------------------------------------
         Group("mesh", RCL["Mesh Network"],

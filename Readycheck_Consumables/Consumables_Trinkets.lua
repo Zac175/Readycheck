@@ -336,7 +336,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
             if itemId and not hiddenTrinkets[itemId] then
                 local name, link, rarity, _, _, _, _, _, _, icon = GetItemInfo(itemId)
                 if name then
-                    local start, duration, enabled = GetInventoryItemCooldown("player", slotIndex)
+                    local start, duration, enabled = Readycheck.PlainCD(GetInventoryItemCooldown("player", slotIndex))
                     local cooldownRemaining = 0
                     if start and start > 0 and duration > 1.5 then
                         cooldownRemaining = (start + duration) - now

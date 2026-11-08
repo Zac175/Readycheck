@@ -35,60 +35,115 @@ local _sbr = RC._sbr
     local TEX_ARROW  = "Interface\\AddOns\\Readycheck\\Media\\arrow"
     local TEX_ARROWL = "Interface\\AddOns\\Readycheck\\Media\\arrowLeft"
 
+    -- Nav rows (5.0): ZacUI's /zui sidebar, number for number. Three
+    -- kinds: a GROUP (a category: its name in the accent at 15, a +/-
+    -- after it while hovered, 28 tall), a PAGE in a group (14 px at 36, 28
+    -- tall; a raid's row is taller and keeps its profile and count lines)
+    -- and a page at the top level (as a page, 20 in). Selected: a 3 px
+    -- accent bar down the left edge, an accent wash fading right (0.15 to
+    -- 0) and a hairline above and below; under the mouse: white 0.06, a
+    -- pale wash (0.03) and a pale bar (0.25). The label: 1.0 selected,
+    -- 0.60 at rest, 0.86 hovered. A folded group holding the open page
+    -- keeps the bar, dimmed. No fills or rings of its own.
+    local function PaintNavRow(b)
+        local S = RC.UI.S
+        local A = RC.UI:SAccent()
+        local tint = RC:GetColor("settings", "hoverTint")
+        local edge = RC:GetColor("settings", "edgeTint")
+        local sel = b.isSelected and not b.isCategory
+        local hot = b._rcHot and not sel
+        b.glow:SetShown(sel and true or false)
+        if sel then RC.UI:Grad(b.glow, A, S.NAV_GLOW) end
+        b.edgeT:SetShown(sel and true or false)
+        b.edgeB:SetShown(sel and true or false)
+        if sel then RC.UI:Grad(b.edgeT, edge, S.NAV_EDGE) RC.UI:Grad(b.edgeB, edge, S.NAV_EDGE) end
+        local rowHot = hot and not b.isCategory
+        b.bg:SetShown(rowHot and true or false)
+        b.bg:SetVertexColor(RC.UI:SCol("text", S.NAV_HL))
+        b.hoverGlow:SetShown(rowHot and true or false)
+        if rowHot then RC.UI:Grad(b.hoverGlow, tint, S.NAV_HOVER_GLOW) end
+        b.hoverInd:SetShown(rowHot and true or false)
+        b.hoverInd:SetVertexColor(tint.r, tint.g, tint.b, S.NAV_HOVER_IND)
+        if sel then
+            b.selectIndicator:SetVertexColor(A.r, A.g, A.b, 1)
+            b.selectIndicator:Show()
+        elseif b.holdsPage then
+            b.selectIndicator:SetVertexColor(A.r, A.g, A.b, 0.5)
+            b.selectIndicator:Show()
+        else
+            b.selectIndicator:Hide()
+        end
+        if b.isCategory then
+            local k = b._rcHot and 1.25 or 1
+            local r, g, bl = math_min(1, A.r * k), math_min(1, A.g * k), math_min(1, A.b * k)
+            b.text:SetTextColor(r, g, bl, 1)
+            if b.chevron then
+                b.chevron:SetTexture(RC.UI.ICONS .. (b.isExpanded and "minus" or "add"))
+                b.chevron:SetTexCoord(0, 1, 0, 1)
+                b.chevron:SetVertexColor(r, g, bl, 1)
+                b.chevron:SetAlpha(b._rcHot and 1 or 0)
+            end
+            return
+        end
+        b.text:SetTextColor(RC.UI:SCol("text", b.isSelected and 1 or (b._rcHot and S.NAV_HOVER or S.NAV_EN)))
+    end
+    RC.PaintNavRow = PaintNavRow
+
     function RC:CreateSidebarButton(parent, menuItem, yOffset, isSubmenu)
+        local S = RC.UI.S
         local isRaid = menuItem.raidKey ~= nil
         local isCategory = (menuItem.category and not isSubmenu) and true or false
-        local buttonHeight = isRaid and RC.SIDEBAR.RAID_BUTTON_HEIGHT or RC.SIDEBAR.BUTTON_HEIGHT
-
-        local btnNormal = RC.SIDEBAR:GetButtonNormal()
-        local txtNormal = isCategory and RC:GetColor("text", "menuCategory") or RC.SIDEBAR:GetTextNormal()
-        local accentCol = RC.SIDEBAR:GetAccentColor()
-        local borderCol = RC:GetColor("ui", "borderNormal")
+        local buttonHeight = isRaid and RC.SIDEBAR.RAID_BUTTON_HEIGHT
+            or (isCategory and S.GROUP_ROW or S.CHILD_ROW)
 
         local button = CreateFrame("Button", nil, parent)
-        button:SetSize(RC.SIDEBAR.WIDTH - (isSubmenu and 28 or 22), buttonHeight)
-        button:SetPoint("TOPLEFT", parent, "TOPLEFT", isSubmenu and 10 or 4, yOffset)
+        button:SetSize(RC.SIDEBAR.WIDTH - 1, buttonHeight)
+        button:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
 
-        button.bg = button:CreateTexture(nil, "BACKGROUND")
-        button.bg:SetAllPoints()
-        button.bg:SetTexture(FLAT)
-        button.bg:SetVertexColor(btnNormal.r, btnNormal.g, btnNormal.b, btnNormal.a or 1)
-        button.border = RC.UI:CreateSimpleBorder(button)
-        RC.UI:UpdateBorderColor(button.border, borderCol, 1)
-
-        button.selectIndicator = button:CreateTexture(nil, "ARTWORK")
-        button.selectIndicator:SetWidth(3)
-        button.selectIndicator:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
-        button.selectIndicator:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 1, 1)
-        button.selectIndicator:SetTexture(FLAT)
-        button.selectIndicator:SetVertexColor(accentCol.r, accentCol.g, accentCol.b, accentCol.a or 1)
-        button.selectIndicator:Hide()
-
-        if menuItem.icon and isSubmenu then
-            button.icon = button:CreateTexture(nil, "ARTWORK")
-            button.icon:SetSize(16, 16)
-            button.icon:SetPoint("LEFT", button, "LEFT", isSubmenu and 7 or 9, isRaid and 5 or 0)
-            button.icon:SetTexture(menuItem.icon)
-            button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local function Tex(layer, sub)
+            local t = button:CreateTexture(nil, layer, nil, sub)
+            t:SetTexture(FLAT)
+            t:Hide()
+            return t
         end
+        -- (button.bg: the hover highlight; the row has no fill of its own)
+        button.glow = Tex("BACKGROUND", 1) button.glow:SetAllPoints()
+        button.hoverGlow = Tex("BACKGROUND", 2) button.hoverGlow:SetAllPoints()
+        button.bg = Tex("BACKGROUND", 3) button.bg:SetAllPoints()
+        local function Edge(side)
+            local g = Tex("BORDER", 0)
+            g:SetHeight(1)
+            g:SetPoint(side .. "LEFT", button, side .. "LEFT", 0, 0)
+            g:SetPoint(side .. "RIGHT", button, side .. "RIGHT", 0, 0)
+            return g
+        end
+        button.edgeT, button.edgeB = Edge("TOP"), Edge("BOTTOM")
+        local function Bar(sub)
+            local t = Tex("ARTWORK", sub)
+            t:SetWidth(3)
+            t:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+            t:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+            return t
+        end
+        button.selectIndicator, button.hoverInd = Bar(2), Bar(1)
 
-        button.text = self:CreateFontString(button, "OVERLAY", nil, isSubmenu and 11 or 12)
-        button.text:SetPoint("LEFT", button.icon or button, button.icon and "RIGHT" or "LEFT", button.icon and 6 or 9, isRaid and 8 or 0)
+        local x = isSubmenu and S.CHILD_X or S.NAV_LEFT
+        button.text = self:CreateFontString(button, "OVERLAY", nil, isCategory and S.F_GROUP or S.F_NAV)
+        button.text:SetPoint("LEFT", button, "LEFT", x, isRaid and 9 or 0)
         button.text:SetJustifyH("LEFT")
         button.text:SetWordWrap(false)
-        if not isRaid then
-            button.text:SetPoint("RIGHT", button, "RIGHT", menuItem.id == "mesh_sync" and -18 or -6, 0)
-        end
         button.text:SetText(menuItem.name)
-        button.text:SetTextColor(txtNormal.r, txtNormal.g, txtNormal.b)
+        if not isRaid and not isCategory then
+            button.text:SetPoint("RIGHT", button, "RIGHT", menuItem.id == "mesh_sync" and -30 or -18, 0)
+        end
 
         if isCategory then
+            -- the group's +/- right after its name, shown under the mouse
             local chev = button:CreateTexture(nil, "ARTWORK")
-            chev:SetSize(8, 8)
-            chev:SetPoint("RIGHT", button, "RIGHT", -8, 0)
-            chev:SetTexture(TEX_ARROW)
-            local gold = RC:GetColor("ui", "accentGold")
-            chev:SetVertexColor(gold.r, gold.g, gold.b, 0.65)
+            chev:SetSize(14, 14)
+            chev:SetPoint("LEFT", button.text, "RIGHT", 4, 0)
+            chev:SetTexture(RC.UI.ICONS .. "add")
+            chev:SetAlpha(0)
             button.chevron = chev
         end
 
@@ -97,28 +152,27 @@ local _sbr = RC._sbr
             local msOn = MS and MS:IsEnabled()
             local dot = CreateFrame("Frame", nil, button)
             dot:SetSize(6, 6)
-            dot:SetPoint("RIGHT", button, "RIGHT", -6, 0)
+            dot:SetPoint("RIGHT", button, "RIGHT", -18, 0)
             local dotFill = dot:CreateTexture(nil, "ARTWORK")
             dotFill:SetAllPoints()
-            dotFill:SetTexture(FLAT)
+            RC.UI:DiscArt(dotFill, 6)
             local dotCol = msOn and RC:GetColor("ui", "configured") or RC:GetColor("text", "gray")
             dotFill:SetVertexColor(dotCol.r, dotCol.g, dotCol.b, 1)
             dot.bg = dotFill
-            dot.border = RC.UI:CreateSimpleBorder(dot)
             button.meshDot = dot
         end
 
         if isRaid then
-            button.text:SetPoint("RIGHT", button, "RIGHT", -8, 10)
+            button.text:SetPoint("RIGHT", button, "RIGHT", -18, 9)
 
-            button.profileText = self:CreateFontString(button, "OVERLAY", nil, 9)
-            button.profileText:SetPoint("TOPLEFT", button.text, "BOTTOMLEFT", 0, -1)
-            button.profileText:SetPoint("RIGHT", button, "RIGHT", -8, 0)
+            button.profileText = self:CreateFontString(button, "OVERLAY", nil, 10)
+            button.profileText:SetPoint("TOPLEFT", button.text, "BOTTOMLEFT", 0, -2)
+            button.profileText:SetPoint("RIGHT", button, "RIGHT", -18, 0)
             button.profileText:SetJustifyH("LEFT")
 
-            button.countText = self:CreateFontString(button, "OVERLAY", nil, 9)
+            button.countText = self:CreateFontString(button, "OVERLAY", nil, 10)
             button.countText:SetPoint("TOPLEFT", button.profileText, "BOTTOMLEFT", 0, -1)
-            button.countText:SetPoint("RIGHT", button, "RIGHT", -8, 0)
+            button.countText:SetPoint("RIGHT", button, "RIGHT", -18, 0)
             button.countText:SetJustifyH("LEFT")
 
             local profileName = "Default"
@@ -150,8 +204,6 @@ local _sbr = RC._sbr
             end
 
             button.raidKey = menuItem.raidKey
-        else
-            button.text:SetPoint("RIGHT", button, "RIGHT", -20, 0)
         end
 
         button.menuItem = menuItem
@@ -160,21 +212,9 @@ local _sbr = RC._sbr
         button.buttonHeight = buttonHeight
 
         button.isSelected = false
-        RC.UI:AttachHover(button, btnNormal, RC.SIDEBAR:GetButtonHover(), {
-            skipWhen = "isSelected",
-            onEnter = function(self)
-                if self.chevron then
-                    local gold = RC:GetColor("ui", "accentGold")
-                    self.chevron:SetVertexColor(gold.r, gold.g, gold.b, 1)
-                end
-            end,
-            onLeave = function(self)
-                if self.chevron then
-                    local gold = RC:GetColor("ui", "accentGold")
-                    self.chevron:SetVertexColor(gold.r, gold.g, gold.b, 0.65)
-                end
-            end,
-        })
+        button:SetScript("OnEnter", function(self) self._rcHot = true PaintNavRow(self) end)
+        button:SetScript("OnLeave", function(self) self._rcHot = nil PaintNavRow(self) end)
+        PaintNavRow(button)
 
         return button
     end
@@ -183,19 +223,7 @@ local _sbr = RC._sbr
         if not button then return end
 
         button.isSelected = selected
-
-        local btnNormal = RC.SIDEBAR:GetButtonNormal()
-        local btnSelected = RC.SIDEBAR:GetButtonSelected()
-        local txtNormal = button.isCategory and RC:GetColor("text", "menuCategory") or RC.SIDEBAR:GetTextNormal()
-        local txtSelected = RC.SIDEBAR:GetTextSelected()
-        local accentCol = RC.SIDEBAR:GetAccentColor()
-        local borderCol = RC:GetColor("ui", "borderNormal")
-
-        -- Colours re-read here so a theme change lands on the next repaint.
-        button.normBg = btnNormal
-        button.hoverBg = RC.SIDEBAR:GetButtonHover()
-        RC.UI:UpdateBorderColor(button.border, borderCol, 1)
-        button.selectIndicator:SetVertexColor(accentCol.r, accentCol.g, accentCol.b, accentCol.a or 1)
+        button.isExpanded = expanded and true or false
 
         -- A folded group that holds the open page keeps a dimmed bar down
         -- its edge, so the page you are on is never lost from sight.
@@ -208,34 +236,7 @@ local _sbr = RC._sbr
         end
         button.holdsPage = holdsPage
 
-        if selected then
-            button.bg:SetVertexColor(btnSelected.r, btnSelected.g, btnSelected.b, btnSelected.a or 1)
-            button.text:SetTextColor(txtSelected.r, txtSelected.g, txtSelected.b)
-            button.selectIndicator:Show()
-        else
-            button.bg:SetVertexColor(btnNormal.r, btnNormal.g, btnNormal.b, btnNormal.a or 1)
-            button.text:SetTextColor(txtNormal.r, txtNormal.g, txtNormal.b)
-            if holdsPage then
-                button.selectIndicator:SetVertexColor(accentCol.r, accentCol.g, accentCol.b, 0.5)
-                button.selectIndicator:Show()
-            else
-                button.selectIndicator:Hide()
-            end
-        end
-
-        -- Down when open, right when closed. The addon ships a down arrow
-        -- and a left arrow; the right-pointing one is the left arrow
-        -- mirrored on X, so the texcoord is reset on the open branch.
-        if button.chevron then
-            if expanded then
-                button.chevron:SetTexture(TEX_ARROW)
-                button.chevron:SetTexCoord(0, 1, 0, 1)
-            else
-                button.chevron:SetTexture(TEX_ARROWL)
-                button.chevron:SetTexCoord(1, 0, 0, 1)
-            end
-        end
-
+        PaintNavRow(button)
     end
 
     -- ONE ANSWER TO "DOES THIS SIDEBAR ITEM SHOW FOR THIS CHARACTER RIGHT
@@ -245,6 +246,9 @@ local _sbr = RC._sbr
     -- once. Cheap enough to call per item: a handful of table lookups.
     function RC:SidebarItemVisible(item)
         if not item then return false end
+        -- a feature this game version does not run has no page there
+        -- (Core_Flavor; /rc flavor and the Game version page list it)
+        if self.FeatureOffForPage and self:FeatureOffForPage(item) then return false end
         local isWarrior = self.isWarrior
         local nonWarEnabled = (self.db and self.db.nonWarriorEnabled) or {}
         local _isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
@@ -290,10 +294,7 @@ local _sbr = RC._sbr
             -- Readycheck_WorldTools
             world_buffs = hasWorld,
         }
-        -- a page this game version does not run stays listed and shows
-        -- why (Core_Flavor), even when its addon is not loaded
-        local flavorOff = self.FeatureOffForPage and self:FeatureOffForPage(item)
-        if item.id and LAYER_OK[item.id] == false and not flavorOff then
+        if item.id and LAYER_OK[item.id] == false then
             return false
         end
         local p = item.panel
@@ -301,7 +302,7 @@ local _sbr = RC._sbr
             or p == "ShowSidebarWorldBuffs"
             or p == "ShowSidebarBoonReminderConfig"
             or p == "ShowSidebarSmartMacro")
-           and not RC[p] and not flavorOff then
+           and not RC[p] then
             return false
         end
         -- class: a warrior-only item shows for warriors, for a character
@@ -383,7 +384,7 @@ local _sbr = RC._sbr
         frame.sidebar.buttons = {}
 
         local scrollChild = frame.sidebar.scrollChild or frame.sidebar
-        local yOffset = -8
+        local yOffset = 0
 
         local searchText = frame.sidebarSearchText
         if searchText and searchText ~= "" then
@@ -485,7 +486,7 @@ local _sbr = RC._sbr
                 if parentItem and warriorVisible(parentItem) then
                     local matched = false
                     local targets = {}
-                    for _, kw in ipairs(sub.keywords) do table.insert(targets, kw:lower()) end
+                    for _, kw in ipairs(RC.AliasKeywords and RC:AliasKeywords(sub) or sub.keywords) do table.insert(targets, kw:lower()) end
                     table.insert(targets, (sub.tabLabel or ""):lower())
                     table.insert(targets, (parentItem.name or ""):lower())
                     table.insert(targets, ((parentItem.name or "") .. " " .. (sub.tabLabel or "")):lower())
@@ -534,7 +535,7 @@ local _sbr = RC._sbr
             local isWarrior = self.isWarrior
             local nonWarEnabled = (self.db and self.db.nonWarriorEnabled) or {}
             local anyRaidEnabled = nonWarEnabled.mc or nonWarEnabled.bwl or nonWarEnabled.aq40 or nonWarEnabled.naxx
-            if (isWarrior or anyRaidEnabled) and RC.raidMobConfigs then
+            if (isWarrior or anyRaidEnabled) and RC.raidMobConfigs and RC:FeatureOn("raid_configs") then
                 local raidIcons = {
                     ["Molten Core"]          = "Interface\\Icons\\Spell_Fire_Incinerate",
                     ["Blackwing Lair"]       = "Interface\\Icons\\INV_Misc_Head_Dragon_Black",

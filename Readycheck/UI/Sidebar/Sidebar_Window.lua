@@ -578,6 +578,38 @@ local BACK_PANELS = {
         UM:EnterMoveMode()
     end
 
+    -- FOLD (the box left of the close): the window shrinks to its mark and
+    -- name at its top-left corner - the game shows past it, previews and
+    -- Edit Mode keep running - and the same box (now a +) opens it again
+    -- at the size it had. Not saved: the next open is the full window.
+    function RC:FoldSidebarConfig()
+        local f = self.sidebarConfigFrame
+        if not (f and f.sidebar) then return end
+        local S = RC.UI.S
+        local parts = { f.contentArea, f.footer, f.sidebar.scrollFrame, f.sidebar.searchContainer,
+            f.editModeToolButton, f.resizeGrip, f.sidebar.scrollFrame and f.sidebar.scrollFrame.scrollBar }
+        -- the corner stays where it is
+        local l, t = f:GetLeft(), f:GetTop()
+        if l and t then
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", l, t)
+        end
+        if f._rcFolded then
+            local w, h = f._rcFolded[1], f._rcFolded[2]
+            f._rcFolded = nil
+            f:SetSize(w, h)
+            for _, p in ipairs(parts) do p:Show() end
+            if f.foldButton then f.foldButton.icon:SetTexture(RC.UI.ICONS .. "collapse") end
+            self:UpdateSidebarMenuScrollbar(f)
+            self:UpdateSidebarScrollbar(f)
+        else
+            f._rcFolded = { f:GetWidth(), f:GetHeight() }
+            for _, p in ipairs(parts) do p:Hide() end
+            f:SetSize(S.SIDEBAR + 100, S.NAV_TOP)
+            if f.foldButton then f.foldButton.icon:SetTexture(RC.UI.ICONS .. "add") end
+        end
+    end
+
     function RC:CreateSidebarConfigWindow()
         if self.LoadConfigurationFromProfile then
             self:LoadConfigurationFromProfile()
@@ -629,9 +661,31 @@ local BACK_PANELS = {
 
         local version = self.version or "3.0.0"
 
-        local WINDOW_WIDTH = 1050
-        local WINDOW_HEIGHT = 700
-        local CONTENT_WIDTH = WINDOW_WIDTH - SIDEBAR.WIDTH - 5
+        -- THE WINDOW (5.0): ZacUI's /zui shell, number for number
+        -- (RC.UI.S; zui_tests/MATCH_OPTIONS_1107.md has where each was read).
+        -- No title bar: a 295 px sidebar (the mark and name, Edit Mode, the
+        -- search, the groups), on the right the page under a pinned title,
+        -- an 82 px footer (Reload, the window's scale, Close), and the
+        -- close and fold boxes in the top right corner. The whole window
+        -- drags.
+        local S = RC.UI.S
+        local FLAT = (RC.UI and RC.UI.FLAT) or "Interface\\Buttons\\WHITE8X8"
+        local ICONS = RC.UI.ICONS
+        local SW = SIDEBAR.WIDTH
+        local function SC(key, a) return RC.UI:SCol(key, a) end
+
+        -- a first open: 1300 x 946, no more than 92% of the screen
+        local WINDOW_WIDTH, WINDOW_HEIGHT = S.W, S.H
+        do
+            local sw0 = (UIParent and UIParent:GetWidth()) or 0
+            local sh0 = (UIParent and UIParent:GetHeight()) or 0
+            if sw0 > 0 then WINDOW_WIDTH = math.max(S.MIN_W, math.min(S.W, math.floor(sw0 * 0.92))) end
+            if sh0 > 0 then WINDOW_HEIGHT = math.max(S.MIN_H, math.min(S.H, math.floor(sh0 * 0.92))) end
+        end
+        -- the page's own width: the right side less the room each side
+        -- (cards sit 18 in from it, so they land at 45 from the pane)
+        local function ContentW(w) return (w or WINDOW_WIDTH) - SW - 2 * S.PAGE_X end
+        local CONTENT_WIDTH = ContentW(WINDOW_WIDTH)
 
         local frame = CreateFrame("Frame", "ReadycheckSidebarConfig", UIParent)
         frame:SetSize(WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -648,63 +702,82 @@ local BACK_PANELS = {
 
         RC.UI:RegisterEscapeClose("ReadycheckSidebarConfig")
 
-        local windowBgColor = self:GetColor("ui", "windowBackground")
-
         local bg = frame:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
-        bg:SetColorTexture(windowBgColor.r, windowBgColor.g, windowBgColor.b, windowBgColor.a or 1)
+        bg:SetTexture(FLAT)
         frame.bg = bg
 
+        -- 1 px white 0.05 all round
         frame.border = self.UI:CreateSimpleBorder(frame)
 
-        -- Window shell: flat windowBackground fill + 1px ring (above) and
-        -- the hero header (RC.UI:CreateHeroHeader): round badge, two-tone
-        -- name, version and character under it, the stepped gold rule and
-        -- the boxed X. Drag by the bar.
-        local FLAT = (RC.UI and RC.UI.FLAT) or "Interface\\Buttons\\WHITE8X8"
-        local TITLEBAR_H = RC.UI.HERO_H or 38
-        local titleBar = self.UI:CreateHeroHeader(frame, {
-            first = RCL["Ready"], second = RCL["check"],
-            subtitle = "v" .. tostring(version),
-            stepX = SIDEBAR.WIDTH,
-            leftColor = function() return RC:GetColor("sidebar", "background") end,
-            onClose = function() frame:Hide() end,
-        })
+        -- THE DRAG SURFACE: the whole window, under everything on it
+        local titleBar = CreateFrame("Frame", nil, frame)
+        titleBar:SetAllPoints(frame)
+        titleBar:SetFrameLevel(frame:GetFrameLevel() + 1)
         titleBar:EnableMouse(true)
         titleBar:RegisterForDrag("LeftButton")
-        frame.titleBar = titleBar
-        frame.heroHeader = titleBar
-
-        local dragOffsetX, dragOffsetY = 0, 0
-
-        titleBar:SetScript("OnDragStart", function(self)
-            local cursorX, cursorY = GetCursorPosition()
-            local scale = frame:GetEffectiveScale()
-            cursorX, cursorY = cursorX / scale, cursorY / scale
-
-            local frameX, frameY = frame:GetCenter()
-            dragOffsetX = cursorX - frameX
-            dragOffsetY = cursorY - frameY
-
+        titleBar:SetScript("OnMouseDown", function() frame:Raise() end)
+        titleBar:SetScript("OnDragStart", function()
             frame:StartMoving()
         end)
-
-        titleBar:SetScript("OnDragStop", function(self)
+        titleBar:SetScript("OnDragStop", function()
             frame:StopMovingOrSizing()
         end)
+        frame.titleBar = titleBar
 
-        local sidebarBgColor = self:GetColor("sidebar", "background")
-        local scrollTrackColor = self:GetColor("scrollbar", "track")
-        local scrollThumbColor = self:GetColor("scrollbar", "thumb")
+        -- NAV COLUMN: black 0.20 over the window, a 1 px white 0.05 rule
+        local sidebar = CreateFrame("Frame", nil, frame)
+        sidebar:SetWidth(SW)
+        sidebar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        sidebar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+        sidebar:SetFrameLevel(frame:GetFrameLevel() + 3)
+        sidebar._rcSetRoot = true
+        local LIST_TOP = S.NAV_TOP + S.NAV_ROW + S.SB_TOP + S.SB_H + S.SB_BOT
+        sidebar.knownScrollHeight = WINDOW_HEIGHT - LIST_TOP - 12
 
-        -- A glow over the badge icon, played by frame.PlayIconAnimation().
-        -- It used to fire on every open; the opening is now the header's
-        -- own mark animation (RC.UI:AnimateMark), and firing both put a
-        -- ghost of the icon on screen before the mark had landed. The
-        -- function stays for anything that wants to blink the icon.
-        local titleIcon = titleBar.icon
-        local iconGlow = titleBar:CreateTexture(nil, "OVERLAY")
-        iconGlow:SetSize(20, 20)
+        local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
+        sidebarBg:SetAllPoints()
+        sidebarBg:SetTexture(FLAT)
+        sidebar.bg = sidebarBg
+
+        local sidebarRule = sidebar:CreateTexture(nil, "OVERLAY")
+        sidebarRule:SetTexture(FLAT)
+        sidebarRule:SetWidth(1)
+        sidebarRule:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, 0)
+        sidebarRule:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
+        sidebar.rule = sidebarRule
+
+        -- THE MARK AND THE NAME in the sidebar's top 114: the mark 40 px at
+        -- (22, 30), "Ready" white and "check" in the accent at 28, the
+        -- version under them at 13, white 0.53
+        local logo = CreateFrame("Frame", nil, sidebar)
+        logo:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, 0)
+        logo:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -1, 0)
+        logo:SetHeight(S.NAV_TOP)
+        logo:EnableMouse(false)
+        local titleIcon = logo:CreateTexture(nil, "ARTWORK", nil, 3)
+        titleIcon:SetSize(40, 40)
+        titleIcon:SetPoint("TOPLEFT", logo, "TOPLEFT", 22, -30)
+        titleIcon:SetTexture("Interface\\AddOns\\Readycheck\\Media\\Checkmark")
+        if RC.UI and RC.UI.PaintMark then RC.UI:PaintMark(titleIcon) end
+        titleIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local brandFirst = self:CreateFontString(logo, "OVERLAY", nil, S.F_BRAND)
+        brandFirst:SetPoint("BOTTOMLEFT", titleIcon, "RIGHT", 10, -7)
+        brandFirst:SetText(RCL["Ready"])
+        local brandSecond = self:CreateFontString(logo, "OVERLAY", nil, S.F_BRAND)
+        brandSecond:SetPoint("LEFT", brandFirst, "RIGHT", 0, 0)
+        brandSecond:SetText(RCL["check"])
+        local titleText = self:CreateFontString(logo, "OVERLAY", nil, S.F_VALUE)
+        titleText:SetPoint("TOPLEFT", brandFirst, "BOTTOMLEFT", 1, -3)
+        titleText:SetText("v" .. tostring(version))
+        logo.first, logo.second, logo.version = brandFirst, brandSecond, titleText
+        sidebar.logo = logo
+        if RC.UI.AnimateMark then pcall(RC.UI.AnimateMark, RC.UI, titleIcon, logo, { inset = 0 }) end
+
+        -- A glow over the mark, played by frame.PlayIconAnimation() (the
+        -- opening itself is the mark's own animation, above).
+        local iconGlow = logo:CreateTexture(nil, "OVERLAY")
+        iconGlow:SetSize(40, 40)
         iconGlow:SetPoint("CENTER", titleIcon, "CENTER", 0, 0)
         iconGlow:SetTexture("Interface\\AddOns\\Readycheck\\Media\\Checkmark")
         if RC.UI and RC.UI.PaintMark then RC.UI:PaintMark(iconGlow) end
@@ -744,25 +817,12 @@ local BACK_PANELS = {
                 end
             end)
         end
-
-        -- titleText is the subtitle line (version - character); the name
-        -- itself is two font strings the header repaints on its own.
-        local titleText = titleBar.subtitle
         frame.titleText = nil
 
-        local closeButton = titleBar.closeButton
-        frame.closeButton = closeButton
-
-        -- TITLE BAR TOOLS, right-to-left, left of the X: Edit Mode (the
-        -- existing UIMover overlay, same thing /rc moveui opens) and a
-        -- reload. Anchored off the X, which is anchored to the bar's right
-        -- edge, so both follow a drag-resize. The title's RIGHT is pinned
-        -- to the leftmost of them so a long character key truncates
-        -- instead of running under the buttons.
         local function AttachTitleTooltip(button, header, ...)
             local lines = { ... }
             button:HookScript("OnEnter", function(btn)
-                GameTooltip:SetOwner(btn, "ANCHOR_BOTTOM")
+                GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
                 GameTooltip:SetText(header, 1, 1, 1)
                 for _, line in ipairs(lines) do
                     GameTooltip:AddLine(line, 0.7, 0.7, 0.7, true)
@@ -772,90 +832,100 @@ local BACK_PANELS = {
             button:HookScript("OnLeave", function() GameTooltip:Hide() end)
         end
 
-        AttachTitleTooltip(closeButton, RCL["Close"])
-
-        local editModeButton = self.UI:CreateStyledButton(titleBar, RCL["Edit Mode"], 78, 20)
-        editModeButton:SetPoint("RIGHT", closeButton, "LEFT", -8, 0)
-        editModeButton:SetFrameLevel(titleBar:GetFrameLevel() + 1)
-        editModeButton:SetScript("OnClick", function()
-            if RC.EnterEditMode then RC:EnterEditMode() end
-        end)
+        -- EDIT MODE: the sidebar's one fixed row (40 tall, a 45 x 32 icon
+        -- box 20 in, the label 10 after it). The existing UIMover overlay,
+        -- the same thing /rc moveui opens.
+        local editModeButton = CreateFrame("Button", nil, sidebar)
+        do
+            local row = editModeButton
+            row:SetHeight(S.NAV_ROW)
+            row:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, -S.NAV_TOP)
+            row:SetPoint("RIGHT", sidebar, "RIGHT", -1, 0)
+            row:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+            local function Tex(layer, sub)
+                local t = row:CreateTexture(nil, layer, nil, sub)
+                t:SetTexture(FLAT)
+                return t
+            end
+            local hl = Tex("BACKGROUND", 3) hl:SetAllPoints()
+            local glow = Tex("BACKGROUND", 2) glow:SetAllPoints()
+            local ind = Tex("ARTWORK", 1) ind:SetWidth(3)
+            ind:SetPoint("TOPLEFT") ind:SetPoint("BOTTOMLEFT")
+            local icon = row:CreateTexture(nil, "ARTWORK", nil, 2)
+            icon:SetSize(S.NAV_ICON_H, S.NAV_ICON_H)
+            icon:SetPoint("LEFT", row, "LEFT", S.NAV_LEFT + (S.NAV_ICON_W - S.NAV_ICON_H) / 2, 0)
+            icon:SetTexture(ICONS .. "mode")
+            local label = self:CreateFontString(row, "OVERLAY", nil, S.F_NAV)
+            label:SetPoint("LEFT", row, "LEFT", S.NAV_LEFT + S.NAV_ICON_W + S.NAV_GAP, 0)
+            label:SetText(RCL["Edit Mode"])
+            row.text, row.icon = label, icon
+            function row:Repaint()
+                local hot, on = self._rcHot, self._rcActive
+                local A = RC.UI:SAccent()
+                local h = RC:GetColor("settings", "hoverTint")
+                hl:SetShown(hot and not on and true or false)
+                hl:SetVertexColor(SC("text", S.NAV_HL))
+                glow:SetShown((hot or on) and true or false)
+                if on then RC.UI:Grad(glow, A, S.NAV_GLOW) elseif hot then RC.UI:Grad(glow, h, S.NAV_HOVER_GLOW) end
+                ind:SetShown((hot or on) and true or false)
+                if on then ind:SetVertexColor(A.r, A.g, A.b, 1) else ind:SetVertexColor(h.r, h.g, h.b, S.NAV_HOVER_IND) end
+                local a = on and 1 or (hot and S.NAV_HOVER or S.NAV_EN)
+                label:SetTextColor(SC("text", a))
+                icon:SetVertexColor(SC("text", a))
+            end
+            function row:SetActive(on) self._rcActive = on and true or false self:Repaint() end
+            row:SetScript("OnEnter", function(b) b._rcHot = true b:Repaint() end)
+            row:SetScript("OnLeave", function(b) b._rcHot = nil b:Repaint() end)
+            row:SetScript("OnClick", function()
+                if RC.EnterEditMode then RC:EnterEditMode() end
+            end)
+            row:Repaint()
+        end
         AttachTitleTooltip(editModeButton,
             RCL["Edit Mode"],
             RCL["Show every movable Readycheck frame at once over a grid and drag them into place."],
             RCL["Escape or Save & Lock to finish."])
         frame.editModeToolButton = editModeButton
 
-        local reloadButton = self.UI:CreateStyledButton(titleBar, RCL["Reload"], 58, 20)
-        reloadButton:SetPoint("RIGHT", editModeButton, "LEFT", -8, 0)
-        reloadButton:SetFrameLevel(titleBar:GetFrameLevel() + 1)
-        reloadButton:SetScript("OnClick", function() ReloadUI() end)
-        AttachTitleTooltip(reloadButton,
-            RCL["Reload"],
-            RCL["Reloads the interface. Needed for font, skin and minimap-button changes to fully apply."])
-        frame.reloadButton = reloadButton
-
-        titleText:SetPoint("RIGHT", reloadButton, "LEFT", -10, 0)
-
         -- Opening the window while the mover is already up (/rc moveui,
-        -- then /rc) should still show the button in its active state.
+        -- then /rc) should still show the row in its active state.
         frame:HookScript("OnShow", function()
             local UM = RC.UIMover
             editModeButton:SetActive(UM and UM.isMoving and true or false)
         end)
 
-        -- NAV COLUMN: sidebar.background fill with a 1px black rule down its
-        -- right edge separating it from the content pane.
-        local sidebar = CreateFrame("Frame", nil, frame)
-        sidebar:SetWidth(SIDEBAR.WIDTH)
-        sidebar:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -(TITLEBAR_H + 1))
-        sidebar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 1, 1)
-        -- 31 = titlebar height + border inset, 30 = search box row.
-        sidebar.knownScrollHeight = WINDOW_HEIGHT - (TITLEBAR_H + 1) - 30
-
-        local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
-        sidebarBg:SetAllPoints()
-        sidebarBg:SetTexture(FLAT)
-        sidebarBg:SetVertexColor(sidebarBgColor.r, sidebarBgColor.g, sidebarBgColor.b, sidebarBgColor.a or 1)
-        sidebar.bg = sidebarBg
-
-        local sidebarRule = sidebar:CreateTexture(nil, "OVERLAY")
-        sidebarRule:SetTexture(FLAT)
-        sidebarRule:SetWidth(1)
-        sidebarRule:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, 0)
-        sidebarRule:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
-        local ruleColor = self:GetColor("ui", "borderNormal")
-        sidebarRule:SetVertexColor(ruleColor.r, ruleColor.g, ruleColor.b, ruleColor.a or 1)
-        sidebar.rule = sidebarRule
-
-        -- Search: flat uiMover.inputBackground box, 1px ring, gold on focus.
-        local searchContainer = CreateFrame("Frame", nil, sidebar, "BackdropTemplate")
-        searchContainer:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 4, -4)
-        searchContainer:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -22, -4)
-        searchContainer:SetHeight(22)
-        local _searchElBG   = self:GetColor("uiMover", "inputBackground")
-        local _searchBNorm  = self:GetColor("ui", "borderNormal")
-        local _searchAccent = self:GetColor("ui", "accentGold")
-        searchContainer:SetBackdrop({
-            bgFile   = FLAT,
-            edgeFile = FLAT,
-            edgeSize = 1,
-        })
-        searchContainer:SetBackdropColor(_searchElBG.r, _searchElBG.g, _searchElBG.b, 1)
-        searchContainer:SetBackdropBorderColor(_searchBNorm.r, _searchBNorm.g, _searchBNorm.b, _searchBNorm.a or 1)
+        -- SEARCH: 28 high, 22 in, 13 under Edit Mode; input fill 0.35, a
+        -- white 0.10 edge (the accent while typing); text 13, hint 12
+        local searchContainer = CreateFrame("Frame", nil, sidebar)
+        searchContainer:SetPoint("TOPLEFT", sidebar, "TOPLEFT", S.SB_INSET + 2, -(S.NAV_TOP + S.NAV_ROW + S.SB_TOP))
+        searchContainer:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -S.SB_INSET, -(S.NAV_TOP + S.NAV_ROW + S.SB_TOP))
+        searchContainer:SetHeight(S.SB_H)
+        searchContainer:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+        searchContainer.bg = searchContainer:CreateTexture(nil, "BACKGROUND")
+        searchContainer.bg:SetAllPoints()
+        searchContainer.bg:SetTexture(FLAT)
+        searchContainer.border = self.UI:CreateSimpleBorder(searchContainer)
+        function searchContainer:Repaint()
+            self.bg:SetVertexColor(SC("input", S.INPUT_A))
+            local A = RC.UI:SAccent()
+            if self._rcFocus then
+                RC.UI:UpdateBorderColor(self.border, A, S.INPUT_FOCUS_A)
+            else
+                RC.UI:UpdateBorderColor(self.border, RC:GetColor("settings", "text"), S.INPUT_BRD_A)
+            end
+        end
         sidebar.searchContainer = searchContainer
         local searchBox = CreateFrame("EditBox", nil, searchContainer)
         searchBox:SetAllPoints(searchContainer)
         searchBox:SetAutoFocus(false)
         searchBox:SetMaxLetters(64)
-        searchBox:SetTextInsets(6, 6, 2, 2)
-        self:ApplyCustomFont(searchBox, 11)
+        self:ApplyCustomFont(searchBox, S.F_VALUE)
+        searchBox:SetTextColor(SC("text", 1))
         local placeholder = searchBox:CreateFontString(nil, "OVERLAY")
-        self:ApplyCustomFont(placeholder, 11)
-        local phColor = self:GetColor("text", "gray")
-        placeholder:SetTextColor(phColor.r, phColor.g, phColor.b, 0.8)
-        placeholder:SetPoint("LEFT", searchBox, "LEFT", 8, 0)
-        placeholder:SetText(RCL["Search..."])
+        self:ApplyCustomFont(placeholder, S.F_HINT)
+        placeholder:SetTextColor(SC("text", S.OFF_A))
+        placeholder:SetPoint("LEFT", searchBox, "LEFT", 10, 0)
+        placeholder:SetText(RCL["Search settings..."])
         sidebar.searchPlaceholder = placeholder
         searchBox:SetScript("OnTextChanged", function(self)
             local txt = self:GetText()
@@ -865,8 +935,8 @@ local BACK_PANELS = {
                 sidebar.searchClearBtn:SetShown(txt ~= "")
             end
             RC:BuildSidebar(frame, false)
-            -- The settings search: results in the content pane, ranked,
-            -- each one a jump to the setting itself.
+            -- The settings search: ranked results in a dropdown under the
+            -- box (Sidebar_SearchBox), each one a jump to the setting itself.
             if RC.SidebarSearch then RC.SidebarSearch.OnTextChanged(frame, txt) end
         end)
         searchBox:SetScript("OnEscapePressed", function(self)
@@ -878,77 +948,71 @@ local BACK_PANELS = {
             if RC.SidebarSearch then RC.SidebarSearch.OnEnter(frame, self:GetText()) end
         end)
         searchBox:SetScript("OnEditFocusGained", function()
-            searchContainer:SetBackdropBorderColor(_searchAccent.r, _searchAccent.g, _searchAccent.b, 1)
+            searchContainer._rcFocus = true
+            searchContainer:Repaint()
             -- Reading the pages starts as soon as the box is clicked, so
             -- most of the index is there by the time a word is typed.
             if RC.SidebarSearch then RC.SidebarSearch.OnFocus() end
         end)
         searchBox:SetScript("OnEditFocusLost", function()
-            searchContainer:SetBackdropBorderColor(_searchBNorm.r, _searchBNorm.g, _searchBNorm.b, _searchBNorm.a or 1)
+            searchContainer._rcFocus = nil
+            searchContainer:Repaint()
         end)
         sidebar.searchBox = searchBox
+        searchContainer:Repaint()
 
-        -- Clear: the framework's chromeless X (buttons.xNormal -> xHover).
-        local clearBtn = self.UI:CreateXCloseButton(searchContainer, 14, function()
+        -- Clear: the framework's chromeless X, 20 x 20 at 4 from the right
+        local clearBtn = self.UI:CreateXCloseButton(searchContainer, 20, function()
             searchBox:SetText("")
             searchBox:ClearFocus()
         end)
-        clearBtn:SetPoint("RIGHT", searchContainer, "RIGHT", -3, 0)
+        clearBtn:SetPoint("RIGHT", searchContainer, "RIGHT", -4, 0)
         clearBtn:SetFrameLevel(searchBox:GetFrameLevel() + 2)
         clearBtn:Hide()
         sidebar.searchClearBtn = clearBtn
 
-        searchBox:SetTextInsets(6, 20, 2, 2)
+        searchBox:SetTextInsets(10, 24, 0, 0)
 
+        -- THE GROUPS: 6 under the search, to 12 above the window's foot
         local sidebarScroll = CreateFrame("ScrollFrame", "WRSidebarMenuScroll", sidebar)
-        sidebarScroll:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, -30)
-        sidebarScroll:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -18, 0)
+        sidebarScroll:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, -LIST_TOP)
+        sidebarScroll:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -1, 12)
+        if sidebarScroll.SetClipsChildren then sidebarScroll:SetClipsChildren(true) end
 
         local sidebarChild = CreateFrame("Frame", nil, sidebarScroll)
-        sidebarChild:SetWidth(SIDEBAR.WIDTH - 4)
+        sidebarChild:SetWidth(SW - 1)
         sidebarChild:SetHeight(800)
         sidebarScroll:SetScrollChild(sidebarChild)
 
-        -- Scrollbar: 16 wide flat scrollbar.track rail with a 1px ring and a
-        -- flat block thumb (scrollbar.thumb) ringed by AddThumbBorder.
+        -- a thin rail at the right edge (3 px, white 0.03 / thumb 0.25)
         local sidebarScrollBar = CreateFrame("Slider", nil, sidebar)
         sidebarScrollBar:SetWidth(16)
-        sidebarScrollBar:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -2, -30)
-        sidebarScrollBar:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -2, 2)
+        sidebarScrollBar:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 5, -LIST_TOP - 2)
+        sidebarScrollBar:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 5, 14)
         sidebarScrollBar:SetOrientation("VERTICAL")
         sidebarScrollBar:SetMinMaxValues(0, 0)
         sidebarScrollBar:SetValue(0)
         sidebarScrollBar:SetValueStep(1)
+        sidebarScrollBar:SetFrameLevel(sidebar:GetFrameLevel() + 6)
 
         local sidebarScrollBg = sidebarScrollBar:CreateTexture(nil, "BACKGROUND")
         sidebarScrollBg:SetAllPoints()
         sidebarScrollBg:SetTexture(FLAT)
-        sidebarScrollBg:SetVertexColor(scrollTrackColor.r, scrollTrackColor.g, scrollTrackColor.b, scrollTrackColor.a or 0.8)
         sidebarScrollBar.bg = sidebarScrollBg
-
-        sidebarScrollBar.border = self.UI:CreateSimpleBorder(sidebarScrollBar)
 
         local sidebarThumb = sidebarScrollBar:CreateTexture(nil, "OVERLAY")
         sidebarThumb:SetTexture(FLAT)
-        sidebarThumb:SetVertexColor(scrollThumbColor.r, scrollThumbColor.g, scrollThumbColor.b, 1)
-        sidebarThumb:SetSize(16, 60)
+        sidebarThumb:SetSize(3, 60)
         sidebarScrollBar:SetThumbTexture(sidebarThumb)
-        if RC.UI and RC.UI.AddThumbBorder then RC.UI:AddThumbBorder(sidebarScrollBar) end
         sidebarScrollBar.thumb = sidebarThumb
 
         sidebarScrollBar:SetScript("OnValueChanged", function(self, value)
             sidebarScroll:SetVerticalScroll(value)
         end)
-        self.UI:StyleScrollBar(sidebarScrollBar)
+        self.UI:StyleScrollBar(sidebarScrollBar, { settings = true, width = 3, track = S.SCROLL_TRACK_A + 0.01, thumb = S.SCROLL_THUMB_A - 0.02 })
 
         sidebar:EnableMouseWheel(true)
-        sidebar:SetScript("OnMouseWheel", function(self, delta)
-            local current = sidebarScrollBar:GetValue()
-            local minVal, maxVal = sidebarScrollBar:GetMinMaxValues()
-            if maxVal <= 0 then return end
-            local newValue = math.max(minVal, math.min(maxVal, current - (delta * 30)))
-            sidebarScrollBar:SetValue(newValue)
-        end)
+        self.UI:SmoothWheel(sidebar, sidebarScrollBar, S.WHEEL)
 
         sidebarScroll.scrollBar = sidebarScrollBar
         sidebar.scrollFrame = sidebarScroll
@@ -968,11 +1032,11 @@ local BACK_PANELS = {
         frame:HookScript("OnSizeChanged", function()
             local newH = frame:GetHeight()
             if newH and newH > 100 then
-                frame.sidebar.knownScrollHeight = newH - (TITLEBAR_H + 1) - 30
+                frame.sidebar.knownScrollHeight = newH - LIST_TOP - 12
             end
             -- Debounced: OnSizeChanged fires repeatedly during a drag-resize.
             if frame._menuResizeTimer then frame._menuResizeTimer:Cancel() end
-            frame._menuResizeTimer = C_Timer.After(0.1, function()
+            frame._menuResizeTimer = C_Timer.NewTimer(0.1, function()
                 frame._menuResizeTimer = nil
                 if RC and RC.UpdateSidebarMenuScrollbar and RC.sidebarConfigFrame then
                     RC:UpdateSidebarMenuScrollbar(RC.sidebarConfigFrame)
@@ -980,81 +1044,75 @@ local BACK_PANELS = {
             end)
         end)
 
-        -- CONTENT PANE: the window fill shows through (cards float on it),
-        -- so the pane only carries a transparent-by-default flat texture the
-        -- opacity setting and RefreshUIColors can still reach.
-        local contentBgColor = self:GetColor("ui", "windowBackground")
-
-        -- pageW: the width you sized the window to (menu + page).
+        -- THE RIGHT SIDE: the page, above the 82 px footer. The window's
+        -- fill shows through (sections are rows on the panel); the pane
+        -- keeps a see-through texture the opacity setting can still reach.
         local pageW = WINDOW_WIDTH
 
         local contentArea = CreateFrame("Frame", nil, frame)
-        contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 1, 0)
-        contentArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+        contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 0, 0)
+        contentArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, S.FOOTER)
+        contentArea:SetFrameLevel(frame:GetFrameLevel() + 3)
 
         local contentBg = contentArea:CreateTexture(nil, "BACKGROUND")
         contentBg:SetAllPoints()
         contentBg:SetTexture(FLAT)
-        contentBg:SetVertexColor(contentBgColor.r, contentBgColor.g, contentBgColor.b, contentBgColor.a or 1)
         contentArea.bg = contentBg
         frame.contentBg = contentBg
 
+        -- the page scrolls 27 in from each side: what it puts 18 in (cards,
+        -- headers, tab rows) lands on the window's 45 px content pad
         local contentScroll = CreateFrame("ScrollFrame", "WRSidebarContentScroll", contentArea)
-        contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
-        contentScroll:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -22, 0)
+        contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", S.PAGE_X, 0)
+        contentScroll:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -S.PAGE_X, 0)
 
         local contentChild = CreateFrame("Frame", nil, contentScroll)
-        contentChild:SetWidth(CONTENT_WIDTH - 18)
+        contentChild:SetWidth(CONTENT_WIDTH)
         contentChild:SetHeight(1500)
+        contentChild._rcSetRoot = true
         contentScroll:SetScrollChild(contentChild)
 
+        -- the page's scrollbar: 4 px at 12 from the right, white 0.02 rail,
+        -- white 0.27 thumb, hidden when the page fits
         local scrollBar = CreateFrame("Slider", nil, contentArea)
         scrollBar:SetWidth(16)
-        scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -2, -4)
-        scrollBar:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -2, 20)
+        scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -6, -4)
+        scrollBar:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -6, 4)
         scrollBar:SetOrientation("VERTICAL")
         scrollBar:SetMinMaxValues(0, 1)
         scrollBar:SetValue(0)
         scrollBar:SetValueStep(1)
+        scrollBar:SetFrameLevel(contentArea:GetFrameLevel() + 8)
 
         local scrollBg = scrollBar:CreateTexture(nil, "BACKGROUND")
         scrollBg:SetAllPoints()
         scrollBg:SetTexture(FLAT)
-        scrollBg:SetVertexColor(scrollTrackColor.r, scrollTrackColor.g, scrollTrackColor.b, scrollTrackColor.a or 0.8)
         scrollBar.bg = scrollBg
-
-        scrollBar.border = self.UI:CreateSimpleBorder(scrollBar)
 
         local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
         thumb:SetTexture(FLAT)
-        thumb:SetVertexColor(scrollThumbColor.r, scrollThumbColor.g, scrollThumbColor.b, 1)
-        thumb:SetSize(16, 60)
+        thumb:SetSize(S.SCROLL_W, 60)
         scrollBar:SetThumbTexture(thumb)
-        if RC.UI and RC.UI.AddThumbBorder then RC.UI:AddThumbBorder(scrollBar) end
         scrollBar.thumb = thumb
 
         scrollBar:SetScript("OnValueChanged", function(self, value)
             contentScroll:SetVerticalScroll(value)
         end)
-        self.UI:StyleScrollBar(scrollBar)
+        self.UI:StyleScrollBar(scrollBar, { settings = true, width = S.SCROLL_W })
 
         contentScroll.scrollBar = scrollBar
 
         scrollBar:SetAlpha(0)
 
         contentArea:EnableMouseWheel(true)
-        contentArea:SetScript("OnMouseWheel", function(self, delta)
-            local current = scrollBar:GetValue()
-            local minVal, maxVal = scrollBar:GetMinMaxValues()
-            local newValue = math.max(minVal, math.min(maxVal, current - (delta * 40)))
-            scrollBar:SetValue(newValue)
-        end)
+        self.UI:SmoothWheel(contentArea, scrollBar, S.WHEEL)
 
-        -- THE PINNED TOP: on a page with a preview, the page's title and
-        -- the preview strip under it (UIF_Preview), above the scroll area.
+        -- THE PINNED TOP: the page's title, and on a page with a preview
+        -- the strip under it (UIF_Preview), above the scroll area. Set in
+        -- like the page, so the title lands at 45.
         local pinnedTop = CreateFrame("Frame", nil, contentArea)
-        pinnedTop:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
-        pinnedTop:SetSize(CONTENT_WIDTH - 18, 1)
+        pinnedTop:SetPoint("TOPLEFT", contentArea, "TOPLEFT", S.PAGE_X, 0)
+        pinnedTop:SetSize(CONTENT_WIDTH, 1)
         pinnedTop:Hide()
         frame.pinnedTop = pinnedTop
 
@@ -1062,10 +1120,129 @@ local BACK_PANELS = {
         frame.contentFrame = contentScroll
         frame.contentScrollChild = contentChild
 
-        local MIN_WIDTH = 850
-        local MAX_WIDTH = 1400
-        local MIN_HEIGHT = 500
-        local MAX_HEIGHT = 900
+        -- THE CORNER: fold and close, 40 x 40 boxes at the top right
+        local function CornerBox(iconName, onClick)
+            local b = CreateFrame("Button", nil, titleBar)
+            b:SetSize(S.CLOSE_BOX, S.CLOSE_BOX)
+            b:SetFrameLevel(frame:GetFrameLevel() + 30)
+            local t = b:CreateTexture(nil, "ARTWORK")
+            t:SetSize(16, 16)
+            t:SetPoint("CENTER")
+            t:SetTexture(ICONS .. iconName)
+            b.icon = t
+            function b:Repaint() t:SetVertexColor(SC("text", self._rcHot and 1 or S.DIM_A)) end
+            b:SetScript("OnEnter", function(self) self._rcHot = true self:Repaint() end)
+            b:SetScript("OnLeave", function(self) self._rcHot = nil self:Repaint() GameTooltip:Hide() end)
+            b:SetScript("OnClick", onClick)
+            b:Repaint()
+            return b
+        end
+        local closeButton = CornerBox("close", function() frame:Hide() end)
+        closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -11)
+        frame.closeButton = closeButton
+        AttachTitleTooltip(closeButton, RCL["Close"])
+
+        -- FOLD: the window shrinks to its mark and name (it keeps running,
+        -- previews and Edit Mode included); the same box brings it back.
+        local foldButton = CornerBox("collapse", function() RC:FoldSidebarConfig() end)
+        foldButton:SetPoint("TOPRIGHT", closeButton, "TOPLEFT", -4, 0)
+        frame.foldButton = foldButton
+        AttachTitleTooltip(foldButton, RCL["Fold"],
+            RCL["Fold this window to its name so you can see the game. Click again to open it."])
+
+        -- THE FOOTER (82): Reload on the left, Close on the right, the
+        -- window's own scale between them
+        local footer = CreateFrame("Frame", nil, frame)
+        footer:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMRIGHT", 0, 0)
+        footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        footer:SetHeight(S.FOOTER)
+        footer:SetFrameLevel(frame:GetFrameLevel() + 20)
+        footer._rcSetRoot = true
+        frame.footer = footer
+
+        local reloadButton = self.UI:CreateStyledButton(footer, RCL["Reload"], S.FOOT_BTN_W, S.FOOT_BTN_H)
+        self.UI:StyleSettingsButton(reloadButton, "footer")
+        reloadButton:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", S.FOOT_PAD, S.FOOT_PAD)
+        reloadButton:SetScript("OnClick", function() ReloadUI() end)
+        AttachTitleTooltip(reloadButton,
+            RCL["Reload"],
+            RCL["Reloads the interface. Needed for font, skin and minimap-button changes to fully apply."])
+        frame.reloadButton = reloadButton
+
+        local doneButton = self.UI:CreateStyledButton(footer, RCL["Close"], S.FOOT_CLOSE_W, S.FOOT_BTN_H)
+        self.UI:StyleSettingsButton(doneButton, "close")
+        doneButton:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", -S.FOOT_PAD, S.FOOT_PAD)
+        doneButton:SetScript("OnClick", function() frame:Hide() end)
+        frame.doneButton = doneButton
+
+        -- THE WINDOW'S SCALE (fontSettings.mainWindowScale, nil = 100%):
+        -- this window only, 60-140% in 5% steps
+        local function WinScale()
+            local fs = RC.db and RC.db.fontSettings
+            return (fs and tonumber(fs.mainWindowScale)) or 1
+        end
+        local scaleText
+        local function SetWinScale(v)
+            v = math.max(0.6, math.min(1.4, math.floor(v * 20 + 0.5) / 20))
+            if RC.db then
+                RC.db.fontSettings = RC.db.fontSettings or {}
+                RC.db.fontSettings.mainWindowScale = (math.abs(v - 1) < 0.001) and nil or v
+            end
+            frame:SetScale(v)
+            if scaleText then scaleText:SetText(math.floor(v * 100 + 0.5) .. "%") end
+            -- the preview keeps its sample at the real, in-game size
+            if RC.Preview and RC.Preview.Place then pcall(RC.Preview.Place) end
+        end
+        local plus = self.UI:CreateStyledButton(footer, "+", S.FOOT_BTN_H, S.FOOT_BTN_H)
+        self.UI:StyleSettingsButton(plus, "footer")
+        plus:SetPoint("RIGHT", doneButton, "LEFT", -20, 0)
+        plus:SetScript("OnClick", function() SetWinScale(WinScale() + 0.05) end)
+        scaleText = self:CreateFontString(footer, "OVERLAY", nil, S.F_VALUE)
+        scaleText:SetWidth(52)
+        scaleText:SetJustifyH("CENTER")
+        scaleText:SetPoint("RIGHT", plus, "LEFT", 0, 0)
+        scaleText:SetTextColor(SC("text", S.DIM_A))
+        scaleText:SetText(math.floor(WinScale() * 100 + 0.5) .. "%")
+        local minus = self.UI:CreateStyledButton(footer, "-", S.FOOT_BTN_H, S.FOOT_BTN_H)
+        self.UI:StyleSettingsButton(minus, "footer")
+        minus:SetPoint("RIGHT", scaleText, "LEFT", 0, 0)
+        minus:SetScript("OnClick", function() SetWinScale(WinScale() - 0.05) end)
+        AttachTitleTooltip(plus, RCL["Window scale"], RCL["Grows or shrinks this window only."])
+        AttachTitleTooltip(minus, RCL["Window scale"], RCL["Grows or shrinks this window only."])
+        frame.scaleText, frame.scaleUp, frame.scaleDown = scaleText, plus, minus
+        if math.abs(WinScale() - 1) > 0.001 then frame:SetScale(WinScale()) end
+
+        -- The shell's own colours (RefreshUIColors calls this).
+        function frame:RepaintShell()
+            local op = (RC.db and RC.db.fontSettings and RC.db.fontSettings.mainWindowBgOpacity) or 1.0
+            -- (the old repaint may have made it a colour texture)
+            self.bg:SetTexture(FLAT)
+            self.bg:SetVertexColor(SC("windowBackground", 1))
+            self.bg:SetAlpha(op)
+            RC.UI:UpdateBorderColor(self.border, RC:GetColor("settings", "text"), S.BORDER_A)
+            sidebarBg:SetVertexColor(SC("shade", S.SIDEBAR_A))
+            sidebarBg:SetAlpha(op)
+            sidebarRule:SetVertexColor(SC("text", S.BORDER_A))
+            contentBg:SetVertexColor(0, 0, 0, 0)
+            local A = RC.UI:SAccent()
+            brandFirst:SetTextColor(SC("text", 1))
+            brandSecond:SetTextColor(A.r, A.g, A.b, 1)
+            titleText:SetTextColor(SC("text", S.DIM_A))
+            scaleText:SetTextColor(SC("text", S.DIM_A))
+            editModeButton:Repaint()
+            searchContainer:Repaint()
+            closeButton:Repaint()
+            foldButton:Repaint()
+            for _, b in ipairs({ reloadButton, doneButton, plus, minus }) do
+                if b.Repaint then b:Repaint() end
+            end
+        end
+        frame:RepaintShell()
+
+        local MIN_WIDTH = S.MIN_W
+        local MAX_WIDTH = S.MAX_W
+        local MIN_HEIGHT = S.MIN_H
+        local MAX_HEIGHT = S.MAX_H
 
         frame:SetResizable(true)
         frame:SetResizeBounds(MIN_WIDTH, MIN_HEIGHT, MAX_WIDTH, MAX_HEIGHT)
@@ -1086,38 +1263,39 @@ local BACK_PANELS = {
             local dot = resizeGrip:CreateTexture(nil, "ARTWORK")
             dot:SetSize(2, 2)
             dot:SetPoint("BOTTOMLEFT", resizeGrip, "BOTTOMLEFT", pos[1], pos[2])
-            local dotCol = RC:GetColor("text", "gray")
-            dot:SetColorTexture(dotCol.r * 0.7, dotCol.g * 0.7, dotCol.b * 0.7, 0.85)
+            dot:SetColorTexture(SC("text", 0.25))
             resizeGrip.dots[i] = dot
         end
 
         resizeGrip:SetScript("OnEnter", function()
-            local gold = RC:GetColor("ui", "accentGold")
+            local A = RC.UI:SAccent()
             for _, dot in ipairs(resizeGrip.dots) do
-                dot:SetColorTexture(gold.r, gold.g, gold.b, 1)
+                dot:SetColorTexture(A.r, A.g, A.b, 1)
             end
         end)
 
         resizeGrip:SetScript("OnLeave", function()
-            local dotCol = RC:GetColor("text", "gray")
             for _, dot in ipairs(resizeGrip.dots) do
-                dot:SetColorTexture(dotCol.r * 0.7, dotCol.g * 0.7, dotCol.b * 0.7, 0.85)
+                dot:SetColorTexture(SC("text", 0.25))
             end
         end)
 
         resizeGrip:SetScript("OnMouseDown", function(self, button)
-            if button == "LeftButton" then
+            if button == "LeftButton" and not frame._rcFolded then
                 frame:StartSizing("BOTTOMRIGHT")
             end
         end)
 
         resizeGrip:SetScript("OnMouseUp", function(self, button)
             frame:StopMovingOrSizing()
+            if frame._rcFolded then return end
             local oldW = pageW
             pageW = math.max(MIN_WIDTH, frame:GetWidth() or pageW)
             if RC.db then
                 RC.db.configWindowWidth = pageW
                 RC.db.configWindowHeight = frame:GetHeight()
+                RC.db.fontSettings = RC.db.fontSettings or {}
+                RC.db.fontSettings.windowLayout = 5
                 if RC.SaveConfigurationToProfile then
                     RC:SaveConfigurationToProfile()
                 end
@@ -1130,8 +1308,8 @@ local BACK_PANELS = {
         end)
 
         frame:SetScript("OnSizeChanged", function(self, width, height)
-            -- -23 accounts for the content scrollbar gutter + border inset (vs -5 used for the initial CONTENT_WIDTH).
-            local newContentWidth = width - SIDEBAR.WIDTH - 23
+            if self._rcFolded then return end
+            local newContentWidth = ContentW(width)
             local cw = contentChild:GetWidth()
             if not cw or math.abs(cw - newContentWidth) > 3 then
                 contentChild:SetWidth(newContentWidth)
@@ -1141,7 +1319,7 @@ local BACK_PANELS = {
             if self._resizeTimer then
                 self._resizeTimer:Cancel()
             end
-            self._resizeTimer = C_Timer.After(0.05, function()
+            self._resizeTimer = C_Timer.NewTimer(0.05, function()
                 self._resizeTimer = nil
                 if RC.UpdateSidebarScrollbar then
                     RC:UpdateSidebarScrollbar(self)
@@ -1152,11 +1330,17 @@ local BACK_PANELS = {
             end)
         end)
 
-        if self.db and self.db.configWindowWidth and self.db.configWindowHeight then
+        -- A size saved before 5.0 was chosen for the old window (a 200 px
+        -- menu, no footer): the first open of this one starts at its own
+        -- size; a size saved since wins.
+        local fsv = self.db and self.db.fontSettings
+        if self.db and self.db.configWindowWidth and self.db.configWindowHeight and fsv and fsv.windowLayout == 5 then
             local savedWidth = math.max(MIN_WIDTH, math.min(MAX_WIDTH, self.db.configWindowWidth))
             local savedHeight = math.max(MIN_HEIGHT, math.min(MAX_HEIGHT, self.db.configWindowHeight))
             frame:SetSize(savedWidth, savedHeight)
             pageW = savedWidth
+            contentChild:SetWidth(ContentW(savedWidth))
+            pinnedTop:SetWidth(contentChild:GetWidth())
         end
 
         -- THE PREVIEW STRIP'S ROOM (UIF_Preview calls this through
@@ -1164,7 +1348,7 @@ local BACK_PANELS = {
         -- none; the page's title alone when it is pinned), and the scroll
         -- area moved to start below it. The window never changes size.
         local function PlaceStrip(stripY, h, pinned)
-            local cw = contentChild:GetWidth() or (CONTENT_WIDTH - 18)
+            local cw = contentChild:GetWidth() or CONTENT_WIDTH
             local sw = cw - 36
             pinnedTop:SetWidth(cw)
             local top = 0
@@ -1180,8 +1364,8 @@ local BACK_PANELS = {
             pinnedTop:SetHeight(math.max(1, top))
             if top > 0 then pinnedTop:Show() else pinnedTop:Hide() end
             local _, _, _, _, oldTop = contentScroll:GetPoint(1)
-            contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, -top)
-            scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -2, -4 - top)
+            contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", S.PAGE_X, -top)
+            scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -6, -4 - top)
             -- the scroll area's height changed: measure the page again
             if oldTop ~= -top and RC.UpdateSidebarScrollbar then RC:UpdateSidebarScrollbar(frame) end
             return sw
@@ -1348,6 +1532,12 @@ local BACK_PANELS = {
             end
         end
 
+        -- a page this game version does not have (Core_Flavor) opens the
+        -- first page instead
+        if initialItem ~= defaultItem and self.FeatureOffForPage and self:FeatureOffForPage(initialItem) then
+            initialItem = defaultItem
+        end
+
         if initialItem == defaultItem and initialCat and initialItem ~= initialCat then
             self.SidebarState.expandedCategories[initialCat.id] = true
         end
@@ -1362,6 +1552,8 @@ local BACK_PANELS = {
         end
 
         frame:SetScript("OnHide", function()
+            -- closed while folded: it opens full size next time
+            if frame._rcFolded then self:FoldSidebarConfig() end
             if self.db.dragEnabled and self.dragTestFrame then
                 self:HideDragTestFrame()
             end

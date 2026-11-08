@@ -1428,6 +1428,10 @@ RC.encounterAddPhases = {
             fontSize = 12,
             fontOutline = "OUTLINE",
             mainWindowBgOpacity = 1.0,
+            -- (nil-able, set by the /rc window since 5.0: mainWindowScale -
+            -- the footer's -/+ scale, nil = 100%; windowLayout - 5 once a
+            -- size was saved for the 5.0 window, so an older saved size
+            -- does not shrink it)
         },
 
         executeSettings = {
@@ -1682,6 +1686,12 @@ RC.encounterAddPhases = {
         setupWizard = {
             completed = false,
             lastStep = 1,
+            -- SETUP2: the step-by-step setup (Readycheck_Extras SetupWizard2)
+            -- also keeps here which steps were visited (visited) and the
+            -- role the Character step recorded (role: nil = as detected,
+            -- "tank" / "melee" / "ranged" / "healer"). Never exported or
+            -- synced (RC.NONSYNCED_SETTINGS lists setupWizard).
+            visited = {},
         },
 
         customReminders = {
@@ -1764,6 +1774,24 @@ RC.encounterAddPhases = {
             buttonHover = {r = 0.18, g = 0.18, b = 0.18, a = 1, label = RCL["Item Hover"]},
             buttonSelected = {r = 0.10, g = 0.18, b = 0.12, a = 1, label = RCL["Item Selected"]},
             selectionIndicator = {r = 0.35, g = 0.70, b = 0.40, a = 1, label = RCL["Selection Bar"]},
+        },
+
+        -- The /rc window (5.0): the same numbers as ZacUI's /zui window,
+        -- white at a stepped alpha over a warm near-black, the gold the
+        -- only hue. Each control's state reads its alpha from RC.UI.S; the
+        -- colour itself is read here, so a pick still wins.
+        settings = {
+            windowBackground = {r = 0.069, g = 0.058, b = 0.047, a = 1, label = RCL["Window BG"]},
+            accent = {r = 0.85, g = 0.65, b = 0.25, a = 1, label = RCL["Accent"]},
+            text = {r = 1, g = 1, b = 1, a = 1, label = RCL["Text"]},
+            shade = {r = 0, g = 0, b = 0, a = 1, label = RCL["Row Bands"]},
+            input = {r = 0.030, g = 0.023, b = 0.018, a = 1, label = RCL["Input BG"]},
+            buttonBackground = {r = 0.089, g = 0.080, b = 0.072, a = 1, label = RCL["Button BG"]},
+            dropdownBackground = {r = 0.103, g = 0.095, b = 0.088, a = 1, label = RCL["Dropdown BG"]},
+            checkboxBackground = {r = 0.112, g = 0.105, b = 0.098, a = 1, label = RCL["Checkbox BG"]},
+            toggleOff = {r = 0.267, g = 0.267, b = 0.267, a = 1, label = RCL["Switch Off"]},
+            hoverTint = {r = 0.85, g = 0.95, b = 0.90, a = 1, label = RCL["Hover Tint"]},
+            edgeTint = {r = 0.7, g = 0.7, b = 0.7, a = 1, label = RCL["Selected Edge"]},
         },
 
         checkbox = {

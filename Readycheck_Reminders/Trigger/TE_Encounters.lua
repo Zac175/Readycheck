@@ -66,7 +66,7 @@ end
                 table.remove(self.activeReminderData.abilities, i)
                 table.insert(abilitiesRemoved, abilityKey)
 
-                local targetGUID = UnitGUID("target")
+                local targetGUID = Readycheck.SafeGUID("target")
                 if targetGUID and self.spellCastTriggers.usedAbilities[targetGUID] then
                     self.spellCastTriggers.usedAbilities[targetGUID][abilityKey] = nil
                 end
@@ -115,7 +115,7 @@ end
             return false
         end
 
-        local targetName = UnitName("target")
+        local targetName = Readycheck.SafeName("target")
         if targetName then
             if RC.GetEncounterNameForBoss then
                 local enc = RC:GetEncounterNameForBoss(raidName, targetName)
@@ -184,7 +184,7 @@ end
         if currentRaid then
             local raidSettings = self:GetActiveRaidProfile(currentRaid)
             if raidSettings and raidSettings.bosses then
-                local targetName = UnitName("target")
+                local targetName = Readycheck.SafeName("target")
                 if targetName then
                     local encounterName = self:GetEncounterNameForBoss(currentRaid, targetName)
                     if encounterName then
@@ -205,7 +205,7 @@ end
                     table.remove(self.activeReminderData.abilities, i)
                 end
             end
-            local targetGUID = UnitGUID("target")
+            local targetGUID = Readycheck.SafeGUID("target")
             if targetGUID and self.spellCastTriggers.usedAbilities[targetGUID] then
                 self.spellCastTriggers.usedAbilities[targetGUID]["frostBlast"] = nil
             end

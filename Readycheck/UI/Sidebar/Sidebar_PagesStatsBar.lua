@@ -43,7 +43,9 @@ local TEXT = _sbs.TEXT
             local def = defs[s.key]
             if def and def.get then
                 local ok, v = pcall(def.get, CS)
-                if ok and type(v) == "number" then out[s.key] = math_floor(v * 10 + 0.5) / 10 end
+                -- (a stat WoW Forever hides keeps the sample's own number)
+                if ok and RC.Hidden(v) then out[s.key] = STATS_FAKE.strong[s.key]
+                elseif ok and type(v) == "number" then out[s.key] = math_floor(v * 10 + 0.5) / 10 end
             end
         end
         return out
@@ -73,7 +75,8 @@ local TEXT = _sbs.TEXT
         local CS = RC.CharacterStats
         if not (CS and CS.NewBarPreview) then return end
         P.store.pv = CS:NewBarPreview(canvas)
-        if CS.NewBuffListSample then
+        -- (no buff list where there is no buff limit: Core_Flavor)
+        if CS.NewBuffListSample and RC:FeatureOn("buff_pushoff") then
             P.store.list = CS.NewBuffListSample(canvas)
             P.store.list:Hide()
         end
@@ -128,12 +131,16 @@ local TEXT = _sbs.TEXT
         local yPos = -20
         local cardY = -32
 
+        local statsModes = { { id = "strong", label = RCL["Strong"] }, { id = "weak", label = RCL["Weak"] },
+                      { id = "live", label = RCL["Your stats"] }, { id = "buffs", label = RCL["Buff list"] } }
+        -- the buff list is the Buffs cell's, which a version with no buff
+        -- limit does not have (Core_Flavor)
+        if not self:FeatureOn("buff_pushoff") then statsModes[4] = nil end
         self.UI:DeclarePreview({
             key = "statsbar.bar", title = RCL["Character Stats Bar"],
             width = SB_W, height = SB_H,
             build = StatsPreviewBuild, update = StatsPreviewUpdate,
-            modes = { { id = "strong", label = RCL["Strong"] }, { id = "weak", label = RCL["Weak"] },
-                      { id = "live", label = RCL["Your stats"] }, { id = "buffs", label = RCL["Buff list"] } },
+            modes = statsModes,
         })
 
         local _, newY = self:CreateSettingsPageHeader(parent, yPos, RCL["Character Stats Bar"],
@@ -170,7 +177,9 @@ local TEXT = _sbs.TEXT
                             if CS.UpdateBuffCapWant then CS:UpdateBuffCapWant() end
                         end
                     end,
-                    RCL["A thin bar of your attack power, crit, hit and the rest, with buff slots and durability. Pick the stats on the Stats tab."])
+                    self:FeatureOn("buff_pushoff")
+                        and RCL["A thin bar of your attack power, crit, hit and the rest, with buff slots and durability. Pick the stats on the Stats tab."]
+                        or RCL["A thin bar of your attack power, crit, hit and the rest, with durability. Pick the stats on the Stats tab."])
                 y = K.Check(card, y, RCL["Show stats button in character pane"],
                     function() return self.db.showStatsButton or false end,
                     function(newState)
@@ -291,10 +300,13 @@ local TEXT = _sbs.TEXT
                     end,
                     anchorGet = ag, anchorSet = as, targets = Others("value"),
                     anchorDefaults = function() return CSx:CellAnchorDefault("value") end }))
+                -- (no Buffs cell where there is no buff limit: Core_Flavor)
+                if self:FeatureOn("buff_pushoff") then
                 ag, as = self.UI:CustomAccess(Root, "anchors", "pushoff", After)
                 Place(self.UI:CreateFrameElement(card, { label = RCL["Push-off icon (Buffs cell)"], key = "pushoff", width = W,
                     anchorGet = ag, anchorSet = as, targets = Others(nil),
                     anchorDefaults = function() return CSx:CellAnchorDefault("pushoff") end }))
+                end
                 return K.Desc(card, y + 4, RCL["One place for every cell. Reset puts a text back where it always sat."])
             end)
         elseif selectedTab == "position" then

@@ -1028,4 +1028,7 @@ RC:DebugPrint("TTKDisplay module loaded", "ttk")
 
 end
 
-C_Timer.After(0.1, InitializeTTKDisplayModule)
+-- not where the game hides enemy health (Core_Flavor)
+if not (_G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("ttk")) then
+    C_Timer.After(0.1, InitializeTTKDisplayModule)
+end

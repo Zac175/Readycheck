@@ -159,6 +159,9 @@ function RC:OnEnable()
             RC:DebugPrint("Startup suppression cleared - no dirty saves pending", "config")
         end
     end)
+    -- SETUP2: the CVars of features that are off go back (nothing at all
+    -- unless the CVar record holds something)
+    if RC.CVar and RC.CVar.AtLogin then RC.CVar.AtLogin() end
 
     self.db.enabled = true
     self:DebugPrint("FORCED ENABLED in OnEnable - db.enabled = " .. tostring(self.db.enabled), "config")
@@ -803,6 +806,19 @@ CMD(function(cmd, args, msg, isWarrior)
 
 end, "help")
 
+-- /rc search <words>: the settings window with the words typed into its
+-- search box and the results dropped under it (Sidebar_SearchBox);
+-- bare, just the cursor in the box.
+CMD(function(cmd, args, msg, isWarrior)
+        local words = msg and msg:match("^%s*%S+%s*(.-)%s*$") or ""
+        local SB = RC.SidebarSearchBox
+        if SB and SB.Open then
+            SB.Open(words)
+        elseif RC.OpenConfig then
+            RC:OpenConfig()
+        end
+end, "search", "find")
+
 CMD(function(cmd, args, msg, isWarrior)
         if RC.UIMover then
             RC.UIMover:EnterMoveMode()
@@ -830,6 +846,26 @@ end, "flavor")
 CMD(function(cmd, args, msg, isWarrior)
         RC:SetupWizardCommand()
 end, "setup", "wizard")
+
+-- SETUP2: /rc hints lists the one-time tips shown; /rc hints reset brings
+-- them (and the first-run tour) back
+CMD(function(cmd, args, msg, isWarrior)
+        if not RC.Hints then RC:Print(RCL["The hints did not load."]) return end
+        if (args[2] or ""):lower() == "reset" then
+            RC.Hints.Reset()
+            RC:Print(RCL["Hints reset - every one-time tip shows again, and the tour on your next open of the settings."])
+        else
+            local seen = RC.Hints.List()
+            if #seen == 0 then RC:Print(RCL["No one-time hints shown yet."])
+            else RC:Print(RCL["Hints shown: "] .. table.concat(seen, ", ")) end
+        end
+end, "hints")
+
+-- SETUP2: /rc uninstall puts back every game setting Readycheck changed,
+-- turns every Readycheck addon off and reloads (asks first)
+CMD(function(cmd, args, msg, isWarrior)
+        if RC.UninstallCommand then RC:UninstallCommand() else RC:Print(RCL["The uninstall helper did not load."]) end
+end, "uninstall")
 
 CMD(function(cmd, args, msg, isWarrior)
         if RC.PrintClassAbilityRoster then
@@ -1543,6 +1579,9 @@ SlashCmdList["READYCHECK"] = function(msg)
     end
 
     local handler = RC_CMDS[cmd]
+    -- a command of a feature this game version does not run is not there
+    -- (Core_Flavor); it reads as an unknown command
+    if handler and RC.CommandOffByFlavor and RC:CommandOffByFlavor(cmd) then handler = nil end
     if handler then
         handler(cmd, args, msg, isWarrior)
         return

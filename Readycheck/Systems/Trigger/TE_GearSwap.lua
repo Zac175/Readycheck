@@ -1109,9 +1109,9 @@ local ABILITY_READY_TTL = 1.0
             if not UnitExists(unit) then return false end
             if UnitIsDead(unit) then return false end
             if wantGUID then
-                return UnitGUID(unit) == wantGUID
+                return Readycheck.SafeGUID(unit) == wantGUID
             elseif wantName then
-                return UnitName(unit) == wantName
+                return Readycheck.SafeName(unit) == wantName
             end
             return false
         end

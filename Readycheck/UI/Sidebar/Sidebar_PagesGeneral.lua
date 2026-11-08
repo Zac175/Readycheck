@@ -275,6 +275,13 @@ local TEXT = _sbs.TEXT
                 RCL["While the world map is open, any Readycheck bar or reminder sitting under it fades out and comes back when the map closes. Frames clear of the map are left alone."])
             return y
         end)
+
+        -- SETUP2: run the setup, reset the one-time hints, uninstall (Core_Hints)
+        if self.SetupGeneralCard then
+            yPos = K.Card(parent, yPos, RCL["Setup, hints and uninstall"], function(card, y)
+                return self:SetupGeneralCard(card, y)
+            end)
+        end
         local cardY
 
         if not self.isWarrior then
@@ -439,6 +446,13 @@ local TEXT = _sbs.TEXT
     OT.buff_pushoff   = { desc = RCL["Alerts when a buff is pushed off by the 32 buff limit."],
         status = EnabledOf("buffPushoffAlert") }
     OT.battle_shout   = { desc = RCL["Reminds you and tracks shout status for your party."],
+        -- no party tracker where the shout reaches the whole raid (Forever: Core_Flavor)
+        descFn = function()
+            if RC.FeatureOn and not RC:FeatureOn("battle_shout_party") then
+                return RCL["Reminds you when anyone your shout reaches is missing it."]
+            end
+            return RCL["Reminds you and tracks shout status for your party."]
+        end,
         status = EnabledOf("battleShoutReminder") }
     OT.boon_reminder  = { desc = RCL["Alerts when world buffs are about to be lost."],
         status = EnabledOf("boonReminder") }

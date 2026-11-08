@@ -48,7 +48,7 @@ function lib:IconCallback(event, name, key, value)
 		end
 	end
 end
-if not lib.callbackRegistered then
+if not lib.callbackRegistered and type(ldb.RegisterCallback) == "function" then -- Readycheck: guard (a LibDataBroker without callbacks broke this at load)
 	ldb.RegisterCallback(lib, "LibDataBroker_AttributeChanged__icon", "IconCallback")
 	ldb.RegisterCallback(lib, "LibDataBroker_AttributeChanged__iconCoords", "IconCallback")
 	ldb.RegisterCallback(lib, "LibDataBroker_AttributeChanged__iconR", "IconCallback")

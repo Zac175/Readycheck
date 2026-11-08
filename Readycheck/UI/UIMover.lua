@@ -1261,6 +1261,18 @@ local function InitializeUIMover()
         ResetStored(data)
     end
 
+    -- SETUP2: a registered frame put at a screen spot by code (the setup's
+    -- layout presets): cx, cy are CENTER offsets from the screen's centre
+    -- in UIParent units, saved the way a drop saves them. In combat a
+    -- protected frame waits for the fight to end, as a drop does.
+    function UM:PlaceFrame(frameKey, cx, cy)
+        local data = self.frames[frameKey]
+        if not data or not data.frame then return false end
+        local k = ScaleK(data.frame)
+        MoveCenter(data, (tonumber(cx) or 0) * k, (tonumber(cy) or 0) * k)
+        return true
+    end
+
     -- One persistent WR_MoverGrid frame for the addon session. Line
     -- textures are pooled in grid.lines and re-laid out when the grid
     -- size changes - recreating the frame per size change orphaned it

@@ -370,7 +370,7 @@ end
 
         local currentTime = GetTime()
 
-        local targetGUID = UnitGUID("target")
+        local targetGUID = Readycheck.SafeGUID("target")
         local existingHistory = nil
 
         if self.targetUpdateCache.cachedData and
@@ -400,7 +400,7 @@ end
             self:InitializeTriggerSystem()
         end
 
-        local targetName = UnitName("target")
+        local targetName = Readycheck.SafeName("target")
 
         local currentHP = UnitHealth("target")
         local maxHP = UnitHealthMax("target")
@@ -514,7 +514,7 @@ end
         end
 
         if UnitExists("target") then
-            local targetName = UnitName("target")
+            local targetName = Readycheck.SafeName("target")
 
             if targetName == encounterName then
                 return true
@@ -1394,6 +1394,7 @@ end
 
         elseif triggerType == "rage_threshold" then
             local playerRage = UnitPower("player", 1)
+            if Readycheck.IsSecret(playerRage) then return false end   -- (hidden on WoW Forever)
             local rageThreshold = abilitySettings.rageValue or 20
             return playerRage <= rageThreshold
 
@@ -1632,7 +1633,7 @@ end
                         table.insert(abilitiesRemoved, reminderAbilityKey)
                         if debugDismissalEnabled then self:DebugPrint("Removed utility item: " .. (self.utilityItems[reminderItemId] and self.utilityItems[reminderItemId].name or reminderItemId) .. " (spell ID: " .. macroSpellID .. ")", "dismissal") end
 
-                        local targetGUID = UnitGUID("target")
+                        local targetGUID = Readycheck.SafeGUID("target")
                         if targetGUID and self.spellCastTriggers.usedAbilities[targetGUID] then
                             self.spellCastTriggers.usedAbilities[targetGUID][tostring(reminderItemId)] = nil
                         end
@@ -1654,7 +1655,7 @@ end
                         table.insert(abilitiesRemoved, reminderAbilityKey)
                         if debugDismissalEnabled then self:DebugPrint("Removed trinket: " .. reminderAbilityKey, "dismissal") end
 
-                        local targetGUID = UnitGUID("target")
+                        local targetGUID = Readycheck.SafeGUID("target")
                         if targetGUID then
                             if self.spellCastTriggers.usedAbilities[targetGUID] then
                                 self.spellCastTriggers.usedAbilities[targetGUID][reminderAbilityKey] = nil
@@ -1680,7 +1681,7 @@ end
                         table.insert(abilitiesRemoved, castAbilityKey)
                         if debugDismissalEnabled then self:DebugPrint("Removed ability: " .. castAbilityKey, "dismissal") end
 
-                        local targetGUID = UnitGUID("target")
+                        local targetGUID = Readycheck.SafeGUID("target")
                         if targetGUID and self.spellCastTriggers.usedAbilities[targetGUID] then
                             self.spellCastTriggers.usedAbilities[targetGUID][castAbilityKey] = nil
                             if debugDismissalEnabled then self:DebugPrint("Cleared tracking for " .. castAbilityKey .. " - can retrigger when CD up", "dismissal") end

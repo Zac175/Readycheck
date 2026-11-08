@@ -14,7 +14,8 @@ RC._rrs = RC._rrs or {}
 local _rrs = RC._rrs
 local RR = RC.RaidRoute
 local PotionFamily, eventFrame = _rrs.PotionFamily, _rrs.eventFrame
-    local useWatch = CreateFrame("Frame")
+    -- (no frame where the route does not run: Core_Flavor)
+    local useWatch = RC:FeatureOn("raid_route") and CreateFrame("Frame") or RC.FlavorNullFrame
 
     local function RemItemSpellId(r)
         local iid = r.itemId
@@ -253,7 +254,8 @@ local PotionFamily, eventFrame = _rrs.PotionFamily, _rrs.eventFrame
         }
         local KW = { consumers = {}, n = 0 }
         RC.KillWatch = KW
-        local kwFrame = CreateFrame("Frame")
+        -- (no frame where there is no combat log to read: Core_Flavor)
+        local kwFrame = RC:FeatureOn("kill_watch") and CreateFrame("Frame") or RC.FlavorNullFrame
 
         -- one creature, one death: an instakill logs SPELL_INSTAKILL and
         -- then UNIT_DIED for the same GUID, which counted twice for every

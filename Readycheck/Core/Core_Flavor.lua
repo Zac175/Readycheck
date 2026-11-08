@@ -108,74 +108,111 @@ end
 
 ------------------------------------------------------------------------
 -- The feature table. off[flavor] = the plain reason it does not run
--- there. pages: sidebar ids that show the reason instead of the page.
--- addon: a companion that is not loaded at all. stubs: methods the rest
--- of the addon calls that go quiet; talk: ones a player types or clicks,
--- which say why instead.
+-- there, and kind[flavor] = which kind of "off" that is:
+--   not_needed  the game version does not have the problem it solves
+--               (Forever and TBC have no buff limit to push buffs off)
+--   not_there   the content it is for is not on that version (Naxxramas
+--               on TBC, raids Forever has not opened yet)
+--   cant        the game keeps from addons what it needs there (Forever's
+--               hidden values, no combat log, blocked addon messages)
+-- Whatever the kind, a switched-off feature does not load there: no
+-- frames, events, tickers, settings pages, options, search hits, stats
+-- bar cells or slash commands. Only /rc flavor and the Game version page
+-- list it, with its kind and reason. Saved settings are never touched.
+-- pages: sidebar ids hidden there. addon: a companion that is not loaded
+-- at all. stubs: methods the rest of the addon calls that go quiet.
+-- cmds: /rc sub-commands that are not there; slash: standalone slash
+-- commands (SlashCmdList keys) taken away there.
 ------------------------------------------------------------------------
-local CLOG    = RCL["needs the combat log, which Forever does not give addons"]
+-- world buffs. TBC: patch 2.1 stops the Classic Era ones above level 63
+-- (warcraft.wiki.gg). Forever: "world buffs are removed inside dungeons
+-- and raids" (warcraft.wiki.gg, World of Warcraft: Forever).
+local WB_TBC  = RCL["Classic Era world buffs stop working above level 63 on TBC"]
+local WB_FOREVER = RCL["Forever removes world buffs inside dungeons and raids, so there is nothing to time or keep for a raid"]
+-- Forever's raids (Barrow Deeps, Hyjal Summit, Onyxia's Lair) open on
+-- 9 December 2026 (warcraft.wiki.gg); RC:ApplyRaidFlavor drops these once
+-- Forever's list is filled in
+local RAIDS_LATER = { forever = RCL["Forever's raids open on 9 December and aren't in Readycheck yet"] }
+local RAIDS_LATER_KIND = { forever = "not_there" }
 local HEALTH  = RCL["Forever hides enemy health from addons in combat"]
 local DEBUFFS = RCL["Forever hides enemy debuffs from addons in combat"]
 local MSG     = RCL["Forever blocks addon messages inside instances; sync waits until you leave"]
--- world buffs: TBC's patch 2.1 stops the Classic Era ones above level 63;
--- Forever strips them at the door of every dungeon and raid
-local WORLD_BUFFS = { tbc = RCL["Classic Era world buffs stop working above level 63 on TBC"],
-                      forever = RCL["Forever removes world buffs inside dungeons and raids"] }
--- raid features: on wherever the version's raids are listed (TBC now);
--- RC:ApplyRaidFlavor drops this once Forever's list is filled in
-local RAIDS_LATER = { forever = RCL["Forever raids aren't listed yet"] }
+local CANT    = { forever = "cant" }
 
 RC.FEATURE_FLAVORS = {
     -- World buffs. The World Tools companion loads wherever either row
     -- runs; its world buff parts stand down where world_tools is off.
     { id = "world_tools", name = RCL["World buffs: drop timers, timer network, buff board, summons on a fresh world buff, gossip and turn-ins"],
-      off = WORLD_BUFFS, addon = "Readycheck_WorldTools",
-      pages = { "wt_pulltimers", "wt_buffnetwork", "wt_wbdrops", "world_buffs" } },
+      off = { tbc = WB_TBC, forever = WB_FOREVER },
+      kind = { tbc = "not_there", forever = "not_needed" },
+      addon = "Readycheck_WorldTools",
+      pages = { "wt_pulltimers", "wt_buffnetwork", "wt_wbdrops", "world_buffs" },
+      cmds = { "wb", "worldbuffs", "worldbuff", "crossfaction", "xfaction", "xfpeer", "xfpeerclear",
+               "wbclearremovals", "wbclear", "wbself" },
+      slash = { "READYCHECKWB" } },
     { id = "world_summons", name = RCL["Auto-accept summons (always, or after a taxi PvP drop)"],
-      off = { forever = RCL["whether an addon may accept a summon there is not confirmed yet"] },
+      off = { forever = RCL["whether Forever lets an addon accept a summon is unconfirmed"] }, kind = CANT,
       addon = "Readycheck_WorldTools", pages = { "world_tools", "wt_automation" } },
     { id = "chronoboon", name = RCL["Chronoboon reminder"],
-      off = { tbc = RCL["Classic Era world buffs stop working above level 63 on TBC, so there is nothing to store"],
+      off = { tbc = RCL["Classic Era world buffs stop working above level 63 on TBC, so there are none to store"],
               forever = RCL["Forever removes world buffs inside dungeons and raids, so there is nothing to keep for a raid"] },
+      kind = { tbc = "not_there", forever = "not_needed" },
       pages = { "boon_reminder" } },
     { id = "raid_configs", name = RCL["Raid boss and trash configs (each game version's raids) and their ability reminders"],
-      off = RAIDS_LATER, raidList = true, pages = { "raids", "mc", "bwl", "aq40", "naxx", "remote_raid_cfg" } },
-    { id = "boss_notes", name = RCL["Boss and trash notes"], off = RAIDS_LATER, raidList = true, pages = { "boss_notes" } },
+      off = RAIDS_LATER, kind = RAIDS_LATER_KIND, raidList = true,
+      pages = { "raids", "mc", "bwl", "aq40", "naxx", "remote_raid_cfg" },
+      cmds = { "sim", "simulate", "stopsim", "gearsim", "encounter", "raidprofdump" } },
+    { id = "boss_notes", name = RCL["Boss and trash notes"], off = RAIDS_LATER, kind = RAIDS_LATER_KIND, raidList = true,
+      pages = { "boss_notes" }, cmds = { "notesdump", "notesadopt" } },
     { id = "polarity", name = RCL["Polarity mode (Thaddius, Sapphiron)"],
       off = { tbc = RCL["Thaddius and Sapphiron are in Classic Era's Naxxramas, which TBC does not have"],
-              forever = RCL["Thaddius and Sapphiron are in Classic Era's Naxxramas, which Forever does not have"] } },
+              forever = RCL["Thaddius and Sapphiron are in Classic Era's Naxxramas, which isn't on Forever"] },
+      kind = { tbc = "not_there", forever = "not_there" }, cmds = { "polarity" } },
     -- counts trash kills from the combat log: off on Forever for good
     { id = "raid_route", name = RCL["Raid route (per-pull steps, gear sets, trinkets, reminders)"],
-      off = { forever = RCL["Forever raids aren't listed yet, and the kill steps need the combat log, which Forever does not give addons"] } },
-    { id = "boss_gear_target", name = RCL["Boss gear set when you target the boss"], off = RAIDS_LATER, raidList = true },
-    { id = "boss_gear_kill", name = RCL["Boss gear set after the kill"], off = RAIDS_LATER, raidList = true },
-    { id = "boss_gear_prompt", name = RCL["Ask which gear set to wear after a kill"], off = RAIDS_LATER, raidList = true },
-    -- Classic Era's limit is 32; on TBC the limit is measured (CS_BuffCap)
-    { id = "buff_pushoff", name = RCL["Buff pushoff alert, buff slot counter and Darkmoon fortune watch"],
-      off = { forever = RCL["Forever hides your buffs from addons in combat, where push-offs happen"] },
+      off = { forever = RCL["the kill steps need the combat log, which Forever does not give addons (and Forever's raids open on 9 December)"] },
+      kind = CANT, cmds = { "routever", "routedebug" } },
+    { id = "boss_gear_target", name = RCL["Boss gear set when you target the boss"], off = RAIDS_LATER, kind = RAIDS_LATER_KIND, raidList = true },
+    { id = "boss_gear_kill", name = RCL["Boss gear set after the kill"], off = RAIDS_LATER, kind = RAIDS_LATER_KIND, raidList = true },
+    { id = "boss_gear_prompt", name = RCL["Ask which gear set to wear after a kill"], off = RAIDS_LATER, kind = RAIDS_LATER_KIND, raidList = true },
+    -- Classic Era's limit is 32. Zac: TBC and Forever have no buff limit
+    -- you reach, so nothing is pushed off there and there is nothing to
+    -- count, measure or warn about (saved measurements stay as they are).
+    { id = "buff_pushoff", name = RCL["Buff pushoff alert, Buffs cell (buff slot counter), buff limit measuring and Darkmoon fortune watch"],
+      off = { tbc = RCL["TBC has no buff limit you'll hit, so nothing is ever pushed off"],
+              forever = RCL["Forever has no buff limit, so nothing is ever pushed off"] },
+      kind = { tbc = "not_needed", forever = "not_needed" },
       pages = { "buff_pushoff" } },
     -- Built on the combat log, or on values Forever hides in combat
     { id = "kill_watch", name = RCL["Trash kill counting (route steps, trash notes, Thaddius)"],
-      off = { forever = RCL["needs the combat log; Forever's death event (UNIT_DIED) hides which mob died"] } },
+      off = { forever = RCL["needs the combat log; Forever's death event (UNIT_DIED) hides which mob died"] }, kind = CANT },
     -- the glow in Battle Stance comes from Overpower being usable and runs
     -- everywhere; only the dodge seen while out of Battle Stance is off
     { id = "overpower_dodge", name = RCL["Overpower glow after a dodge while out of Battle Stance (nameplates)"],
-      off = { forever = RCL["needs the combat log to see your own attack dodged; UNIT_COMBAT does not say whose attack it was"] } },
-    { id = "ttk", name = RCL["TTK display and ML kill-time predictions"], off = { forever = HEALTH },
-      pages = { "execute", "ttk_display" },
+      off = { forever = RCL["needs the combat log to see your own attack dodged; UNIT_COMBAT does not say whose attack it was"] }, kind = CANT },
+    { id = "ttk", name = RCL["TTK display and ML kill-time predictions"], off = { forever = HEALTH }, kind = CANT,
+      pages = { "combat", "execute", "ttk_display" },
+      cmds = { "ttk", "fixttk", "fixhistory", "dmfdump" },
       stubs = { "OnExecuteCombatStart", "OnExecuteCombatEnd", "OnExecuteTargetChanged",
                 "OnExecuteBossKilledByEncounterEnd", "PredictTTK", "CheckExecutePhase",
                 "StartFightTracking", "EndFightTracking", "RecordFightKill",
                 "ScanForBossOnCombatStart", "HandleBossUnitEvent", "UpdateEncounterUnits",
                 "ScanRaidForBoss", "UpdateTTKDisplayActive", "CalculateTimeToKill" } },
-    { id = "boss_debuff_tracker", name = RCL["Boss debuff tracker"], off = { forever = DEBUFFS },
+    { id = "boss_debuff_tracker", name = RCL["Boss debuff tracker"], off = { forever = DEBUFFS }, kind = CANT,
       pages = { "boss_debuff_tracker" } },
     -- Addon messages
-    { id = "mesh_in_instance", name = RCL["Mesh sync, version check and gold sync inside instances"], off = { forever = MSG } },
+    { id = "mesh_in_instance", name = RCL["Mesh sync, version check and gold sync inside instances"], off = { forever = MSG }, kind = CANT },
+    -- Forever's Battle Shout reaches every raid member within 20 yards
+    -- (and gives less attack power), so a list of who in your party has
+    -- your shout, with its AP and shout-gear maths, has nothing to do
+    -- there. The reminder itself runs everywhere (battle_shout below).
+    { id = "battle_shout_party", name = RCL["Battle Shout party tracker"],
+      off = { forever = RCL["Battle Shout reaches the whole raid within 20 yards on Forever; the raid buff tracker shows who has it"] },
+      kind = { forever = "not_needed" } },
 
     -- On everywhere (listed so the table covers every module)
     { id = "reminder_popup", name = RCL["Reminder popup, sounds and text-to-speech"] },
-    { id = "battle_shout", name = RCL["Battle Shout reminder and party tracker"] },
+    { id = "battle_shout", name = RCL["Battle Shout reminder"] },
     { id = "custom_reminders", name = RCL["Custom reminders"] },
     { id = "equipment_reminder", name = RCL["Equipment reminder (weapons, shield, enchants)"] },
     { id = "raid_buff_tracker", name = RCL["Raid buff tracker"] },
@@ -200,10 +237,11 @@ RC.FEATURE_FLAVORS = {
     { id = "testing", name = RCL["Testing tools: decision log, game version (Readycheck_Testing)"] },
 }
 
-local BY_ID, BY_PAGE, BY_ADDON = {}, {}, {}
+local BY_ID, BY_PAGE, BY_ADDON, BY_CMD = {}, {}, {}, {}
 for _, f in ipairs(RC.FEATURE_FLAVORS) do
     BY_ID[f.id] = f
     for _, p in ipairs(f.pages or {}) do BY_PAGE[p] = f end
+    for _, c in ipairs(f.cmds or {}) do BY_CMD[c] = f end
     if f.addon then
         BY_ADDON[f.addon] = BY_ADDON[f.addon] or {}
         table.insert(BY_ADDON[f.addon], f)
@@ -222,13 +260,43 @@ function RC:FeatureOffReason(id)
     return f and f.off and f.off[self:Flavor()] or nil
 end
 
--- "Not on TBC: Classic Era content", plus "(simulated)" under the override.
+-- The three kinds of "off" (see the table above), as /rc flavor and the
+-- Game version page name them.
+RC.FLAVOR_KINDS = { "not_needed", "not_there", "cant" }
+RC.FLAVOR_KIND_NAMES = { not_needed = RCL["not needed"], not_there = RCL["not there"], cant = RCL["can't"] }
+
+-- "not_needed" | "not_there" | "cant" for a feature off on a flavor (this
+-- one by default), nil where it runs. A row with no kind reads as "cant".
+function RC:FeatureOffKind(id, flavor)
+    local f = BY_ID[id]
+    flavor = flavor or self:Flavor()
+    if not (f and f.off and f.off[flavor]) then return nil end
+    return (f.kind and f.kind[flavor]) or "cant"
+end
+
+function RC:FlavorKindName(kind)
+    return self.FLAVOR_KIND_NAMES[kind] or tostring(kind)
+end
+
+-- "Not needed on Forever: ...", "Not on TBC: ..." or "Can't run on
+-- Forever: ...", plus "(simulated)" under the override.
+local NOTE_FORMAT = { not_needed = RCL["Not needed on %s: %s"], not_there = RCL["Not on %s: %s"],
+                      cant = RCL["Can't run on %s: %s"] }
 function RC:FeatureOffNote(id)
     local why = self:FeatureOffReason(id)
     if not why then return nil end
-    local note = string.format(RCL["Not on %s: %s"], self:FlavorName(), why)
+    local fmt = NOTE_FORMAT[self:FeatureOffKind(id)] or NOTE_FORMAT.cant
+    local note = string.format(fmt, self:FlavorName(), why)
     if self:IsSimulatedFlavor() then note = note .. " " .. RCL["(simulated)"] end
     return note
+end
+
+-- A /rc sub-command of a feature this version does not run: the switched
+-- off feature's id, or nil. The dispatcher treats it as unknown.
+function RC:CommandOffByFlavor(cmd)
+    local f = cmd and BY_CMD[cmd]
+    if f and not self:FeatureOn(f.id) then return f.id end
+    return nil
 end
 
 -- The switched-off feature behind a sidebar entry, or nil.
@@ -237,6 +305,29 @@ function RC:FeatureOffForPage(menuItem)
     local f = menuItem.id and BY_PAGE[menuItem.id]
     if f and not self:FeatureOn(f.id) then return f.id end
     return nil
+end
+
+-- A search alias's keywords on this flavor (RC.SUBPANEL_ALIASES): the
+-- words a row names in featureWords[featureId] are left out where that
+-- feature is off, so a tab is not found by a part this version does not
+-- run. Where nothing is off it is the alias's own list, unchanged.
+function RC:AliasKeywords(sub)
+    local words = type(sub) == "table" and sub.keywords or {}
+    local fw = type(sub) == "table" and sub.featureWords
+    if type(fw) ~= "table" then return words end
+    local drop
+    for id, list in pairs(fw) do
+        if not self:FeatureOn(id) then
+            drop = drop or {}
+            for _, w in ipairs(list) do drop[w] = true end
+        end
+    end
+    if not drop then return words end
+    local out = {}
+    for _, w in ipairs(words) do
+        if not drop[w] then out[#out + 1] = w end
+    end
+    return out
 end
 
 -- A companion addon that this flavor does not load at all: every row
@@ -251,13 +342,16 @@ function RC:AddonOffByFlavor(addonName)
 end
 
 -- Every switched-off feature on a flavor (this one by default), in table
--- order: { { id =, name =, reason = }, ... }.
+-- order: { { id =, name =, reason =, kind = }, ... }.
 function RC:FeaturesOff(flavor)
     flavor = flavor or self:Flavor()
     local out = {}
     for _, f in ipairs(self.FEATURE_FLAVORS) do
         local why = f.off and f.off[flavor]
-        if why then out[#out + 1] = { id = f.id, name = f.name, reason = why } end
+        if why then
+            out[#out + 1] = { id = f.id, name = f.name, reason = why,
+                              kind = (f.kind and f.kind[flavor]) or "cant" }
+        end
     end
     return out
 end
@@ -270,6 +364,10 @@ function RC:ApplyFlavorStubs()
     for _, f in ipairs(self.FEATURE_FLAVORS) do
         if not self:FeatureOn(f.id) then
             for _, name in ipairs(f.stubs or {}) do self[name] = Noop end
+            for _, key in ipairs(f.slash or {}) do
+                if SlashCmdList then SlashCmdList[key] = nil end
+                for i = 1, 3 do _G["SLASH_" .. key .. i] = nil end
+            end
             local id = f.id
             for _, name in ipairs(f.talk or {}) do
                 self[name] = function(me)
@@ -281,29 +379,19 @@ function RC:ApplyFlavorStubs()
     end
 end
 
--- A companion that is not loaded leaves no sidebar group behind; put the
--- World Tools group back as an entry that shows why.
-function RC:AddFlavorMenuStubs()
-    local menu = self.MenuStructure
-    if type(menu) ~= "table" or not self:AddonOffByFlavor("Readycheck_WorldTools") then return end
-    for _, item in ipairs(menu) do
-        if item.id == "world_tools" then return end
-    end
-    local entry = {
-        id = "world_tools", name = RCL["World Tools"], category = true,
-        icon = "Interface\\Icons\\INV_Misc_PocketWatch_02",
-        panel = "ShowSidebarWorldToolsOverview",
-        children = {
-            { id = "wt_pulltimers", name = RCL["Buff Drops"], icon = "Interface\\Icons\\INV_Misc_PocketWatch_02", panel = "ShowSidebarWTTimers" },
-            { id = "wt_buffnetwork", name = RCL["Buff Timer Network"], icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01", panel = "ShowSidebarWBTNetwork" },
-            { id = "wt_automation", name = RCL["Automation"], icon = "Interface\\Icons\\INV_Misc_EngGizmos_20", panel = "ShowSidebarWTAutomation" },
-        },
-    }
-    local at = #menu + 1
-    for i, item in ipairs(menu) do
-        if item.id == "mesh" then at = i break end
-    end
-    table.insert(menu, at, entry)
+-- A companion that is not loaded leaves no sidebar group behind, and
+-- that is how it stays: a feature this version does not run has no page
+-- (only /rc flavor and the Game version page list it). Kept as a no-op
+-- for its caller (Core_Runtime).
+function RC:AddFlavorMenuStubs() end
+
+-- A stand-in for a frame a switched-off feature would make at load: every
+-- method is there and does nothing, so its file runs unchanged and no
+-- frame exists on that version. (Only for code that runs after the game
+-- version is fixed: the companions, never the main addon's own files.)
+do
+    local function Noop() end
+    RC.FlavorNullFrame = setmetatable({}, { __index = function() return Noop end })
 end
 
 -- Addon messages: Forever does not deliver them inside an instance, so
@@ -376,9 +464,9 @@ function RC:FlavorCommand(arg)
     if #off == 0 then
         self:Print(RCL["Every feature is on."])
     else
-        self:Print(string.format(RCL["Switched off on %s:"], self:FlavorName(cur)))
+        self:Print(string.format(RCL["Switched off on %s (not loaded at all):"], self:FlavorName(cur)))
         for _, f in ipairs(off) do
-            self:Print("  " .. f.name .. ": " .. f.reason)
+            self:Print("  " .. f.name .. " [" .. self:FlavorKindName(f.kind) .. "]: " .. f.reason)
         end
     end
 end

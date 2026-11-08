@@ -532,6 +532,152 @@ local _uif = RC._uif
         table.insert(RC.SUBPANEL_ALIASES, entry)
     end
 
+    ------------------------------------------------------------------
+    -- THE /rc WINDOW'S LOOK (5.0)
+    ------------------------------------------------------------------
+    -- The settings window is built to the same numbers as ZacUI's /zui
+    -- window (zui_tests/MATCH_OPTIONS_1107.md has each value and where it
+    -- was read). One table, so a spacing change is one edit. Colours come
+    -- from RC:GetColor("settings", ...); the numbers here are sizes and
+    -- the alpha each state paints that colour at.
+    local S = {
+        -- the window
+        W = 1300, H = 946, MIN_W = 1000, MIN_H = 640, MAX_W = 1600, MAX_H = 1100,
+        SIDEBAR = 295, HEADER = 138, TABS = 40, FOOTER = 82, PAD = 45, TOP_PAD = 10,
+        -- the page's own left edge (cards and headers sit 18 in from it):
+        -- the scroll area is set in by the rest, so PAD lands at 45
+        PAGE_X = 27,
+        -- the sidebar
+        NAV_TOP = 114, NAV_ROW = 40, NAV_ICON_W = 45, NAV_ICON_H = 32, NAV_LEFT = 20, NAV_GAP = 10,
+        GROUP_ROW = 28, CHILD_ROW = 28, GROUP_GAP = 10, CHILD_X = 36,
+        SB_TOP = 13, SB_H = 28, SB_BOT = 6, SB_INSET = 20,
+        -- sections and rows
+        SECTION_RULE_Y = 26, SIDE = 20, CARD_GAP = 10,
+        -- controls
+        CHECK = 18, TOGGLE_W = 40, TOGGLE_H = 20, KNOB_PAD = 2,
+        TRACK_H = 4, THUMB = 14, VALUE_W = 40, VALUE_H = 26, TRACK_GAP = 12,
+        FOOT_BTN_W = 180, FOOT_BTN_H = 36, FOOT_CLOSE_W = 160, FOOT_PAD = 24, FADE = 0.10,
+        CLOSE_BOX = 40, WHEEL = 60, LERP = 12,
+        -- type
+        F_TITLE = 36, F_DESC = 14, F_TAB = 16, F_NAV = 14, F_GROUP = 15, F_SECTION = 12,
+        F_VALUE = 13, F_HINT = 12, F_BRAND = 28,
+        -- alphas
+        BORDER_A = 0.05, DIM_A = 0.53, SECTION_A = 0.41, OFF_A = 0.3,
+        ROW_ODD = 0.10, ROW_EVEN = 0.20, SIDEBAR_A = 0.20, TAB_BAND_A = 0.20,
+        SECTION_RULE_A = 0.02,
+        NAV_EN = 0.60, NAV_HOVER = 0.86, NAV_OFF = 0.11, NAV_HL = 0.06,
+        NAV_GLOW = 0.15, NAV_HOVER_GLOW = 0.03, NAV_HOVER_IND = 0.25, NAV_EDGE = 0.5,
+        INPUT_A = 0.35, INPUT_BRD_A = 0.10, INPUT_FOCUS_A = 0.8,
+        SL_TRACK_A = 0.22, SL_FILL_A = 0.75, SL_INPUT_A = 0.40, SL_INPUT_BRD_A = 0.12,
+        TG_OFF_A = 0.65, TG_ON_A = 0.75, KNOB_OFF_A = 0.5,
+        CB_BRD_A = 0.05, CB_ACT_BRD_A = 0.15, CB_REST = 0.8,
+        BTN_BG_A = 0.6, BTN_BG_HA = 0.65, BTN_BRD_A = 0.30, BTN_BRD_HA = 0.45, BTN_TXT_A = 0.55, BTN_TXT_HA = 0.70,
+        FOOT_BG_A = 0.92, FOOT_BRD_A = 0.4, FOOT_BRD_HA = 0.6, FOOT_TXT_A = 0.5, FOOT_TXT_HA = 0.7, CLOSE_A = 0.7,
+        DD_BG_A = 0.9, DD_BG_HA = 0.98, DD_BRD_A = 0.20, DD_BRD_HA = 0.30, DD_TXT_A = 0.50, DD_TXT_HA = 0.60,
+        DD_HL_A = 0.08, DD_SEL_A = 0.04,
+        SCROLL_TRACK_A = 0.02, SCROLL_THUMB_A = 0.27, SCROLL_W = 4,
+    }
+    RC.UI.S = S
+
+    -- One colour of the window (RC:GetColor "settings"), at an alpha.
+    function RC.UI:SCol(key, alpha)
+        local c = (RC.GetColor and RC:GetColor("settings", key)) or { r = 1, g = 1, b = 1, a = 1 }
+        return c.r or 1, c.g or 1, c.b or 1, (alpha or 1) * (c.a or 1)
+    end
+    function RC.UI:SAccent()
+        local c = (RC.GetColor and RC:GetColor("settings", "accent")) or GetAccentGold()
+        return c
+    end
+
+    -- Is this frame part of the /rc window's page or sidebar? The window
+    -- marks its scroll child, sidebar and footer (_rcSetRoot); a widget
+    -- built anywhere under them wears the window's look, one built
+    -- anywhere else (a dialog, a preview sample, a HUD) keeps its own.
+    function RC.UI:InSettings(frame)
+        local f, n = frame, 0
+        while type(f) == "table" and n < 16 do
+            if f._rcSetRoot then return true end
+            if f._rcSetStop or not f.GetParent then return false end
+            f = f:GetParent()
+            n = n + 1
+        end
+        return false
+    end
+
+    -- ROUND ART: plain white anti-aliased discs (Media/Icons/disc<n>, the
+    -- same files ZacUI ships - our own art), each in a power-of-two
+    -- canvas. A pill is a disc's two halves for its ends with a flat
+    -- middle. Tinted by vertex colour.
+    local DISC_SIZES = { 4, 6, 8, 10, 12, 14, 16, 20, 24, 32 }
+    local DISC_PATH = "Interface\\AddOns\\Readycheck\\Media\\Icons\\disc"
+    RC.UI.ICONS = "Interface\\AddOns\\Readycheck\\Media\\Icons\\"
+    local function DiscOf(n)
+        n = math.floor((n or 16) + 0.5)
+        for _, s in ipairs(DISC_SIZES) do if s >= n then return s end end
+        return 32
+    end
+    local function Canvas(s) local c = 1 while c < s do c = c * 2 end return c end
+    -- part: nil (the whole disc), "left" or "right" (its half)
+    function RC.UI:DiscArt(tex, n, part)
+        local s = DiscOf(n)
+        local c = Canvas(s)
+        local o = (c - s) / 2
+        local l, r, t, b = o / c, (o + s) / c, o / c, (o + s) / c
+        if part == "left" then r = (o + s / 2) / c elseif part == "right" then l = (o + s / 2) / c end
+        tex:SetTexture(DISC_PATH .. s)
+        tex:SetTexCoord(l, r, t, b)
+    end
+    -- A pill filling `host` (h = its height): pill:Color(r, g, b, a),
+    -- pill:Show(on), pill:Size(h).
+    function RC.UI:Pill(host, layer, sub, h)
+        local p = {}
+        local function T()
+            return host:CreateTexture(nil, layer or "ARTWORK", nil, sub or 0)
+        end
+        p.l, p.m, p.r = T(), T(), T()
+        p.m:SetTexture(FLAT)
+        function p:Size(hh)
+            hh = math.max(2, hh or host:GetHeight() or 4)
+            local half = hh / 2
+            RC.UI:DiscArt(self.l, hh, "left")
+            RC.UI:DiscArt(self.r, hh, "right")
+            self.l:ClearAllPoints()
+            self.l:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+            self.l:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
+            self.l:SetWidth(half)
+            self.r:ClearAllPoints()
+            self.r:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
+            self.r:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+            self.r:SetWidth(half)
+            self.m:ClearAllPoints()
+            self.m:SetPoint("TOPLEFT", self.l, "TOPRIGHT", 0, 0)
+            self.m:SetPoint("BOTTOMRIGHT", self.r, "BOTTOMLEFT", 0, 0)
+        end
+        function p:Color(r, g, b, a)
+            self.l:SetVertexColor(r, g, b, a) self.m:SetVertexColor(r, g, b, a) self.r:SetVertexColor(r, g, b, a)
+        end
+        function p:Show(on)
+            self.l:SetShown(on) self.m:SetShown(on) self.r:SetShown(on)
+        end
+        p:Size(h)
+        return p
+    end
+
+    -- A left-to-right fade of colour c from alpha a0 to nothing.
+    function RC.UI:Grad(tex, c, a0)
+        tex._rcGrad = { c.r, c.g, c.b, a0 }
+        if CreateColor and tex.SetGradient then
+            tex:SetVertexColor(1, 1, 1, 1)
+            tex:SetGradient("HORIZONTAL", CreateColor(c.r, c.g, c.b, a0), CreateColor(c.r, c.g, c.b, 0))
+        elseif tex.SetGradientAlpha then
+            tex:SetVertexColor(1, 1, 1, 1)
+            tex:SetGradientAlpha("HORIZONTAL", c.r, c.g, c.b, a0, c.r, c.g, c.b, 0)
+        else
+            tex:SetVertexColor(c.r, c.g, c.b, a0 / 2)
+        end
+    end
+
+    _uif.S = S
     _uif.BASE = BASE
     _uif.C = C
     _uif.FLAT = FLAT

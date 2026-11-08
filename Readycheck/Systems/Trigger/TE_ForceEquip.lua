@@ -88,7 +88,7 @@ local _tes = RC._tes
         RC.gearSwapState.engagedInCombat = nil
 
         if UnitExists("target") then
-            RC.gearSwapState.engagedBossGUID = UnitGUID("target")
+            RC.gearSwapState.engagedBossGUID = Readycheck.SafeGUID("target")
         end
         RC.gearSwapState._postSwapActiveSet   = nil
         RC.gearSwapState._postSwapActiveUntil = nil
@@ -167,7 +167,7 @@ local _tes = RC._tes
         local function ApplyOverrides()
             local inCombat = InCombatLockdown()
             if encounterName and UnitExists("target") then
-                local curName = UnitName("target")
+                local curName = Readycheck.SafeName("target")
                 if curName then
                     local curRaid = RC.GetEffectiveRaidName and RC:GetEffectiveRaidName() or nil
                     local curEnc  = curRaid and RC.GetEncounterNameForBoss and RC:GetEncounterNameForBoss(curRaid, curName)
@@ -231,7 +231,7 @@ local _tes = RC._tes
             end
             if (RC.gearSwapState and RC.gearSwapState._swapGen or 0) ~= myGen then return end
             if encounterName and UnitExists("target") then
-                local curName = UnitName("target")
+                local curName = Readycheck.SafeName("target")
                 local curRaid = RC.GetEffectiveRaidName and RC:GetEffectiveRaidName() or nil
                 local curEnc  = curRaid and curName and RC.GetEncounterNameForBoss and RC:GetEncounterNameForBoss(curRaid, curName)
                 if curEnc and curEnc ~= encounterName then return end
@@ -429,7 +429,7 @@ local _tes = RC._tes
         local raidName = self.GetEffectiveRaidName and self:GetEffectiveRaidName() or nil
         if not raidName then return end
 
-        local targetName = UnitName("target")
+        local targetName = Readycheck.SafeName("target")
         if not targetName then return end
 
         local encounterName = self.GetEncounterNameForBoss
@@ -468,7 +468,7 @@ local _tes = RC._tes
         if hasSet then
             RC.gearSwapState.lastEquippedSet = gearSet
             RC.gearSwapState.lastBossTarget  = targetName
-            RC.gearSwapState.engagedBossGUID = UnitGUID("target")
+            RC.gearSwapState.engagedBossGUID = Readycheck.SafeGUID("target")
         end
         if postSet and postSet ~= "" then
             RC.gearSwapState.postCombatSet = postSet

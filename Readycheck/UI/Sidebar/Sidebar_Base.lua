@@ -24,11 +24,13 @@ local _sbs = RC._sbs
 
     -- Fallback values only; RC:GetColor()-backed getters below are used whenever RC.GetColor exists.
     local SIDEBAR = {
-        WIDTH = 200,
+        -- (5.0: the /zui sidebar - 295 wide, 28 px rows, no gap between
+        -- rows, 10 between groups; RC.UI.S has the rest)
+        WIDTH = 295,
         BUTTON_HEIGHT = 28,
-        RAID_BUTTON_HEIGHT = 52,
-        BUTTON_SPACING = 2,
-        CATEGORY_SPACING = 2,
+        RAID_BUTTON_HEIGHT = 50,
+        BUTTON_SPACING = 0,
+        CATEGORY_SPACING = 10,
         HEADER_HEIGHT = 24,
         PADDING = 8,
 
@@ -185,6 +187,9 @@ local _sbs = RC._sbs
         if frame.contentFrame then
             RepaintScrollbar(frame.contentFrame.scrollBar)
         end
+
+        -- the 5.0 window paints its own shell (RC.UI.S, settings colours)
+        if frame.RepaintShell then frame:RepaintShell() end
 
         if frame.sidebar then
             self:BuildSidebar(frame, false)

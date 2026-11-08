@@ -1051,7 +1051,8 @@ local _rrs = RC._rrs
             .. self:StepLabel(step)
     end
 
-    local eventFrame = CreateFrame("Frame")
+    -- (no frame where the route does not run: Core_Flavor)
+    local eventFrame = RC:FeatureOn("raid_route") and CreateFrame("Frame") or RC.FlavorNullFrame
 
     function RR:SyncBossStepsFromConfig(raidName)
         if not raidName then return end
@@ -2748,7 +2749,7 @@ local _rrs = RC._rrs
             for slot = 1, 19 do
                 local id = GetInventoryItemID("player", slot)
                 if id and GetItemSpell and GetItemSpell(id) then
-                    local st, du = GetInventoryItemCooldown("player", slot)
+                    local st, du = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
                     if st and st > 0 and du and du > 1.5 then
                         watch[slot] = id
                     end
@@ -2768,7 +2769,7 @@ local _rrs = RC._rrs
                         if GetInventoryItemID("player", slot) ~= id then
                             watch[slot] = nil
                         else
-                            local st2, du2 = GetInventoryItemCooldown("player", slot)
+                            local st2, du2 = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
                             local left = st2 and du2 and (st2 + du2 - GetTime()) or 0
                             if not st2 or st2 == 0 or left <= 0 then
                                 watch[slot] = nil

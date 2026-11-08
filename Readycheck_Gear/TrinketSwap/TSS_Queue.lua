@@ -243,7 +243,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
                                     cs, cd = self:GetItemCooldownSafe(qId)
                                 else
                                     local otherSlot = slotNumber == 1 and 2 or 1
-                                    cs, cd = GetInventoryItemCooldown("player", INVENTORY_SLOTS[otherSlot])
+                                    cs, cd = Readycheck.PlainCD(GetInventoryItemCooldown("player", INVENTORY_SLOTS[otherSlot]))
                                 end
                                 if cs and cs > 0 and cd and cd > 1.5 then
                                     local remaining = cd - (GetTime() - cs)
@@ -283,7 +283,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
 
                 if forceSwap and currentItemId and bestId and bestId ~= currentItemId
                    and self:IsTrinketOnUse(currentItemId) then
-                    local cs, cd = GetInventoryItemCooldown("player", inventorySlot)
+                    local cs, cd = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
                     local expectedCD = RC.trinketCooldowns and RC.trinketCooldowns[currentItemId]
                     local cdRemaining = (cs and cs > 0 and cd) and (cd - (GetTime() - cs)) or 0
                     local onRealUseCD = cdRemaining > 0 and (
@@ -309,7 +309,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
                             shouldHold = true
                             self:DebugPrint("Slot " .. slotNumber .. ": buff active - holding", "trinket")
                         else
-                            local cdStart, cdDur = GetInventoryItemCooldown("player", inventorySlot)
+                            local cdStart, cdDur = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
                             local onCD = cdStart and cdStart > 0 and cdDur and cdDur > 1.5
                             if onCD then
                                 local remaining = cdDur - (GetTime() - cdStart)
@@ -451,7 +451,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         local cur = inv and GetInventoryItemID("player", inv)
         if not cur or not self:IsTrinketOnUse(cur) then return nil end
         if self:IsTrinketBuffActive(cur) then return "buff", cur end
-        local s, d = GetInventoryItemCooldown("player", inv)
+        local s, d = Readycheck.PlainCD(GetInventoryItemCooldown("player", inv))
         if not (s and s > 0 and d and d > 1.5) then return "ready", cur end
         local full = RC.trinketCooldowns and RC.trinketCooldowns[cur]
         local useCD = (full and d >= full - 5) or (not full and d > 35)
@@ -628,8 +628,8 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
                         tostring((GetInventoryItemID("player", inventorySlot))),
                         tostring((GetInventoryItemID("player", otherInv))),
                         tostring(InCombatLockdown()),
-                        tostring(UnitCastingInfo and UnitCastingInfo("player") ~= nil),
-                        tostring(UnitChannelInfo and UnitChannelInfo("player") ~= nil),
+                        tostring((UnitCastingInfo and UnitCastingInfo("player")) and true or false),
+                        tostring((UnitChannelInfo and UnitChannelInfo("player")) and true or false),
                         tostring((IsMounted and IsMounted()) or false)), "trinket")
                     RC:StartEquipRetryLoop(30)
                 end
@@ -713,7 +713,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         state.isOnUse = itemId and self:IsTrinketOnUse(itemId) or false
 
         if itemId and state.isOnUse then
-            local start, duration = GetInventoryItemCooldown("player", inventorySlot)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
 
             if start and start > 0 and duration and duration > 1.5 then
                 local expectedTrinketCD = RC.trinketCooldowns[itemId]
@@ -886,7 +886,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         if not itemId or not inventorySlot then return false end
         if self:IsTrinketBuffActive(itemId) then return true end
 
-        local start, duration = GetInventoryItemCooldown("player", inventorySlot)
+        local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
         if not start or start <= 0 or not duration or duration <= 1.5 then
             return false
         end
@@ -927,7 +927,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
 
         if self:IsTrinketOnUse(pinnedId) then
             local inventorySlot = INVENTORY_SLOTS[slotNumber]
-            local start, duration = GetInventoryItemCooldown("player", inventorySlot)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
             local isOnCD = start and start > 0 and duration and duration > 1.5
 
             if not isOnCD then return end

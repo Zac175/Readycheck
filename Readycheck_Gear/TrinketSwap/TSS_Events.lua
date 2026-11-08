@@ -102,7 +102,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
 
             local applied = RC.bossTrinketState and RC.bossTrinketState.appliedBoss
             if applied and UnitExists("target") and not UnitIsDead("target") then
-                local tName = UnitName("target")
+                local tName = Readycheck.SafeName("target")
                 local raid  = RC.GetEffectiveRaidName and RC:GetEffectiveRaidName() or nil
                 local enc   = (raid and tName and RC.GetEncounterNameForBoss) and RC:GetEncounterNameForBoss(raid, tName) or tName
                 if enc == applied then
@@ -167,7 +167,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
                     state.isOnUse = RC:IsTrinketOnUse(itemId)
 
                     if state.isOnUse then
-                        local start, duration = GetInventoryItemCooldown("player", inventorySlot)
+                        local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
 
                         if start and start > 0 and duration > 1.5 then
                             local expectedCD = RC.trinketCooldowns[itemId]
@@ -261,7 +261,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
 
     function RC:IsTargetingKnownBoss()
         if not UnitExists("target") then return false end
-        local targetName = UnitName("target")
+        local targetName = Readycheck.SafeName("target")
         if not targetName then return false end
         if not RC.GetEffectiveRaidName then return false end
         local raidName = self:GetEffectiveRaidName()

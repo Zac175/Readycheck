@@ -41,7 +41,10 @@ BC.CAP = CAP
 -- is measured instead: the slots in use when a buff gets pushed off,
 -- believed once two push-offs agree, kept per character and version.
 -- UNMEASURED: before that, push-offs are only looked for this close to
--- Classic Era's 32 (the lowest limit any version has).
+-- Classic Era's 32 (the lowest limit any version has). TBC and Forever
+-- have no buff limit you reach, so the counter does not run there at all
+-- (Core_Flavor, buff_pushoff) and nothing is measured; limits measured
+-- before are kept as they are.
 local UNMEASURED = D.CAP
 local capFlavor
 local function ResolveCap()
@@ -573,8 +576,11 @@ function BC:SetRemover(api)
 end
 function BC:Remover() return remover end
 
--- The counter runs while at least one key wants it.
-local events = CreateFrame("Frame")
+-- The counter runs while at least one key wants it. Its event frame is
+-- made the first time it starts, so where the counter never runs (a game
+-- version with no buff limit, Core_Flavor) nothing is made at all.
+local events
+local OnEvent
 
 local function StartCombatWatch()
     if defKinds and On("countHidden") then
@@ -583,10 +589,14 @@ local function StartCombatWatch()
 end
 
 local function StopCombatWatch()
-    events:UnregisterEvent("UNIT_COMBAT")
+    if events then events:UnregisterEvent("UNIT_COMBAT") end
 end
 
 local function Start()
+    if not events then
+        events = CreateFrame("Frame")
+        events:SetScript("OnEvent", OnEvent)
+    end
     ResolveCap()
     running = true
     ready = false
@@ -611,13 +621,13 @@ end
 local function Stop()
     running = false
     ready = false
-    events:UnregisterAllEvents()
+    if events then events:UnregisterAllEvents() end
     RC:UnregisterUnitAuraCallback("BuffCap")
     RC:DebugPrint("BuffCap: stopped", "charstats")
 end
 
 function BC:Want(key, on)
-    -- off where buffs cannot be read in a fight (Core_Flavor)
+    -- not on a game version with no buff limit (Core_Flavor)
     if on and not RC:FeatureOn("buff_pushoff") then on = nil end
     wanted[key] = on and true or nil
     local any = next(wanted) ~= nil
@@ -628,7 +638,7 @@ function BC:Want(key, on)
     end
 end
 
-events:SetScript("OnEvent", function(_, event, a1, a2, a3)
+OnEvent = function(_, event, a1, a2, a3)
     if event == "UNIT_COMBAT" then
         -- every hit on the player lands here in a fight: stamp and queue only
         local kinds = defKinds
@@ -668,7 +678,7 @@ events:SetScript("OnEvent", function(_, event, a1, a2, a3)
         StopCombatWatch()
     end
     BC:Request()
-end)
+end
 
 -- for the settings page: settings changed, read everything again
 function BC:SettingsChanged()

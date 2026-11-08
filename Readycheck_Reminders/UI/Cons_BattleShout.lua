@@ -27,6 +27,10 @@ local TEXT = _sbc.TEXT
 
     local function BS() return RC.db.battleShoutReminder end
     local function PT() return RC.db.battleShoutPartyTracker end
+    -- the party tracker runs here (not on WoW Forever, where the shout
+    -- reaches the whole raid: Core_Flavor battle_shout_party). Where it
+    -- does not, this page has no tracker card, tab part or preview.
+    local function TrackerHere() return not (RC.FeatureOn and not RC:FeatureOn("battle_shout_party")) end
 
     -- live repaint of the real frames after a change
     local function LiveIcon()
@@ -98,7 +102,7 @@ local TEXT = _sbc.TEXT
         holder:SetPoint("CENTER", canvas, "CENTER", 0, 0)
         P.store.holder = holder
         P.store.icon = RC:BuildBattleShoutIcon(holder)
-        P.store.tracker = RC:BuildBattleShoutTracker(holder)
+        P.store.tracker = TrackerHere() and RC:BuildBattleShoutTracker(holder) or nil
         P.store.rows = {}
         P.store.token = 0
     end
@@ -121,21 +125,24 @@ local TEXT = _sbc.TEXT
         end
         RC:FillBattleShoutIcon(icon, missing, text, names)
 
-        -- the sample party, through the tracker's own filter
-        local all = RC:BattleShoutTrackerSampleRows(GetTime(), st.all)
-        st.all = all
+        -- the sample party, through the tracker's own filter (no tracker
+        -- where it does not run: rows stays empty and the icon is alone)
         local rows = st.rows
-        for i = #rows, 1, -1 do rows[i] = nil end
-        for _, r in ipairs(all) do
-            if not missing and not r.hasBuff then
-                r.hasBuff, r.remaining, r.apValue, r.outOfRange = true, 80, 290, false
+        if tracker then
+            local all = RC:BattleShoutTrackerSampleRows(GetTime(), st.all)
+            st.all = all
+            for i = #rows, 1, -1 do rows[i] = nil end
+            for _, r in ipairs(all) do
+                if not missing and not r.hasBuff then
+                    r.hasBuff, r.remaining, r.apValue, r.outOfRange = true, 80, 290, false
+                end
+                if not missing then r.belowThreshold = false end
+                if not pt.showOnlyMissing or not r.hasBuff or r.belowThreshold then rows[#rows + 1] = r end
             end
-            if not missing then r.belowThreshold = false end
-            if not pt.showOnlyMissing or not r.hasBuff or r.belowThreshold then rows[#rows + 1] = r end
+            RC:StyleBattleShoutTracker(tracker, pt)
+            RC:LayoutBattleShoutTracker(tracker, rows, pt, nil)
+            tracker:SetShown(#rows > 0)
         end
-        RC:StyleBattleShoutTracker(tracker, pt)
-        RC:LayoutBattleShoutTracker(tracker, rows, pt, nil)
-        tracker:SetShown(#rows > 0)
 
         -- geometry: the icon (names room on the side they sit) on the left,
         -- the tracker beside it, wearing its own scale; the canvas is the
@@ -161,13 +168,15 @@ local TEXT = _sbc.TEXT
         local natH = math_max(iconH, th) + 4
         local sig = math_floor(w) .. ":" .. math_floor(h) .. ":" .. pos .. ":" .. math_floor(above) .. ":" .. math_floor(below) .. ":" .. tsc
         if st.geo ~= sig then
-            RC.Motion.Stop(icon) RC.Motion.Stop(tracker)
+            RC.Motion.Stop(icon) if tracker then RC.Motion.Stop(tracker) end
             K.FitStrip(P, st.holder, w, h, 0, natW, natH)
-            tracker:SetScale(tsc)
+            if tracker then tracker:SetScale(tsc) end
             icon:ClearAllPoints()
             icon:SetPoint("LEFT", st.holder, "LEFT", 8 + side, (below - above) / 2)
-            tracker:ClearAllPoints()
-            tracker:SetPoint("LEFT", st.holder, "LEFT", trackX / tsc, 0)
+            if tracker then
+                tracker:ClearAllPoints()
+                tracker:SetPoint("LEFT", st.holder, "LEFT", trackX / tsc, 0)
+            end
             st.geo = sig
         end
     end
@@ -175,13 +184,16 @@ local TEXT = _sbc.TEXT
     local function PreviewReplay(canvas, P)
         local st, db, pt = P.store, BS(), PT()
         local missing = (P.mode or "missing") == "missing"
-        K.Replay(st, canvas, {
+        local parts = {
             { frame = st.icon, inSpec = db.showAnim or NONE, outSpec = db.hideAnim or NONE,
               onIn = function()
                   if missing and db.alertAnim and st.icon:IsVisible() then RC.Motion.Play(st.icon, db.alertAnim, "update") end
               end },
-            { frame = st.tracker, inSpec = pt.showAnim or NONE, outSpec = pt.hideAnim or NONE },
-        }, missing and 2.4 or 1.2)
+        }
+        if st.tracker then
+            parts[#parts + 1] = { frame = st.tracker, inSpec = pt.showAnim or NONE, outSpec = pt.hideAnim or NONE }
+        end
+        K.Replay(st, canvas, parts, missing and 2.4 or 1.2)
     end
 
     ------------------------------------------------------------------
@@ -208,6 +220,7 @@ local TEXT = _sbc.TEXT
         end
         local db = self.db.battleShoutReminder
         local ptDb = self.db.battleShoutPartyTracker
+        local hasTracker = TrackerHere()
 
         local P
         if self.BuildBattleShoutIcon and self.BuildBattleShoutTracker then
@@ -224,7 +237,9 @@ local TEXT = _sbc.TEXT
         local function Rerender(tab) RC:ShowSidebarBattleShoutConfig(frame, tab or selectedTab) end
 
         local _, newY = self:CreateSettingsPageHeader(parent, yPos, RCL["Battle Shout Reminder"],
-            RCL["Warns you when party members are missing Battle Shout"], "Interface\\Icons\\Ability_Warrior_BattleShout")
+            hasTracker and RCL["Warns you when party members are missing Battle Shout"]
+                or RCL["Warns you when anyone your shout reaches is missing Battle Shout"],
+            "Interface\\Icons\\Ability_Warrior_BattleShout")
         yPos = newY
 
         local _, newTabY = self.UI:CreateTabGroup(parent, {
@@ -366,14 +381,25 @@ local TEXT = _sbc.TEXT
                 Rerender("behavior")
             end)
 
-            -- Whose shout the reminder cares about.
+            -- Whose shout the reminder cares about. Where the shout reaches
+            -- the whole raid (Forever), the whole raid is a choice too.
+            local scopeItems = {
+                {key="group", label=RCL["My Group"], tooltip=RCL["Warns when anyone in your group is missing Battle Shout."]},
+                {key="self",  label=RCL["Only Me"],  tooltip=RCL["Ignores your group and just watches the Battle Shout on you."]},
+            }
+            local scope = db.trackScope or "group"
+            if hasTracker then
+                -- (a raid choice copied from Forever counts as My Group here)
+                if scope == "raid" then scope = "group" end
+            else
+                table.insert(scopeItems, 1, {key="raid", label=RCL["My Raid"],
+                    tooltip=RCL["Warns when anyone in your raid is missing Battle Shout. Your shout reaches the whole raid within 20 yards."]})
+                if db.trackScope == nil then scope = "raid" end
+            end
             self.UI:CreateSegmentedControl(card, {
                 x = 14, y = cardY, height = 22, label = RCL["Remind me about:"],
-                items = {
-                    {key="group", label=RCL["My Group"], tooltip=RCL["Warns when anyone in your group is missing Battle Shout."]},
-                    {key="self",  label=RCL["Only Me"],  tooltip=RCL["Ignores your group and just watches the Battle Shout on you."]},
-                },
-                selected = db.trackScope or "group",
+                items = scopeItems,
+                selected = scope,
                 onSelect = function(key)
                     db.trackScope = key
                     if RC.UpdateBattleShoutReminder then RC:UpdateBattleShoutReminder() end
@@ -389,102 +415,106 @@ local TEXT = _sbc.TEXT
             self.UI:BindDependents(enableCb, self.UI:CardSince(card, enableMark))
             Finish(card, cardY)
 
-            --------------------------------------------------------------
-            -- Party tracker: what it lists and when
-            --------------------------------------------------------------
-            local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
-            local ptY = -32
-            ptY = K.Desc(ptCard, ptY, RCL["Shows every Warrior/Rogue in your group with Battle Shout AP and status. Click-through by default."])
+            if hasTracker then
+                --------------------------------------------------------------
+                -- Party tracker: what it lists and when
+                --------------------------------------------------------------
+                local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
+                local ptY = -32
+                ptY = K.Desc(ptCard, ptY, RCL["Shows every Warrior/Rogue in your group with Battle Shout AP and status. Click-through by default."])
 
-            local ptEnableCb = self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Enable Party Tracker"], ptDb.enabled, function(cb)
-                local v = cb:GetChecked(); ptDb.enabled = v; RC:ForceCheckboxUpdate(cb, v)
-                if v then RC:StartBattleShoutPartyTrackerUpdates()
-                else RC:StopBattleShoutPartyTrackerUpdates() end
-                Save()
-            end)
-            ptY = ptY - 26
-            local ptMark = self.UI:MarkCard(ptCard)
-
-            local ptMissCb = self.UI:CreateCheckbox(ptCard, RCL["Show only missing / expiring"], ptDb.showOnlyMissing)
-            ptMissCb:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
-            ptMissCb:SetScript("OnClick", function(cb)
-                ptDb.showOnlyMissing = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.showOnlyMissing)
-                LiveTracker(); Save()
-            end)
-            ptY = ptY - 24
-
-            local ptRangeCb = self.UI:CreateCheckbox(ptCard, RCL["Range check (OOR instead of MISSING)"], ptDb.rangeCheck)
-            ptRangeCb:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
-            ptRangeCb:SetScript("OnClick", function(cb)
-                ptDb.rangeCheck = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.rangeCheck)
-                LiveTracker(); Save()
-            end)
-            Tip(ptRangeCb, RCL["Range Check"], { RCL["Shows OOR instead of MISSING for members outside ~28 yards."] })
-            ptY = ptY - 30
-
-            local ptBRCb = self.UI:CreateCheckbox(ptCard, RCL["Show Bloodrage indicator"], ptDb.showBloodrage ~= false)
-            ptBRCb:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
-            ptBRCb:SetScript("OnClick", function(cb)
-                ptDb.showBloodrage = cb:GetChecked()
-                RC:ForceCheckboxUpdate(cb, ptDb.showBloodrage)
-                LiveTracker(); Save()
-            end)
-            Tip(ptBRCb, RCL["Bloodrage Indicator"], { RCL["Highlights any Warrior in your party (you included) who currently has Bloodrage active. Choose icon, red name, or both."] })
-            ptY = ptY - 24
-
-            local brStyle = self.UI:CreateSegmentedControl(ptCard, {
-                y = ptY, height = 22, label = RCL["Bloodrage style:"],
-                items = {
-                    {key="icon",  label=RCL["Icon"]},
-                    {key="color", label=RCL["Red Name"]},
-                    {key="both",  label=RCL["Both"]},
-                },
-                selected = ptDb.bloodrageStyle or "both",
-                onSelect = function(key)
-                    ptDb.bloodrageStyle = key
-                    LiveTracker(); Save()
-                end,
-            })
-            brStyle:ClearAllPoints()
-            brStyle:SetPoint("TOPLEFT",  ptCard, "TOPLEFT",  14, ptY)
-            brStyle:SetPoint("TOPRIGHT", ptCard, "TOPRIGHT", -14, ptY)
-            ptY = ptY - 32
-            -- the style only matters while the indicator is on
-            self.UI:BindDependents(ptBRCb, { brStyle })
-
-            self.UI:CreateSegmentedControl(ptCard, {
-                x = 14, y = ptY, height = 22, label = RCL["Duration display:"],
-                items = {
-                    {key="none",  label=RCL["None"]},  {key="bar",  label=RCL["Bar"]},
-                    {key="timer", label=RCL["Timer"]}, {key="both", label=RCL["Both"]},
-                },
-                selected = ptDb.durationStyle or "bar",
-                onSelect = function(key)
-                    ptDb.durationStyle = key
-                    LiveTracker(); Save()
-                end,
-            })
-            ptY = ptY - 32
-
-            ptY = K.Slider(ptCard, ptY, RCL["Bar max (a full bar):"], 60, 900, ptDb.barMaxDuration or 120, 30,
-                function(v) return math_floor(v) .. "s" end,
-                function(v) ptDb.barMaxDuration = v; LiveTracker() end)
-
-            -- Same shape as the reminder's row; a change re-renders this tab
-            -- so the per-raid filter block can come and go.
-            ptY = VisRow(ptCard, ptY, ptDb, function()
-                if ptDb.enabled then
-                    if RC:ShouldShowPartyTracker() then RC:StartBattleShoutPartyTrackerUpdates()
+                local ptEnableCb = self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Enable Party Tracker"], ptDb.enabled, function(cb)
+                    local v = cb:GetChecked(); ptDb.enabled = v; RC:ForceCheckboxUpdate(cb, v)
+                    if v then RC:StartBattleShoutPartyTrackerUpdates()
                     else RC:StopBattleShoutPartyTrackerUpdates() end
-                end
-                Save()
-                Rerender("behavior")
-            end)
-            self.UI:BindDependents(ptEnableCb, self.UI:CardSince(ptCard, ptMark))
-            Finish(ptCard, ptY)
+                    Save()
+                end)
+                ptY = ptY - 26
+                local ptMark = self.UI:MarkCard(ptCard)
+
+                local ptMissCb = self.UI:CreateCheckbox(ptCard, RCL["Show only missing / expiring"], ptDb.showOnlyMissing)
+                ptMissCb:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
+                ptMissCb:SetScript("OnClick", function(cb)
+                    ptDb.showOnlyMissing = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.showOnlyMissing)
+                    LiveTracker(); Save()
+                end)
+                ptY = ptY - 24
+
+                local ptRangeCb = self.UI:CreateCheckbox(ptCard, RCL["Range check (OOR instead of MISSING)"], ptDb.rangeCheck)
+                ptRangeCb:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
+                ptRangeCb:SetScript("OnClick", function(cb)
+                    ptDb.rangeCheck = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.rangeCheck)
+                    LiveTracker(); Save()
+                end)
+                Tip(ptRangeCb, RCL["Range Check"], { RCL["Shows OOR instead of MISSING for members outside ~28 yards."] })
+                ptY = ptY - 30
+
+                local ptBRCb = self.UI:CreateCheckbox(ptCard, RCL["Show Bloodrage indicator"], ptDb.showBloodrage ~= false)
+                ptBRCb:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
+                ptBRCb:SetScript("OnClick", function(cb)
+                    ptDb.showBloodrage = cb:GetChecked()
+                    RC:ForceCheckboxUpdate(cb, ptDb.showBloodrage)
+                    LiveTracker(); Save()
+                end)
+                Tip(ptBRCb, RCL["Bloodrage Indicator"], { RCL["Highlights any Warrior in your party (you included) who currently has Bloodrage active. Choose icon, red name, or both."] })
+                ptY = ptY - 24
+
+                local brStyle = self.UI:CreateSegmentedControl(ptCard, {
+                    y = ptY, height = 22, label = RCL["Bloodrage style:"],
+                    items = {
+                        {key="icon",  label=RCL["Icon"]},
+                        {key="color", label=RCL["Red Name"]},
+                        {key="both",  label=RCL["Both"]},
+                    },
+                    selected = ptDb.bloodrageStyle or "both",
+                    onSelect = function(key)
+                        ptDb.bloodrageStyle = key
+                        LiveTracker(); Save()
+                    end,
+                })
+                brStyle:ClearAllPoints()
+                brStyle:SetPoint("TOPLEFT",  ptCard, "TOPLEFT",  14, ptY)
+                brStyle:SetPoint("TOPRIGHT", ptCard, "TOPRIGHT", -14, ptY)
+                ptY = ptY - 32
+                -- the style only matters while the indicator is on
+                self.UI:BindDependents(ptBRCb, { brStyle })
+
+                self.UI:CreateSegmentedControl(ptCard, {
+                    x = 14, y = ptY, height = 22, label = RCL["Duration display:"],
+                    items = {
+                        {key="none",  label=RCL["None"]},  {key="bar",  label=RCL["Bar"]},
+                        {key="timer", label=RCL["Timer"]}, {key="both", label=RCL["Both"]},
+                    },
+                    selected = ptDb.durationStyle or "bar",
+                    onSelect = function(key)
+                        ptDb.durationStyle = key
+                        LiveTracker(); Save()
+                    end,
+                })
+                ptY = ptY - 32
+
+                ptY = K.Slider(ptCard, ptY, RCL["Bar max (a full bar):"], 60, 900, ptDb.barMaxDuration or 120, 30,
+                    function(v) return math_floor(v) .. "s" end,
+                    function(v) ptDb.barMaxDuration = v; LiveTracker() end)
+
+                -- Same shape as the reminder's row; a change re-renders this tab
+                -- so the per-raid filter block can come and go.
+                ptY = VisRow(ptCard, ptY, ptDb, function()
+                    if ptDb.enabled then
+                        if RC:ShouldShowPartyTracker() then RC:StartBattleShoutPartyTrackerUpdates()
+                        else RC:StopBattleShoutPartyTrackerUpdates() end
+                    end
+                    Save()
+                    Rerender("behavior")
+                end)
+                self.UI:BindDependents(ptEnableCb, self.UI:CardSince(ptCard, ptMark))
+                Finish(ptCard, ptY)
+            end
             -- fade rules on top of "Show in" (the customization standard)
             yPos = self.UI:FrameVisibilityCard(parent, yPos, BS, LiveIcon, { title = RCL["Icon fade and opacity"] })
-            yPos = self.UI:FrameVisibilityCard(parent, yPos, PT, LiveTracker, { title = RCL["Tracker fade and opacity"] })
+            if hasTracker then
+                yPos = self.UI:FrameVisibilityCard(parent, yPos, PT, LiveTracker, { title = RCL["Tracker fade and opacity"] })
+            end
 
         elseif selectedTab == "look" then
             --------------------------------------------------------------
@@ -536,45 +566,49 @@ local TEXT = _sbc.TEXT
                 function(v) db.namesOffset = v; LiveIcon() end)
             Finish(card, cardY)
 
-            --------------------------------------------------------------
-            -- Party tracker: frame, rows, status colours
-            --------------------------------------------------------------
-            local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
-            local ptY = -32
+            if hasTracker then
+                --------------------------------------------------------------
+                -- Party tracker: frame, rows, status colours
+                --------------------------------------------------------------
+                local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
+                local ptY = -32
 
-            self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Show background"], ptDb.showBackground ~= false, function(cb)
-                ptDb.showBackground = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.showBackground)
-                LiveTracker(); Save()
-            end)
-            ptY = ptY - 24
-            self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Show header"], ptDb.showHeader ~= false, function(cb)
-                ptDb.showHeader = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.showHeader)
-                LiveTracker(); Save()
-            end)
-            ptY = ptY - 30
+                self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Show background"], ptDb.showBackground ~= false, function(cb)
+                    ptDb.showBackground = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.showBackground)
+                    LiveTracker(); Save()
+                end)
+                ptY = ptY - 24
+                self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Show header"], ptDb.showHeader ~= false, function(cb)
+                    ptDb.showHeader = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.showHeader)
+                    LiveTracker(); Save()
+                end)
+                ptY = ptY - 30
 
-            ptY = K.Slider(ptCard, ptY, RCL["Background opacity"], 0.0, 1.0, ptDb.opacity or 0.85, 0.05, K.Pct,
-                function(v) ptDb.opacity = v; LiveTracker() end)
-            ptY = K.Slider(ptCard, ptY, RCL["Width"], 120, 280, ptDb.width or 165, 5, K.Px,
-                function(v) ptDb.width = v; LiveTracker() end)
-            ptY = K.Slider(ptCard, ptY, RCL["Row height"], 14, 26, ptDb.rowHeight or 17, 1, K.Px,
-                function(v) ptDb.rowHeight = v; LiveTracker() end)
-            ptY = K.Slider(ptCard, ptY, RCL["Border thickness"], 0, 4, tonumber(ptDb.borderSize) or 1, 1, K.Px,
-                function(v) ptDb.borderSize = v; LiveTracker() end)
-            ptY = K.Slider(ptCard, ptY, RCL["Duration bar opacity"], 0.1, 1.0, tonumber(ptDb.barAlpha) or 0.45, 0.05, K.Pct,
-                function(v) ptDb.barAlpha = v; LiveTracker() end)
+                ptY = K.Slider(ptCard, ptY, RCL["Background opacity"], 0.0, 1.0, ptDb.opacity or 0.85, 0.05, K.Pct,
+                    function(v) ptDb.opacity = v; LiveTracker() end)
+                ptY = K.Slider(ptCard, ptY, RCL["Width"], 120, 280, ptDb.width or 165, 5, K.Px,
+                    function(v) ptDb.width = v; LiveTracker() end)
+                ptY = K.Slider(ptCard, ptY, RCL["Row height"], 14, 26, ptDb.rowHeight or 17, 1, K.Px,
+                    function(v) ptDb.rowHeight = v; LiveTracker() end)
+                ptY = K.Slider(ptCard, ptY, RCL["Border thickness"], 0, 4, tonumber(ptDb.borderSize) or 1, 1, K.Px,
+                    function(v) ptDb.borderSize = v; LiveTracker() end)
+                ptY = K.Slider(ptCard, ptY, RCL["Duration bar opacity"], 0.1, 1.0, tonumber(ptDb.barAlpha) or 0.45, 0.05, K.Pct,
+                    function(v) ptDb.barAlpha = v; LiveTracker() end)
 
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "background", RCL["Background"], LiveTracker, { alpha = true })
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "border", RCL["Border"], LiveTracker)
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "rowBackground", RCL["Row background"], LiveTracker, { alpha = true })
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "apGood", RCL["Buffed"], LiveTracker)
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "apWarning", RCL["Running out / out of range"], LiveTracker)
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "apMissing", RCL["Missing"], LiveTracker)
-            ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "bloodrageActive", RCL["Bloodraging name"], LiveTracker)
-            ptY = K.Desc(ptCard, ptY - 4, RCL["The status colours paint both the status text and its duration bar."])
-            Finish(ptCard, ptY)
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "background", RCL["Background"], LiveTracker, { alpha = true })
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "border", RCL["Border"], LiveTracker)
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "rowBackground", RCL["Row background"], LiveTracker, { alpha = true })
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "apGood", RCL["Buffed"], LiveTracker)
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "apWarning", RCL["Running out / out of range"], LiveTracker)
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "apMissing", RCL["Missing"], LiveTracker)
+                ptY = K.ThemeColor(ptCard, ptY, "battleShoutPartyTracker", "bloodrageActive", RCL["Bloodraging name"], LiveTracker)
+                ptY = K.Desc(ptCard, ptY - 4, RCL["The status colours paint both the status text and its duration bar."])
+                Finish(ptCard, ptY)
+            end
             yPos = self.UI:FrameChromeCard(parent, yPos, BS, LiveIcon, { title = RCL["Icon shadow and glow"], fields = { shadowSize = true, shadowColor = true, glowSize = true, glowColor = true } })
-            yPos = self.UI:FrameChromeCard(parent, yPos, PT, LiveTracker, { title = RCL["Tracker shadow and glow"], fields = { shadowSize = true, shadowColor = true, glowSize = true, glowColor = true } })
+            if hasTracker then
+                yPos = self.UI:FrameChromeCard(parent, yPos, PT, LiveTracker, { title = RCL["Tracker shadow and glow"], fields = { shadowSize = true, shadowColor = true, glowSize = true, glowColor = true } })
+            end
 
         elseif selectedTab == "text" then
             -- one group per text: font, colours, format, and where it sits
@@ -601,34 +635,36 @@ local TEXT = _sbc.TEXT
             cardY = K.Desc(card, cardY, RCL["The names follow the side and gap on the Look tab; a position set here goes on top of them."])
             Finish(card, cardY - 6)
 
-            local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
-            local ptY = -32
-            W = CardWidth(ptCard)
-            local function PPlace(g) g:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY) ptY = ptY - g:GetHeight() - 14 end
-            local fg, fs = self.UI:CustomAccess(ptDb, "formats", "name", Saved(LiveTracker))
-            ag, as = self.UI:CustomAccess(ptDb, "anchors", "rowName", Saved(LiveTracker))
-            PPlace(self.UI:CreateTextElement(ptCard, { label = RCL["Names"], key = "rowName", width = W,
-                font = FontOf(ptDb, "rowFont", "fontSize", RC.BATTLE_SHOUT_TRACKER_FONT, "Rowdy   290 AP  1:01", LiveTracker, 8, 18),
-                formatGet = fg, formatSet = fs, formatKinds = { name = true }, formatDefaults = RC.BATTLE_SHOUT_NAME_FORMAT,
-                formatSample = function(spec) return RC.UI:FormatName("Bonkersthewarrior", spec, RC.BATTLE_SHOUT_NAME_FORMAT) end,
-                anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ROW_TARGETS, "name"),
-                anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "rowName") end }))
-            fg, fs = self.UI:CustomAccess(ptDb, "formats", "time", Saved(LiveTracker))
-            ag, as = self.UI:CustomAccess(ptDb, "anchors", "rowStatus", Saved(LiveTracker))
-            PPlace(self.UI:CreateTextElement(ptCard, { label = RCL["Status and time"], key = "rowStatus", width = W,
-                formatGet = fg, formatSet = fs, formatKinds = { time = true }, formatDefaults = RC.BATTLE_SHOUT_TIME_FORMAT,
-                formatSample = function(spec) return RC.UI:FormatTime(61.4, spec, RC.BATTLE_SHOUT_TIME_FORMAT) end,
-                anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ROW_TARGETS, "status"),
-                anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "rowStatus") end }))
-            local titleDefaults = { size = ptDb.fontSize or 11, outline = "OUTLINE", shadow = true }
-            ag, as = self.UI:CustomAccess(ptDb, "anchors", "title", Saved(LiveTracker))
-            PPlace(self.UI:CreateTextElement(ptCard, { label = RCL["Title"], key = "title", width = W,
-                font = FontOf(ptDb, "titleFont", nil, titleDefaults, RCL["Battle Shout"], LiveTracker, 8, 18),
-                colors = { ThemeColorOf("battleShoutPartyTracker", "titleText", RCL["Title colour"], LiveTracker) },
-                anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_TITLE_TARGETS, "title"),
-                anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "title") end }))
-            ptY = K.Desc(ptCard, ptY - 4, RCL["Names are drawn in their class colour; the status text uses the colours on the Look tab."])
-            Finish(ptCard, ptY)
+            if hasTracker then
+                local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
+                local ptY = -32
+                W = CardWidth(ptCard)
+                local function PPlace(g) g:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY) ptY = ptY - g:GetHeight() - 14 end
+                local fg, fs = self.UI:CustomAccess(ptDb, "formats", "name", Saved(LiveTracker))
+                ag, as = self.UI:CustomAccess(ptDb, "anchors", "rowName", Saved(LiveTracker))
+                PPlace(self.UI:CreateTextElement(ptCard, { label = RCL["Names"], key = "rowName", width = W,
+                    font = FontOf(ptDb, "rowFont", "fontSize", RC.BATTLE_SHOUT_TRACKER_FONT, "Rowdy   290 AP  1:01", LiveTracker, 8, 18),
+                    formatGet = fg, formatSet = fs, formatKinds = { name = true }, formatDefaults = RC.BATTLE_SHOUT_NAME_FORMAT,
+                    formatSample = function(spec) return RC.UI:FormatName("Bonkersthewarrior", spec, RC.BATTLE_SHOUT_NAME_FORMAT) end,
+                    anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ROW_TARGETS, "name"),
+                    anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "rowName") end }))
+                fg, fs = self.UI:CustomAccess(ptDb, "formats", "time", Saved(LiveTracker))
+                ag, as = self.UI:CustomAccess(ptDb, "anchors", "rowStatus", Saved(LiveTracker))
+                PPlace(self.UI:CreateTextElement(ptCard, { label = RCL["Status and time"], key = "rowStatus", width = W,
+                    formatGet = fg, formatSet = fs, formatKinds = { time = true }, formatDefaults = RC.BATTLE_SHOUT_TIME_FORMAT,
+                    formatSample = function(spec) return RC.UI:FormatTime(61.4, spec, RC.BATTLE_SHOUT_TIME_FORMAT) end,
+                    anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ROW_TARGETS, "status"),
+                    anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "rowStatus") end }))
+                local titleDefaults = { size = ptDb.fontSize or 11, outline = "OUTLINE", shadow = true }
+                ag, as = self.UI:CustomAccess(ptDb, "anchors", "title", Saved(LiveTracker))
+                PPlace(self.UI:CreateTextElement(ptCard, { label = RCL["Title"], key = "title", width = W,
+                    font = FontOf(ptDb, "titleFont", nil, titleDefaults, RCL["Battle Shout"], LiveTracker, 8, 18),
+                    colors = { ThemeColorOf("battleShoutPartyTracker", "titleText", RCL["Title colour"], LiveTracker) },
+                    anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_TITLE_TARGETS, "title"),
+                    anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "title") end }))
+                ptY = K.Desc(ptCard, ptY - 4, RCL["Names are drawn in their class colour; the status text uses the colours on the Look tab."])
+                Finish(ptCard, ptY)
+            end
 
         elseif selectedTab == "animation" then
             local card = self:CreateSettingsCard(parent, yPos, RCL["Reminder icon"])
@@ -638,12 +674,14 @@ local TEXT = _sbc.TEXT
             cardY = K.Anim(card, cardY, db, "hideAnim", ANIM_OUT, RCL["When it goes"], "out", Replay)
             Finish(card, cardY)
 
-            local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
-            local ptY = -32
-            ptY = K.Anim(ptCard, ptY, ptDb, "showAnim", ANIM_IN, RCL["When it appears"], "in", Replay)
-            ptY = K.Anim(ptCard, ptY, ptDb, "hideAnim", ANIM_OUT, RCL["When it goes"], "out", Replay)
-            ptY = K.Desc(ptCard, ptY, RCL["Appearance > Motion can turn every animation off or speed them all up."])
-            Finish(ptCard, ptY)
+            if hasTracker then
+                local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
+                local ptY = -32
+                ptY = K.Anim(ptCard, ptY, ptDb, "showAnim", ANIM_IN, RCL["When it appears"], "in", Replay)
+                ptY = K.Anim(ptCard, ptY, ptDb, "hideAnim", ANIM_OUT, RCL["When it goes"], "out", Replay)
+                ptY = K.Desc(ptCard, ptY, RCL["Appearance > Motion can turn every animation off or speed them all up."])
+                Finish(ptCard, ptY)
+            end
 
         elseif selectedTab == "sound" then
             local card = self:CreateSettingsCard(parent, yPos, RCL["Warning sound"])
@@ -708,32 +746,36 @@ local TEXT = _sbc.TEXT
             cardY = cardY - 34
             Finish(card, cardY)
 
-            local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
-            local ptY = -32
-            self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Locked (click-through)"], ptDb.locked, function(cb)
-                ptDb.locked = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.locked)
-                local fr = RC.battleShoutPartyTracker and RC.battleShoutPartyTracker.frame
-                if fr then
-                    fr:EnableMouse(not ptDb.locked)
-                    if fr.handle then fr.handle.Refresh() end
-                end
-                Save()
-            end)
-            ptY = ptY - 30
-            ptY = K.Slider(ptCard, ptY, RCL["Scale"], 0.5, 2.0, tonumber(ptDb.scale) or 1, 0.05, K.Pct,
-                function(v) ptDb.scale = v; LiveTracker() end)
-            local ptReset = self.UI:CreateStyledButton(ptCard, RCL["Reset Position"], 120, 24)
-            ptReset:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
-            ptReset:SetScript("OnClick", function()
-                local f = RC.battleShoutPartyTracker and RC.battleShoutPartyTracker.frame
-                if f then RC.Position.ResetFrame(f, true) end
-                Save()
-            end)
-            ptY = ptY - 32
-            ptY = K.Desc(ptCard, ptY, RCL["Edit Mode (/rc moveui) shows the tracker with a sample party so you can drag it into place."])
-            Finish(ptCard, ptY)
+            if hasTracker then
+                local ptCard = self:CreateSettingsCard(parent, yPos, RCL["Party tracker"])
+                local ptY = -32
+                self.UI:CreateSettingCheckbox(ptCard, ptY, RCL["Locked (click-through)"], ptDb.locked, function(cb)
+                    ptDb.locked = cb:GetChecked(); RC:ForceCheckboxUpdate(cb, ptDb.locked)
+                    local fr = RC.battleShoutPartyTracker and RC.battleShoutPartyTracker.frame
+                    if fr then
+                        fr:EnableMouse(not ptDb.locked)
+                        if fr.handle then fr.handle.Refresh() end
+                    end
+                    Save()
+                end)
+                ptY = ptY - 30
+                ptY = K.Slider(ptCard, ptY, RCL["Scale"], 0.5, 2.0, tonumber(ptDb.scale) or 1, 0.05, K.Pct,
+                    function(v) ptDb.scale = v; LiveTracker() end)
+                local ptReset = self.UI:CreateStyledButton(ptCard, RCL["Reset Position"], 120, 24)
+                ptReset:SetPoint("TOPLEFT", ptCard, "TOPLEFT", 14, ptY)
+                ptReset:SetScript("OnClick", function()
+                    local f = RC.battleShoutPartyTracker and RC.battleShoutPartyTracker.frame
+                    if f then RC.Position.ResetFrame(f, true) end
+                    Save()
+                end)
+                ptY = ptY - 32
+                ptY = K.Desc(ptCard, ptY, RCL["Edit Mode (/rc moveui) shows the tracker with a sample party so you can drag it into place."])
+                Finish(ptCard, ptY)
+            end
             yPos = self.UI:FrameLayerCard(parent, yPos, BS, LiveIcon, { title = RCL["Icon layer and scale"] })
-            yPos = self.UI:FrameLayerCard(parent, yPos, PT, LiveTracker, { title = RCL["Tracker layer"], scale = false })
+            if hasTracker then
+                yPos = self.UI:FrameLayerCard(parent, yPos, PT, LiveTracker, { title = RCL["Tracker layer"], scale = false })
+            end
 
             -- the parts inside each frame, and how the tracker's rows stack
             local function Saved(live) return function() RC:SaveConfigurationToProfile() live() end end
@@ -746,28 +788,32 @@ local TEXT = _sbc.TEXT
                 anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ICON_TARGETS, "icon"),
                 defaultTargetLabel = RCL["Fills the icon frame"],
                 anchorDefaults = function() return RC:BattleShoutAnchorDefaults("icon", "icon") end }))
-            ag, as = self.UI:CustomAccess(ptDb, "anchors", "titleIcon", Saved(LiveTracker))
-            Place(self.UI:CreateFrameElement(pc, { label = RCL["Tracker title icon"], key = "titleIcon", width = W,
-                anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_TITLE_TARGETS, "titleIcon"),
-                anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "titleIcon") end }))
-            ag, as = self.UI:CustomAccess(ptDb, "anchors", "rowIcon", Saved(LiveTracker))
-            Place(self.UI:CreateFrameElement(pc, { label = RCL["Bloodrage icon"], key = "rowIcon", width = W,
-                anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ROW_TARGETS, "icon"),
-                anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "rowIcon") end }))
+            if hasTracker then
+                ag, as = self.UI:CustomAccess(ptDb, "anchors", "titleIcon", Saved(LiveTracker))
+                Place(self.UI:CreateFrameElement(pc, { label = RCL["Tracker title icon"], key = "titleIcon", width = W,
+                    anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_TITLE_TARGETS, "titleIcon"),
+                    anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "titleIcon") end }))
+                ag, as = self.UI:CustomAccess(ptDb, "anchors", "rowIcon", Saved(LiveTracker))
+                Place(self.UI:CreateFrameElement(pc, { label = RCL["Bloodrage icon"], key = "rowIcon", width = W,
+                    anchorGet = ag, anchorSet = as, targets = Others(RC.BATTLE_SHOUT_ROW_TARGETS, "icon"),
+                    anchorDefaults = function() return RC:BattleShoutAnchorDefaults("tracker", "rowIcon") end }))
+            end
             pY = K.Desc(pc, pY, RCL["Reset puts a part back where it always sat."])
             Finish(pc, pY)
 
-            local lc = self:CreateSettingsCard(parent, yPos, RCL["Tracker rows"])
-            local lY = -32
-            local lg, ls = self.UI:CustomAccess(ptDb, "layout", nil, Saved(LiveTracker))
-            local lp = self.UI:CreateLayoutPicker(lc, { width = CardWidth(lc), get = lg, set = ls,
-                defaults = { grow = "DOWN", spacingY = 0, padding = 0, max = 5 },
-                fields = { grow = true, spacingY = true, padding = true, max = true, sort = true, reverse = true },
-                grows = { "DOWN", "UP" }, sorts = RC.BATTLE_SHOUT_SORTS, maxItems = 5 })
-            lp:SetPoint("TOPLEFT", lc, "TOPLEFT", 14, lY)
-            lY = lY - lp:GetHeight() - 8
-            lY = K.Desc(lc, lY, RCL["Row height is on the Look tab. Order by Default keeps your group's own order."])
-            Finish(lc, lY)
+            if hasTracker then
+                local lc = self:CreateSettingsCard(parent, yPos, RCL["Tracker rows"])
+                local lY = -32
+                local lg, ls = self.UI:CustomAccess(ptDb, "layout", nil, Saved(LiveTracker))
+                local lp = self.UI:CreateLayoutPicker(lc, { width = CardWidth(lc), get = lg, set = ls,
+                    defaults = { grow = "DOWN", spacingY = 0, padding = 0, max = 5 },
+                    fields = { grow = true, spacingY = true, padding = true, max = true, sort = true, reverse = true },
+                    grows = { "DOWN", "UP" }, sorts = RC.BATTLE_SHOUT_SORTS, maxItems = 5 })
+                lp:SetPoint("TOPLEFT", lc, "TOPLEFT", 14, lY)
+                lY = lY - lp:GetHeight() - 8
+                lY = K.Desc(lc, lY, RCL["Row height is on the Look tab. Order by Default keeps your group's own order."])
+                Finish(lc, lY)
+            end
         end
 
         self:UpdateSidebarScrollbar(self.sidebarConfigFrame)

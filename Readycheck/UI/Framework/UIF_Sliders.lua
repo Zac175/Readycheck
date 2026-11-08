@@ -17,6 +17,7 @@ if not RC then return end
 RC._uif = RC._uif or {}
 local _uif = RC._uif
 local NotifySettingChanged, WrapNotify = _uif.NotifySettingChanged, _uif.WrapNotify
+local S = _uif.S
 local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNormal, GetButtonHoverBG, GetButtonNormalBG, GetButtonTexture, GetCheckboxCheckmark, GetDropdownArrow, GetDropdownBG, GetDropdownItemHover, GetDropdownItemText, GetDropdownSelected, GetElementBG, GetScrollThumb, GetScrollTrack, GetTextGray, GetTextNormal, RegisterTexture =
       _uif.BASE, _uif.C, _uif.FLAT, _uif.CreateProfessionalFontString, _uif.GetAccentGold, _uif.GetBorderNormal, _uif.GetButtonHoverBG, _uif.GetButtonNormalBG, _uif.GetButtonTexture, _uif.GetCheckboxCheckmark, _uif.GetDropdownArrow, _uif.GetDropdownBG, _uif.GetDropdownItemHover, _uif.GetDropdownItemText, _uif.GetDropdownSelected, _uif.GetElementBG, _uif.GetScrollThumb, _uif.GetScrollTrack, _uif.GetTextGray, _uif.GetTextNormal, _uif.RegisterTexture
     -- Returns a Slider whose value display doubles as a click-to-type
@@ -40,6 +41,13 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
 
         local sliderFrame = CreateFrame("Frame", nil, parent)
         sliderFrame:SetSize(BASE.SLIDER_WIDTH, 30)
+        -- In the /rc window (5.0), the /zui slider in this one's place: a
+        -- 4 px pill track (white 0.22), the part up to the thumb an accent
+        -- pill (0.75), a round 14 px accent thumb on a disc of the window's
+        -- colour, and the value in a small input box (white 0.53; 1.0 and
+        -- an accent edge while typing).
+        local set = RC.UI:InSettings(parent)
+        sliderFrame._rcSet = set or nil
 
         -- THE LOOK: a thin flat track, the part up to the thumb filled in
         -- the thumb's colour, a square thumb that lights gold under the
@@ -67,6 +75,18 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         fill:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT", 1, 1)
         fill:SetWidth(1)
         sliderFrame.fill = fill
+        local trackPill, fillHost, fillPill
+        if set then
+            trackBg:SetAlpha(0)
+            RC.UI:UpdateBorderColor(sliderFrame.trackBorder, GetBorderNormal(), 0)
+            fill:SetAlpha(0)
+            trackPill = RC.UI:Pill(track, "BACKGROUND", 1, S.TRACK_H)
+            fillHost = CreateFrame("Frame", nil, track)
+            fillHost:SetPoint("TOPLEFT", track, "TOPLEFT", 0, 0)
+            fillHost:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT", 0, 0)
+            fillHost:SetWidth(S.TRACK_H)
+            fillPill = RC.UI:Pill(fillHost, "ARTWORK", 1, S.TRACK_H)
+        end
 
         local slider = CreateFrame("Slider", nil, sliderFrame)
         slider:SetPoint("TOPLEFT", track, "TOPLEFT", 0, 2)
@@ -87,7 +107,17 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         thumb:SetVertexColor(thumbCol.r, thumbCol.g, thumbCol.b, 1)
         slider:SetThumbTexture(thumb)
         slider.thumb = thumb
-        RC.UI:AddThumbBorder(slider)
+        local thumbBack
+        if set then
+            thumb:SetSize(S.THUMB, S.THUMB)
+            RC.UI:DiscArt(thumb, S.THUMB)
+            thumbBack = slider:CreateTexture(nil, "ARTWORK")
+            thumbBack:SetSize(S.THUMB + 4, S.THUMB + 4)
+            thumbBack:SetPoint("CENTER", thumb, "CENTER", 0, 0)
+            RC.UI:DiscArt(thumbBack, S.THUMB + 4)
+        else
+            RC.UI:AddThumbBorder(slider)
+        end
 
         -- the fill follows the value, and the track's width
         local function UpdateFill()
@@ -100,12 +130,25 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             local w = (tw > tb) and (tb / 2 + frac * (tw - tb)) or (frac * math_max(0, tw))
             fill:SetWidth(math_max(0.01, w))
             fill:SetShown(w >= 1)
+            if fillHost then
+                fillHost:SetWidth(math_max(S.TRACK_H, w + 1))
+                fillPill:Show(w >= 1)
+            end
         end
         track:SetScript("OnSizeChanged", UpdateFill)
 
         -- thumb: gold under the mouse and while dragged
         local hovered, dragging = false, false
         local function PaintThumb()
+            if set then
+                local A = RC.UI:SAccent()
+                local k = (hovered or dragging) and 1.15 or 1
+                thumb:SetVertexColor(math_min(1, A.r * k), math_min(1, A.g * k), math_min(1, A.b * k), 1)
+                thumbBack:SetVertexColor(RC.UI:SCol("windowBackground", 1))
+                trackPill:Color(RC.UI:SCol("text", S.SL_TRACK_A))
+                fillPill:Color(A.r, A.g, A.b, S.SL_FILL_A)
+                return
+            end
             local c = (hovered or dragging) and GetAccentGold() or GetScrollThumb()
             thumb:SetVertexColor(c.r, c.g, c.b, 1)
             local f = GetScrollThumb()
@@ -150,13 +193,50 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         local txtNorm = GetTextNormal()
         displayText:SetTextColor(txtNorm.r, txtNorm.g, txtNorm.b, 1)
 
+        -- the value's box (the /rc window): as wide as the value + 12, 40
+        -- at least, the value in its middle
+        local valueBox
+        local function PaintValue(hot)
+            if hot then
+                displayText:SetTextColor(RC.UI:SCol("text", 1))
+            else
+                displayText:SetTextColor(RC.UI:SCol("text", S.DIM_A))
+            end
+            valueBox.bg:SetVertexColor(RC.UI:SCol("input", S.SL_INPUT_A))
+            RC.UI:UpdateBorderColor(valueBox.border, RC:GetColor("settings", "text"), hot and S.BTN_BRD_A or S.SL_INPUT_BRD_A)
+        end
+        if set then
+            valueBox = CreateFrame("Frame", nil, textContainer)
+            valueBox:SetPoint("TOPRIGHT", textContainer, "TOPRIGHT", 0, 0)
+            valueBox:SetPoint("BOTTOMRIGHT", textContainer, "BOTTOMRIGHT", 0, 0)
+            valueBox:SetWidth(S.VALUE_W)
+            valueBox:SetFrameLevel(clickButton:GetFrameLevel() - 1 > 0 and clickButton:GetFrameLevel() - 1 or 1)
+            valueBox.bg = valueBox:CreateTexture(nil, "BACKGROUND")
+            valueBox.bg:SetAllPoints()
+            valueBox.bg:SetTexture(FLAT)
+            valueBox.border = self:CreateSimpleBorder(valueBox)
+            displayText:ClearAllPoints()
+            displayText:SetPoint("CENTER", valueBox, "CENTER", 0, 0)
+            displayText:SetJustifyH("CENTER")
+            local function Fit()
+                local need = math_ceil(displayText:GetStringWidth() or 0) + 12
+                local room = textContainer:GetWidth() or S.VALUE_W
+                valueBox:SetWidth(math_max(math_min(S.VALUE_W, room), math_min(need, room)))
+            end
+            hooksecurefunc(displayText, "SetText", Fit)
+            Fit()
+            PaintValue(false)
+        end
+
         -- The value is a click-to-type affordance; gold on hover says so.
         clickButton:SetScript("OnEnter", function(self)
+            if set then PaintValue(true) return end
             local gold = GetAccentGold()
             displayText:SetTextColor(gold.r, gold.g, gold.b, 1)
         end)
 
         clickButton:SetScript("OnLeave", function(self)
+            if set then PaintValue(false) return end
             local rest = GetTextNormal()
             displayText:SetTextColor(rest.r, rest.g, rest.b, 1)
         end)
@@ -170,6 +250,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         editBg:SetAllPoints()
         editBg:SetTexture(FLAT)
         editBg:SetVertexColor(elemBg.r, elemBg.g, elemBg.b, 1)
+        if set then editBg:SetVertexColor(RC.UI:SCol("input", S.SL_INPUT_A + 0.4)) end
 
         -- Gold ring while typing, the flat box's only focus affordance.
         local editBorder = self:CreateSimpleBorder(editBoxFrame)
@@ -194,7 +275,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             editBox:SetText(displayText:GetText())
             editBox:SetFocus()
             editBox:HighlightText()
-            RC.UI:UpdateBorderColor(editBorder, GetAccentGold(), 1)
+            RC.UI:UpdateBorderColor(editBorder, set and RC.UI:SAccent() or GetAccentGold(), 1)
         end
 
         local function HideEditBox()
@@ -330,12 +411,19 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                 self.label:SetWordWrap(false)
                 local gray = GetTextGray()
                 self.label:SetTextColor(gray.r, gray.g, gray.b, 1)
+                if set then self.label:SetTextColor(RC.UI:SCol("text", 1)) end
             end
             self.label:SetText(labelText or "")
         end
 
         -- Repaints track/thumb/text from the theme (RefreshUIColors).
         function slider:Repaint()
+            if set then
+                PaintThumb()
+                PaintValue(false)
+                if self.label then self.label:SetTextColor(RC.UI:SCol("text", 1)) end
+                return
+            end
             local eb = GetElementBG()
             trackBg:SetVertexColor(eb.r, eb.g, eb.b, 1)
             editBg:SetVertexColor(eb.r, eb.g, eb.b, 1)
@@ -375,6 +463,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         -- the built-in label; clamp the value box to the room available.
         sliderFrame:SetScript("OnSizeChanged", function(self, w)
             if not w or w <= 0 then return end
+            UpdateFill()
             local valueW = math_min(60, math_max(28, math_floor(w * 0.4)))
             textContainer:SetWidth(valueW)
             editBoxFrame:SetWidth(valueW)
@@ -518,14 +607,32 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         container.btnNorm = btnNorm
         container.btnHover = btnHover
 
+        -- In the /rc window (5.0): the /zui dropdown's colours in this one's
+        -- place - a warm dark box at 0.90 (0.98 under the mouse), a white
+        -- 0.20 edge (0.30), the choice in white 0.50 (0.60), the arrow with
+        -- it; the open list the same box at 0.98, a row under the mouse
+        -- white 0.08 with a full-white label, the picked row white 0.04.
+        local set = RC.UI:InSettings(parent)
+        container._rcSet = set or nil
+        local function PaintClosed(hot)
+            bg:SetVertexColor(RC.UI:SCol("dropdownBackground", hot and S.DD_BG_HA or S.DD_BG_A))
+            RC.UI:UpdateBorderColor(container.border, RC:GetColor("settings", "text"), hot and S.DD_BRD_HA or S.DD_BRD_A)
+            text:SetTextColor(RC.UI:SCol("text", hot and S.DD_TXT_HA or S.DD_TXT_A))
+            arrow:SetVertexColor(RC.UI:SCol("text", hot and S.DD_TXT_HA or S.DD_TXT_A))
+        end
+        container._rcPaintClosed = PaintClosed
+        if set then PaintClosed(false) end
+
         container:EnableMouse(true)
         container:SetScript("OnEnter", function(self)
+            if set then PaintClosed(true) return end
             local hb = GetButtonHoverBG()
             bg:SetVertexColor(hb.r, hb.g, hb.b, hb.a or 1)
             RC.UI:UpdateBorderColor(self.border, GetAccentGold(), 1)
         end)
 
         container:SetScript("OnLeave", function(self)
+            if set then PaintClosed(false) return end
             local nb = GetDropdownBG()
             bg:SetVertexColor(nb.r, nb.g, nb.b, nb.a or 1)
             RC.UI:UpdateBorderColor(self.border, GetBorderNormal(), 1)
@@ -557,6 +664,10 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         menu.bg = menuBg
 
         menu.border = self:CreateSimpleBorder(menu)
+        if set then
+            menuBg:SetVertexColor(RC.UI:SCol("dropdownBackground", S.DD_BG_HA))
+            RC.UI:UpdateBorderColor(menu.border, RC:GetColor("settings", "text"), S.DD_BRD_A)
+        end
 
         local scrollFrame = CreateFrame("ScrollFrame", nil, menu)
         scrollFrame:SetPoint("TOPLEFT", 2, -2)
@@ -853,6 +964,12 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         local function _SetRowSelected(item, selected)
             if not item then return end
             item.isSelectedRow = selected and true or false
+            if set then
+                if item.check then item.check:SetText("") end
+                if item.bg then item.bg:SetVertexColor(RC.UI:SCol("text", selected and S.DD_SEL_A or 0)) end
+                if item.label then item.label:SetTextColor(RC.UI:SCol("text", selected and 1 or S.DIM_A)) end
+                return
+            end
             if item.check then item.check:SetText(selected and "*" or "") end
             if item.label then
                 local c = selected and GetDropdownSelected() or GetDropdownItemText()
@@ -963,6 +1080,10 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                     itemFrame:SetScript("OnEnter", function(self)
                         local hv = GetDropdownItemHover()
                         self.bg:SetVertexColor(hv.r, hv.g, hv.b, hv.a or 1)
+                        if set then
+                            self.bg:SetVertexColor(RC.UI:SCol("text", S.DD_HL_A))
+                            if self.label then self.label:SetTextColor(RC.UI:SCol("text", 1)) end
+                        end
                         if self.itemLink then
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetHyperlink(self.itemLink)
@@ -979,6 +1100,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                     end)
                     itemFrame:SetScript("OnLeave", function(self)
                         self.bg:SetVertexColor(1, 1, 1, 0)
+                        if set then _SetRowSelected(self, self.isSelectedRow) end
                         if self.itemLink or self.tipText then GameTooltip:Hide() end
                     end)
 
@@ -1077,6 +1199,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                 itemText:SetWordWrap(false)
                 itemText:SetText(itemData.label or itemData.text or itemData)
                 itemText:SetTextColor(container.txtNorm.r, container.txtNorm.g, container.txtNorm.b, 1)
+                if container._rcSet then itemText:SetTextColor(RC.UI:SCol("text", S.DIM_A)) end
                 itemText:ClearAllPoints()
                 if itemData.subText and itemData.subText ~= "" then
                     itemText:SetPoint("TOPLEFT", itemFrame, "TOPLEFT", textLeftX, -1)

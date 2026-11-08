@@ -843,7 +843,7 @@ local function InitializeNameplateAuras()
         end
 
         local op = aura.overpower
-        if NA.opGUID and UnitGUID(unit) == NA.opGUID and (NA.opUntil or 0) > now then
+        if NA.opGUID and Readycheck.SafeGUID(unit) == NA.opGUID and (NA.opUntil or 0) > now then
             if not op then op = {}; aura.overpower = op end
             if not op.present then op.firstSeen = (NA.opUntil or now) - 5 end
             op.present = true
@@ -895,7 +895,7 @@ local function InitializeNameplateAuras()
     local function updateOverpower()
         if not NA.opName then return end
         if not (NA.opGroup and NA.opGroup.enabled) then return end
-        local guid = UnitExists("target") and UnitGUID("target")
+        local guid = UnitExists("target") and Readycheck.SafeGUID("target")
         if guid and not isBossUnit("target") then guid = nil end
         local usable, noPower = false, false
         if guid then usable, noPower = IsUsableSpell(NA.opName) end
@@ -1084,7 +1084,7 @@ local function InitializeNameplateAuras()
     function NA:MarkDirtyByGUID(guid)
         if not guid then return end
         for unit in pairs(self.activeUnits) do
-            if UnitGUID(unit) == guid then
+            if Readycheck.SafeGUID(unit) == guid then
                 self.dirty[unit] = true
                 self.hasDirty = true
             end
@@ -1221,7 +1221,7 @@ local function InitializeNameplateAuras()
         elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
             local _, sub, _, srcGUID, _, _, _, dstGUID = CombatLogGetCurrentEventInfo()
             if srcGUID == NA.playerGUID then
-                local tg = UnitExists("target") and UnitGUID("target")
+                local tg = UnitExists("target") and Readycheck.SafeGUID("target")
                 if tg and dstGUID == tg then
                     -- missType sits at payload arg 1 for both, which is
                     -- absolute index 12 for SWING_* and 15 for the SPELL_*

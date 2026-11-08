@@ -279,4 +279,7 @@ local function InitializeBoonReminder()
     RC:DebugPrint("BoonReminder module loaded (normal reminder popup)", "system")
 end
 
-C_Timer.After(0.5, InitializeBoonReminder)
+-- not on a game version with no world buffs to keep (Core_Flavor)
+if not (_G.Readycheck and _G.Readycheck.FeatureOn and not _G.Readycheck:FeatureOn("chronoboon")) then
+    C_Timer.After(0.5, InitializeBoonReminder)
+end

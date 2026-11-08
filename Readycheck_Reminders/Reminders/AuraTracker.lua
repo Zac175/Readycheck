@@ -650,7 +650,7 @@ local function InitializeAuraTracker()
                 if not ended or now < ended - EXPIRY_SLACK or now - ended > EXPIRY_LATE then return end
                 if UnitIsDeadOrGhost("player") then return end
             else
-                on = UnitName("target")
+                on = Readycheck.SafeName("target")
             end
             self.whisperPending[e.id] = {
                 due = now + (WHISPER_GRACE[spec.unit] or 10), who = who, label = e.label, on = on,
@@ -1488,7 +1488,7 @@ local function InitializeAuraTracker()
             local now = GetTime()
             local gate = self:GateOK()
             if spec.unit == "target" then
-                local g = gate and UnitGUID("target") or nil
+                local g = gate and Readycheck.SafeGUID("target") or nil
                 if g ~= self.targetGUID then self:SetTargetGUID(g) end
                 self:ArmCLEU(gate)
             end
@@ -1586,7 +1586,7 @@ local function InitializeAuraTracker()
             end
             if event == "PLAYER_TARGET_CHANGED" then
                 T.dirty = true
-                T:SetTargetGUID(UnitExists("target") and UnitGUID("target") or nil)
+                T:SetTargetGUID(UnitExists("target") and Readycheck.SafeGUID("target") or nil)
                 return
             end
             if event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then

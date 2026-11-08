@@ -187,6 +187,7 @@ C_Timer.After(0.5, function()
             rows = {
                 { cmd = "/rc",                          desc = RCL["Open settings"] },
                 { cmd = "/rc help",                     desc = RCL["Open this page"] },
+                { cmd = "/rc search <words>",           desc = RCL["Open settings with the words typed into the search box (Ctrl+F in the window focuses it)"] },
                 { cmd = "/rc changelog",                desc = RCL["Show what's new"] },
                 { cmd = "/rc tutorial",                 desc = RCL["Take a quick tour of this window"] },
                 { cmd = "/rc setup",                    desc = RCL["Run the setup wizard again"] },
@@ -254,7 +255,7 @@ C_Timer.After(0.5, function()
             rows = {
                 { cmd = "/rc reminders",                desc = RCL["Open custom reminders panel"] },
                 { cmd = "/rc testreminder",             desc = RCL["Fire a test custom reminder"] },
-                { cmd = "/rc battleshout  |  /rc bs",   desc = RCL["Toggle battle shout party tracker"] },
+                { cmd = "/rc battleshout  |  /rc bs",   desc = RCL["Toggle the Battle Shout reminder"] },
             },
         },
         {
@@ -391,6 +392,40 @@ C_Timer.After(0.5, function()
 
     -- Registered as menu item "commands" (panel = "ShowSidebarCommands") in Sidebar_Base.lua's
     -- MenuStructure. Clears content itself, then reports final height via UpdateSidebarScrollbar.
+    -- The command groups as this session has them: a group whose owning
+    -- part is not loaded is left out, and so is a command of a feature
+    -- this game version does not run (Core_Flavor) - a group left empty
+    -- goes with it. The Commands page draws these; the settings search
+    -- (Sidebar_Search) lists them as results.
+    function RC:VisibleSlashSections()
+        local visibleSections = {}
+        for _, s in ipairs(SLASH_SECTIONS) do
+            local hide =
+                -- RC.Profiler always exists (Core_Stubs no-op stub); only the
+                -- real one from Readycheck_Debug registers these commands.
+                ((s.title == "Profiler" or s.title == "Debug")
+                    and (not RC.Profiler or RC.Profiler.isStub))
+                or (s.title == "World buffs & cross-faction" and not RC.WorldBuffs)
+                or (s.title == "Polarity mode" and not RC.PolarityReset)
+            if not hide and RC.CommandOffByFlavor then
+                local kept = {}
+                for _, row in ipairs(s.rows) do
+                    local word = row.cmd:match("^/rc (%a+)")
+                    if not (word and RC:CommandOffByFlavor(word)) then kept[#kept + 1] = row end
+                end
+                if #kept < #s.rows then
+                    s = { title = s.title, rows = kept }
+                    hide = #kept == 0
+                end
+            end
+            if not hide then
+                table.insert(visibleSections, s)
+            end
+        end
+        return visibleSections
+    end
+    RC.SlashSections = SLASH_SECTIONS
+
     function RC:ShowSidebarCommands(frame)
         self:ClearSidebarContent(self.sidebarConfigFrame)
         local parent = frame.scrollChild
@@ -403,20 +438,7 @@ C_Timer.After(0.5, function()
         local cmdColor  = RC:GetColor("ui", "accentGold")
         local descColor = RC:GetColor("text", "secondary") or { r=0.75, g=0.75, b=0.75 }
 
-        -- Hide command groups whose owning module isn't loaded this session.
-        local visibleSections = {}
-        for _, s in ipairs(SLASH_SECTIONS) do
-            local hide =
-                -- RC.Profiler always exists (Core_Stubs no-op stub); only the
-                -- real one from Readycheck_Debug registers these commands.
-                ((s.title == "Profiler" or s.title == "Debug")
-                    and (not RC.Profiler or RC.Profiler.isStub))
-                or (s.title == "World buffs & cross-faction" and not RC.WorldBuffs)
-                or (s.title == "Polarity mode" and not RC.PolarityReset)
-            if not hide then
-                table.insert(visibleSections, s)
-            end
-        end
+        local visibleSections = self:VisibleSlashSections()
         for _, section in ipairs(visibleSections) do
             local card = self:CreateSettingsCard(parent, yPos, section.title)
             local cardY = -32

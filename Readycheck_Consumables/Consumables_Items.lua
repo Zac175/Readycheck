@@ -229,7 +229,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
     -- cooldown is the standard way to read the GCD without owning a spell.
     local gcdSpellId = 61304
     function RC:GetGCDInfo()
-        local start, duration = GetSpellCooldown(gcdSpellId)
+        local start, duration = Readycheck.PlainCD(GetSpellCooldown(Readycheck.GCDSpell and Readycheck.GCDSpell() or gcdSpellId))
 
         if start and duration and start > 0 and duration > 0 then
             local remaining = start + duration - GetTime()

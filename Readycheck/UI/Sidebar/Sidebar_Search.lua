@@ -1,9 +1,17 @@
 ------------------------------------------------------------------------
 -- Readycheck - Sidebar Settings Search
 -- The /rc window's search: an index of every setting on every page, the
--- ranked results page shown in the content pane while you type, and the
--- jump that opens a result's page (on the right tab), scrolls the
--- setting into view and flashes it.
+-- ranking, and the jump that opens a result's page (on the right tab),
+-- scrolls the setting into view and flashes it. Sidebar_SearchBox draws
+-- the results in a dropdown under the search box.
+--
+-- MATCHING (2026-11-07): case-insensitive, every word of the query
+-- somewhere in the title, the description, the tooltip or the breadcrumb;
+-- a word may sit at the start (best), at a word start, inside a word, as
+-- letters in order ("castbar" finds "Cast Bar") or with one letter wrong.
+-- Results are ranked by that, then a setting before its section before
+-- the page. The /rc commands are results too (kind "command"); a page or
+-- command of a feature this game version does not run is never listed.
 --
 -- WHY AN INDEX. The sidebar search used to match page names and the
 -- hand-kept alias lists only, so most checkboxes and sliders could not be
@@ -52,13 +60,15 @@ RC.SidebarSearch = S
 local SKIP = {
     world_buffs = true, profiler = true, changelog = true, remote_raid_cfg = true,
 }
-local MAX_RESULTS = 60
 
 local index = {}      -- [itemId] = { entry, ... }
 local done = {}       -- [itemId] = true once indexed
 local running = false
 local scratchChild, scratchScroll
 
+-- (searchMode: results used to take the content pane; they drop under
+-- the box now, so this stays false - Sidebar_Window and the custom
+-- sections still ask)
 S.searchMode = false
 S.query = ""
 S.results = {}
@@ -588,11 +598,163 @@ function S.EnsureIndex(onDone)
 end
 
 -- ============================================================
+-- COMMANDS
+-- ============================================================
+-- The /rc commands the Commands page lists (RC:VisibleSlashSections,
+-- Sidebar_Hooks: the groups whose part is loaded, a command this game
+-- version runs). A command with words to fill in (<boss>, [seconds], an
+-- (Item,slot)), one of several spellings, or one that clears or resets
+-- something is put in the chat box to be finished; the rest run.
+local PASTE_WORDS = { "clear", "reset", "cleanup", "confirm", "adopt", "wipe", "uninstall" }
+local function CommandText(row)
+    -- "/rc move | /rc moveui | /rc unlock": the first spelling
+    local text = (row.cmd or ""):match("^%s*(.-)%s*|") or row.cmd or ""
+    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+S.CommandText = CommandText
+
+local function PasteOnly(row)
+    local text = CommandText(row)
+    if row.paste then return true end
+    if text:find("[<%[%(|]") then return true end
+    local lower = text:lower()
+    for _, w in ipairs(PASTE_WORDS) do
+        if lower:find(w, 1, true) then return true end
+    end
+    return false
+end
+S.PasteOnly = PasteOnly
+
+local function EachCommand(fn)
+    local sections = RC.VisibleSlashSections and RC:VisibleSlashSections() or RC.SlashSections or {}
+    for _, section in ipairs(sections) do
+        for _, row in ipairs(section.rows or {}) do fn(row, section) end
+    end
+end
+
+-- Run a command result: a complete command runs through its slash
+-- handler now; one that needs finishing goes into the chat box.
+-- Returns "ran", "pasted" or false.
+function S.RunCommand(r)
+    local row = r and r.command
+    if not row then return false end
+    local text = CommandText(row)
+    if PasteOnly(row) then
+        local open = (ChatFrameUtil and ChatFrameUtil.OpenChat) or ChatFrame_OpenChat
+        local upTo = text:gsub("%s*[<%[%(].*$", "")
+        if open then open(upTo .. " ") end
+        return "pasted"
+    end
+    local slash, rest = text:match("^(/%S+)%s*(.-)$")
+    if not slash then return false end
+    local handler
+    if SlashCmdList then
+        for name, fn in pairs(SlashCmdList) do
+            local i = 1
+            while true do
+                local sw = _G["SLASH_" .. name .. i]
+                if not sw then break end
+                if sw:lower() == slash:lower() then handler = fn break end
+                i = i + 1
+            end
+            if handler then break end
+        end
+    end
+    if not handler then return false end
+    handler(rest or "")
+    return "ran"
+end
+
+-- ============================================================
 -- RANKING
 -- ============================================================
-local function WordStart(hay, w)
-    return (" " .. hay):find(" " .. w, 1, true) ~= nil
+-- One word against one lowercase string. The quality says how it
+-- matched: at the start, at a word start, inside a word, as letters in
+-- order (a fuzzy hit: "castbar" in "cast bar"), or with one letter wrong.
+-- nil when it does not.
+local Q_PREFIX, Q_WORD, Q_INSIDE = 100, 85, 65
+
+-- Letters in order. The forward pass (one C find per letter) finds where
+-- the earliest full match ends; the backward pass from there finds the
+-- latest start, so "stat" in "secondary stat display" lands on "stat" and
+-- not on the s of secondary. A match spread over much more than its own
+-- length is noise ("cat" across "character settings"), not a hit: slack
+-- is how many extra letters the spread may hold, half the word's length
+-- unless given. Returns a quality 25..50 by how tight the letters sit.
+local function Subseq(hay, w, slack)
+    local hl, wl = #hay, #w
+    if wl > hl then return nil end
+    local pos = 0
+    for i = 1, wl do
+        pos = hay:find(w:sub(i, i), pos + 1, true)
+        if not pos then return nil end
+    end
+    local last = pos
+    local hi, wi = last, wl
+    while wi >= 1 do
+        if hay:byte(hi) == w:byte(wi) then wi = wi - 1 end
+        hi = hi - 1
+    end
+    local span = last - hi
+    if span > wl + (slack or math_max(2, math_floor(wl / 2))) then return nil end
+    return 25 + math_floor(25 * wl / span)
 end
+
+-- One letter wrong, dropped or doubled: the first letter of the word the
+-- forward pass cannot place is left out and the rest must still be found
+-- in order, close together.
+local function Typo(hay, w)
+    local wl = #w
+    local pos, stuck = 0, nil
+    for i = 1, wl do
+        pos = hay:find(w:sub(i, i), pos + 1, true)
+        if not pos then stuck = i break end
+    end
+    if not stuck then return nil end
+    local short = w:sub(1, stuck - 1) .. w:sub(stuck + 1)
+    if #short < 3 then return nil end
+    local q = Subseq(hay, short, 3)
+    return q and math_floor(q * 0.6) or nil
+end
+
+local function WordQuality(hay, w)
+    local i = hay:find(w, 1, true)
+    if i then
+        if i == 1 then return Q_PREFIX end
+        local prev = hay:byte(i - 1)
+        if prev == 32 or prev < 48 or (prev > 57 and prev < 65) then return Q_WORD end
+        return Q_INSIDE
+    end
+    local wl = #w
+    if wl < 3 then return nil end
+    local q = Subseq(hay, w)
+    if q then return q end
+    if wl >= 4 then return Typo(hay, w) end
+    return nil
+end
+S.WordQuality = WordQuality
+
+-- Every word against the thing itself (own) and, failing that, against
+-- the words around it (ctx: its card, tab, page, group) at a quarter of
+-- the quality. nil unless every word landed and at least one on the
+-- thing itself; otherwise every row of a matching card would come back.
+local function Score(own, ctx, tokens)
+    local total, hits = 0, 0
+    for _, w in ipairs(tokens) do
+        local q = WordQuality(own, w)
+        if q then
+            hits = hits + 1
+            total = total + q
+        else
+            q = ctx and WordQuality(ctx, w)
+            if not q then return nil end
+            total = total + math_floor(q / 4)
+        end
+    end
+    if hits == 0 then return nil end
+    return total
+end
+S.Score = Score
 
 local function PageHay(item, cat)
     local parts = { (item.name or ""):lower() }
@@ -601,48 +763,60 @@ local function PageHay(item, cat)
     return table_concat(parts, " ")
 end
 
--- Ranked results plus the set of page ids that have something.
+-- Equal scores: a setting before its section, a section before a
+-- command, a command before a tab, a tab before a page.
+local KIND_RANK = { row = 1, desc = 1, tip = 1, card = 2, command = 3, tab = 4, page = 5 }
+
+-- Ranked results plus the set of page ids that have something. Each
+-- result: item (the menu id), kind, label, score, page, parent, and
+-- entry (the indexed line) or command (the Commands page row).
 function S.Run(query)
     local tokens = Tokens(query)
     local results, hits = {}, {}
     if #tokens == 0 then return results, hits end
     local phrase = table_concat(tokens, " ")
 
+    -- The Commands page's own lines (a command, what it does) come back as
+    -- Command results below, not as settings of that page.
+    local cmdLines = {}
+    EachCommand(function(row)
+        if row.cmd then cmdLines[Clean(row.cmd):lower()] = true end
+        if row.desc then cmdLines[Clean(row.desc):lower()] = true end
+    end)
+
     EachItem(function(item, cat)
         if not (item.panel or item.raidKey) or not S.IsVisible(item) then return end
         local pageName = (item.name or ""):lower()
-        if S.MatchAll(PageHay(item, cat), tokens) then
-            -- Below a setting that names the word itself.
-            local score = 20
-            if pageName:find(phrase, 1, true) then score = score + 50 end
+        local catName = cat and (cat.name or ""):lower() or ""
+        local score = Score(PageHay(item, cat), nil, tokens)
+        if score then
+            -- a hit on the aliases alone sits below a setting that names
+            -- the word itself; the page's own name counts in full
+            if not Score(pageName, nil, tokens) then score = math_floor(score / 2) end
+            if pageName:find(phrase, 1, true) then score = score + 30 end
+            -- the page whose name is the query is what was asked for
+            if pageName == phrase then score = score + 60 end
             results[#results + 1] = { item = item.id, kind = "page", label = item.name,
-                score = score, page = item.name, parent = cat and cat.name }
+                score = score, page = item.name, parent = cat and cat.name, order = #results }
             hits[item.id] = true
         end
         for _, e in ipairs(index[item.id] or {}) do
-            local ctx = (e.card or ""):lower() .. " " .. pageName .. " "
-                .. (e.tabLabel or ""):lower()
-            local score, ok, own = 0, true, 0
-            for _, w in ipairs(tokens) do
-                if e.hay:find(w, 1, true) then
-                    own = own + 1
-                    score = score + 10
-                    if WordStart(e.hay, w) then score = score + 6 end
-                elseif ctx:find(w, 1, true) then
-                    score = score + 2
-                else
-                    ok = false
-                    break
-                end
+            local ctx = (e.card or ""):lower() .. " " .. (e.tabLabel or ""):lower() .. " "
+                .. pageName .. " " .. catName
+            local s
+            if not (item.id == "commands" and e.kind ~= "card" and cmdLines[(e.label or ""):lower()]) then
+                s = Score(e.hay, ctx, tokens)
             end
-            if ok and own > 0 then
-                if e.hay:find(phrase, 1, true) then score = score + 25 end
-                if e.kind == "card" then score = score + 8
-                elseif e.kind == "desc" then score = score - 12
-                elseif e.kind == "tip" then score = score - 8 end
-                score = score + math_max(0, 12 - math_floor(#e.hay / 8))
+            if s then
+                local label = (e.label or ""):lower()
+                if label:find(phrase, 1, true) then s = s + 30 end
+                if label == phrase then s = s + 40 end
+                if e.kind == "card" then s = s + 4
+                elseif e.kind == "desc" then s = s - 10
+                elseif e.kind == "tip" then s = s - 8 end
+                s = s + math_max(0, 12 - math_floor(#label / 8))
                 results[#results + 1] = { entry = e, item = item.id, kind = e.kind,
-                    label = e.label, score = score, page = item.name,
+                    label = e.label, score = s, page = item.name,
                     parent = cat and cat.name, order = #results }
                 hits[item.id] = true
             end
@@ -651,10 +825,13 @@ function S.Run(query)
         -- that open a tab of this page
         for i, sub in ipairs(RC.SUBPANEL_ALIASES or {}) do
             if sub.parentId == item.id and type(sub.setTab) == "function" then
-                local hay = table_concat(sub.keywords or {}, " "):lower() .. " " .. (sub.tabLabel or ""):lower()
-                if S.MatchAll(hay, tokens) then
+                -- (a part this game version does not run leaves its words out: Core_Flavor)
+                local words = RC.AliasKeywords and RC:AliasKeywords(sub) or sub.keywords
+                local hay = table_concat(words or {}, " "):lower() .. " " .. (sub.tabLabel or ""):lower()
+                local s = Score(hay, pageName .. " " .. catName, tokens)
+                if s then
                     results[#results + 1] = { entry = { kind = "tab", alias = i, tabLabel = sub.tabLabel, label = sub.tabLabel },
-                        item = item.id, kind = "tab", label = (sub.tabLabel or item.name), score = 18,
+                        item = item.id, kind = "tab", label = (sub.tabLabel or item.name), score = math_floor(s / 2) + 3,
                         page = item.name, parent = cat and cat.name, order = #results }
                     hits[item.id] = true
                 end
@@ -662,8 +839,23 @@ function S.Run(query)
         end
     end)
 
+    -- the /rc commands
+    EachCommand(function(row, section)
+        local text = CommandText(row)
+        -- (every spelling: "/rc moveui" finds "/rc move | /rc moveui")
+        local own = (Clean(row.cmd or text) .. " " .. (row.desc or "")):lower()
+        local s = Score(own, (section.title or ""):lower(), tokens)
+        if s then
+            if (row.cmd or text):lower():find(phrase, 1, true) then s = s + 20 end
+            results[#results + 1] = { command = row, item = "_commands", kind = "command",
+                label = text, score = s, page = RCL["Commands"], parent = section.title, order = #results }
+        end
+    end)
+
     table_sort(results, function(a, b)
         if a.score ~= b.score then return a.score > b.score end
+        local ra, rb = KIND_RANK[a.kind] or 9, KIND_RANK[b.kind] or 9
+        if ra ~= rb then return ra < rb end
         return (a.order or 0) < (b.order or 0)
     end)
     local seen, out = {}, {}
@@ -677,6 +869,33 @@ function S.Run(query)
         end
     end
     return out, hits
+end
+
+-- ============================================================
+-- HOW A RESULT READS
+-- ============================================================
+-- The kind label a result row wears and its breadcrumb ("Group > Page >
+-- Tab > Card"), for whatever draws the results.
+local KIND_LABEL = { page = "Page", tab = "Section", card = "Section", command = "Command" }
+function S.Kind(r)
+    return RCL[KIND_LABEL[r.kind] or "Setting"]
+end
+
+function S.Crumb(r)
+    local bits = {}
+    if r.kind == "command" then
+        bits[1] = RCL["Commands"]
+        if r.command and r.command.desc and r.command.desc ~= "" then bits[2] = r.command.desc end
+        return table_concat(bits, "  >  ")
+    end
+    if r.parent then bits[#bits + 1] = r.parent end
+    if r.kind ~= "page" and r.page then bits[#bits + 1] = r.page end
+    local e = r.entry
+    if e then
+        if e.tabLabel then bits[#bits + 1] = e.tabLabel end
+        if e.card and r.kind ~= "card" then bits[#bits + 1] = e.card end
+    end
+    return table_concat(bits, "  >  ")
 end
 
 function S.Highlight(text, query, hex)
@@ -729,7 +948,8 @@ end
 -- ============================================================
 -- JUMPING
 -- ============================================================
-local function AccentHex()
+-- the accent as a colour code, for the kind on a result row
+function S.AccentHex()
     local a = RC:GetColor("ui", "accentGold")
     return string_format("%02x%02x%02x", math_floor(a.r * 255 + 0.5),
         math_floor(a.g * 255 + 0.5), math_floor(a.b * 255 + 0.5))
@@ -893,183 +1113,7 @@ do
     end
 end
 
--- ============================================================
--- RESULTS PAGE
--- ============================================================
-local function ResultRow(card, r, query, hex, y)
-    local FLAT = RC.UI.FLAT or "Interface\\Buttons\\WHITE8X8"
-    local btn = CreateFrame("Button", nil, card)
-    btn:SetHeight(24)
-    btn:SetPoint("TOPLEFT", card, "TOPLEFT", 6, y)
-    btn:SetPoint("RIGHT", card, "RIGHT", -6, 0)
-    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.bg:SetAllPoints()
-    btn.bg:SetTexture(FLAT)
-    local norm = RC:GetColor("ui", "cardBackground")
-    btn.bg:SetVertexColor(norm.r, norm.g, norm.b, norm.a or 1)
-    RC.UI:AttachHover(btn, norm, RC.SIDEBAR:GetButtonHover())
-
-    local e = r.entry
-    local where
-    if r.kind == "page" then
-        where = RCL["open page"]
-    else
-        local bits = {}
-        if e and e.tabLabel then bits[#bits + 1] = e.tabLabel end
-        if e and e.card and r.kind ~= "card" then bits[#bits + 1] = e.card end
-        if r.kind == "card" then bits[#bits + 1] = RCL["section"] end
-        if r.kind == "desc" then bits[#bits + 1] = RCL["in its description"] end
-        where = table_concat(bits, "  >  ")
-    end
-
-    local crumb = RC:CreateFontString(btn, "OVERLAY", nil, 10)
-    crumb:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
-    crumb:SetJustifyH("RIGHT")
-    crumb:SetWordWrap(false)
-    crumb:SetText(where)
-    local gray = RC:GetColor("text", "gray")
-    crumb:SetTextColor(gray.r, gray.g, gray.b)
-
-    local label = RC:CreateFontString(btn, "OVERLAY", nil, 11)
-    label:SetPoint("LEFT", btn, "LEFT", 8, 0)
-    label:SetPoint("RIGHT", crumb, "LEFT", -12, 0)
-    label:SetJustifyH("LEFT")
-    label:SetWordWrap(false)
-    label:SetText(S.Highlight(r.label or "", query, hex))
-    local tc = RC:GetColor("text", "normal")
-    label:SetTextColor(tc.r, tc.g, tc.b)
-
-    if r.kind == "desc" and e and e.text then
-        btn:HookScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            local tt = RC:GetColor("text", "gold")
-            GameTooltip:AddLine(r.label or "", tt.r, tt.g, tt.b)
-            GameTooltip:AddLine(e.text, 1, 1, 1, true)
-            GameTooltip:Show()
-        end)
-        btn:HookScript("OnLeave", function() GameTooltip:Hide() end)
-    end
-    btn:SetScript("OnClick", function() S.JumpTo(r) end)
-    return btn
-end
-
-function S.ShowResults(query)
-    local outer = RC.sidebarConfigFrame
-    local compat = outer and outer.compatFrame
-    if not (compat and compat.scrollChild) then return end
-    S.searchMode = true
-    RC:ClearSidebarContent(outer)
-    local parent = compat.scrollChild
-
-    local n = #S.results
-    local sub
-    if n == 0 then
-        sub = running and RCL["Still reading the pages - results appear as they come in."]
-            or RCL["Nothing matches. Try fewer words, or the start of a word."]
-    else
-        sub = string_format(RCL["%d matches. Click one to go straight to it - Enter opens the top one."], n)
-        if running then sub = sub .. " " .. RCL["Still reading pages..."] end
-    end
-    local _, y = RC:CreateSettingsPageHeader(parent, -20, RCL["Search"] .. ": " .. query, sub)
-
-    local groups, order = {}, {}
-    for i, r in ipairs(S.results) do
-        if i > MAX_RESULTS then break end
-        local g = groups[r.item]
-        if not g then
-            g = { title = r.parent and (r.parent .. "  >  " .. (r.page or "")) or (r.page or ""), list = {} }
-            groups[r.item] = g
-            order[#order + 1] = g
-        end
-        g.list[#g.list + 1] = r
-    end
-    local hex = AccentHex()
-    for _, g in ipairs(order) do
-        local card = RC:CreateSettingsCard(parent, y, g.title)
-        local cy = card.contentY
-        for _, r in ipairs(g.list) do
-            ResultRow(card, r, query, hex, cy)
-            cy = cy - 25
-        end
-        card:SetContentHeight(math.abs(cy))
-        y = y - card:GetHeight() - 10
-    end
-    if n > MAX_RESULTS then
-        local more = RC:CreateFontString(parent, "OVERLAY", nil, 10)
-        more:SetPoint("TOPLEFT", parent, "TOPLEFT", 24, y - 4)
-        more:SetText(string_format(RCL["Showing the best %d. Add another word to narrow it down."], MAX_RESULTS))
-        local gc = RC:GetColor("text", "gray")
-        more:SetTextColor(gc.r, gc.g, gc.b)
-        y = y - 24
-    end
-    RC:UpdateSidebarScrollbar(outer, math.abs(y), true)
-end
-
--- ============================================================
--- SEARCH BOX
--- ============================================================
-local function Run(text)
-    S.query = text or ""
-    S.results, S.hits = S.Run(S.query)
-end
-
-local function OnIndexed()
-    local outer = RC.sidebarConfigFrame
-    if not (outer and outer:IsShown()) then return end
-    if not S.query:find("%S") then return end
-    Run(S.query)
-    RC:BuildSidebar(outer, false)
-    if S.searchMode then S.ShowResults(S.query) end
-end
-
--- Back to the page that was open before the search took the pane.
-local function LeaveResults(outer)
-    S.searchMode = false
-    local item, cat = FindItem(RC.SidebarState and RC.SidebarState.selectedItem)
-    if item and (item.panel or item.raidKey) then
-        RC:SelectSidebarItem(outer, item, cat)
-    elseif RC.ShowSidebarWelcome then
-        RC:ShowSidebarWelcome(outer.compatFrame)
-    end
-end
-
-local serial = 0
--- Called on every keystroke; waits a beat so a fast word is one search.
-function S.OnTextChanged(outer, text)
-    serial = serial + 1
-    local mine = serial
-    C_Timer.After(0.12, function()
-        if mine ~= serial or not (outer and outer:IsShown()) then return end
-        if not (text or ""):find("%S") then
-            S.query, S.results, S.hits = "", {}, {}
-            if S.searchMode then LeaveResults(outer) end
-            return
-        end
-        S.EnsureIndex(OnIndexed)
-        Run(text)
-        RC:BuildSidebar(outer, false)
-        S.ShowResults(text)
-    end)
-end
-
-function S.OnEnter(outer, text)
-    if not (text or ""):find("%S") then return end
-    serial = serial + 1
-    S.EnsureIndex(OnIndexed)
-    Run(text)
-    RC:BuildSidebar(outer, false)
-    if S.results[1] then S.JumpTo(S.results[1]) else S.ShowResults(text) end
-end
-
-function S.OnFocus()
-    S.EnsureIndex(OnIndexed)
-end
-
--- Best result on one page, for a sidebar click while searching.
-function S.BestFor(itemId)
-    for _, r in ipairs(S.results) do
-        if r.item == itemId then return r end
-    end
-end
+-- (The results dropdown, the box's typing, Enter, Escape and arrow keys,
+-- Ctrl+F and /rc search: Sidebar_SearchBox.lua.)
 
 RC:DebugPrint("Sidebar search loaded", "system")

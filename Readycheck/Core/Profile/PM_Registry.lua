@@ -23,7 +23,9 @@ RC.SETTING_CATEGORIES = {
     { id = "customReminders", group = "Reminders", label = RCL["Custom Reminders"], },
     { id = "smartMacros", group = "Reminders", label = RCL["Smart Macros"], },
     { id = "battleShout", group = "Reminders", label = RCL["Battle Shout"], },
-    { id = "battleShoutTracker", group = "Reminders", label = RCL["Battle Shout Party Tracker"], },
+    -- `feature`: a Core_Flavor row; the lists hide it where that is off
+    -- (not on WoW Forever), as they do for `addon` below
+    { id = "battleShoutTracker", group = "Reminders", label = RCL["Battle Shout Party Tracker"], feature = "battle_shout_party", },
     { id = "boonReminder", group = "Reminders", label = RCL["Chronoboon Reminder"], },
     { id = "repairReminder", group = "Reminders", label = RCL["Repair Reminder"], },
     { id = "fastWeapon", group = "Reminders", label = RCL["Fast Weapon Reminder"], },
@@ -59,6 +61,8 @@ RC.SETTING_CATEGORIES = {
 -- digest, the sync flags or the export key map, or peers with and without
 -- that addon stop agreeing on the category layout.
 function RC:IsSettingCategoryAvailable(cat)
+    -- (a feature this game version does not run: Core_Flavor)
+    if type(cat) == "table" and cat.feature and self.FeatureOn and not self:FeatureOn(cat.feature) then return false end
     if type(cat) ~= "table" or not cat.addon then return true end
     local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
     if not isLoaded then return true end
@@ -211,7 +215,11 @@ RC.SETTINGS = {
 -- Settings that deliberately never export or sync, with the reason. Listed
 -- explicitly so the audit can tell "intentionally excluded" from "forgotten".
 RC.NONSYNCED_SETTINGS = {
-    setupWizard = "First-run wizard progress - per install, never shared",
+    setupWizard = "Setup progress, visited steps and the recorded role - per install, never shared",
+    -- (account-level, outside the character profile, so never exported either:
+    -- ReadycheckDB.account.cvarRecord - the game settings Readycheck changed and
+    -- their values from before (Core_CVar); ReadycheckDB.account.setupHints - the
+    -- one-time hints shown (Core_Hints))
     spikeLogger = "Profiler capture buffer - debug data, not a setting",
     debugMode   = "Removed setting, cleaned up by ProfileManager",
     autoDetectedTrinkets = "Per-character detection cache - rebuilt from bags, not a setting",
@@ -635,6 +643,9 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["customColors.ui"]         = RCL["Windows & panels colors"],
     ["customColors.buttons"]    = RCL["Button colors"],
     ["customColors.sidebar"]    = RCL["Sidebar colors"],
+    ["customColors.settings"]   = RCL["Settings window colors"],
+    ["fontSettings.mainWindowScale"] = RCL["Settings window scale"],
+    ["fontSettings.windowLayout"]    = RCL["Settings window layout version"],
     ["customColors.checkbox"]   = RCL["Checkbox colors"],
     ["customColors.dropdown"]   = RCL["Dropdown colors"],
     ["customColors.nameplate"]  = RCL["Nameplate aura colors"],
@@ -1102,6 +1113,7 @@ function RC:BuildExportCategories()
             keys    = {},
             retired = cat.retired,
             addon   = cat.addon,
+            feature = cat.feature,
         }
         byCat[cat.id] = entry
         out[#out + 1] = entry

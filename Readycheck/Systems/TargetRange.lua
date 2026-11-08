@@ -42,9 +42,19 @@ end
 
 -- SetCVar is blocked during combat lockdown; skip and let
 -- PLAYER_REGEN_ENABLED retry once combat drops.
+-- SETUP2: the distance is a HOLD in the CVar record (RC.CVar): the value
+-- from before goes back on release, when the feature is off and on
+-- uninstall. Without the record (an older core) the plain writes stand.
+local OWNER = "targetrange"
 local function RestoreRange()
     if baseline and not InCombat() then
-        pcall(SetCVar, "nameplateMaxDistance", baseline)
+        if RC.CVar then
+            if not RC.CVar.Release("nameplateMaxDistance", OWNER) then
+                RC.CVar.Set("nameplateMaxDistance", baseline, OWNER)
+            end
+        else
+            pcall(SetCVar, "nameplateMaxDistance", baseline)
+        end
         baseline = nil
     end
 end
@@ -52,17 +62,23 @@ end
 local function ApplyForTarget()
     local s = Store()
     if not s or not s.rangeEnabled then RestoreRange(); return end
-    local name = UnitExists("target") and UnitName("target") or nil
+    local name = UnitExists("target") and Readycheck.SafeName("target") or nil
+    if Readycheck.IsSecret(name) then name = nil end   -- (WoW Forever hides an enemy's name in a fight)
     local entry = name and s.entries[name:lower()] or nil
     if entry and entry.range then
         if InCombat() then return end
         if not baseline then
             baseline = tonumber(GetCVar("nameplateMaxDistance")) or RANGE_MAX
+            if RC.CVar then RC.CVar.Hold("nameplateMaxDistance", entry.range, OWNER) return end
         end
-        pcall(SetCVar, "nameplateMaxDistance", entry.range)
+        if RC.CVar then RC.CVar.Set("nameplateMaxDistance", entry.range, OWNER)
+        else pcall(SetCVar, "nameplateMaxDistance", entry.range) end
     else
         RestoreRange()
     end
+end
+if RC.CVar and RC.CVar.OwnerCheck then
+    RC.CVar.OwnerCheck(OWNER, function() local s = Store() return not (s and s.rangeEnabled) end)
 end
 TR.ApplyForTarget = ApplyForTarget
 
@@ -198,7 +214,7 @@ function RC:BuildTargetRangeCard(parent, yPos, frame)
     tgtBtn:SetPoint("TOPLEFT", card, "TOPLEFT", 140, cy + 4)
     tgtBtn:SetScript("OnClick", function()
         if not UnitExists("target") then RC:Print("Nameplates: target a mob first."); return end
-        AddMob(UnitName("target"))
+        AddMob(Readycheck.SafeName("target"))
     end)
     cy = cy - 32
 

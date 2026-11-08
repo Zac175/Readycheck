@@ -12,6 +12,9 @@ local function InitializeSidebarPolarity()
     if not RC then C_Timer.After(0.1, InitializeSidebarPolarity); return end
     if not RC.UI then C_Timer.After(0.2, InitializeSidebarPolarity); return end
     if not RC.db then C_Timer.After(0.2, InitializeSidebarPolarity); return end
+    -- not on a game version without Naxxramas (Core_Flavor; the version
+    -- is known once the saved variables are)
+    if RC.FeatureOn and not RC:FeatureOn("polarity") then return end
 
     local function NormalTextRGB()
         local c = RC:GetColor("text", "menuNormal") or {r=0.9,g=0.9,b=0.9}

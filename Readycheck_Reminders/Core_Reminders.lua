@@ -1147,7 +1147,7 @@ function RC:SetupCooldownMonitoring(message, allAbilities, currentlyReadyAbiliti
     end
     self.activeReminderData.cooldownMonitors = {}
 
-    local targetGUID = UnitGUID("target")
+    local targetGUID = Readycheck.SafeGUID("target")
     if not targetGUID and self.activeSimulation and self.activeSimulation.fakeGUID then
         targetGUID = self.activeSimulation.fakeGUID
         self:DebugPrint("Using simulation fakeGUID for cooldown monitoring", "cooldown")
@@ -1192,7 +1192,7 @@ function RC:SetupCooldownMonitoring(message, allAbilities, currentlyReadyAbiliti
                 return
             end
 
-            local currentTargetGUID = UnitGUID("target")
+            local currentTargetGUID = Readycheck.SafeGUID("target")
             if currentTargetGUID ~= targetGUID then
                 self:DebugPrint("Cooldown expired but target changed - not re-triggering", "cooldown")
                 return
@@ -1535,7 +1535,7 @@ function RC:ShowTestReminder(forceAll)
     self:ScanEquippedTrinkets()
 
     local raidName = self:GetEffectiveRaidName()
-    local targetName = UnitName("target")
+    local targetName = Readycheck.SafeName("target")
     local encounterName = nil
     local encounterType = "trash"
 

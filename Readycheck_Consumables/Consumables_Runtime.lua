@@ -95,7 +95,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
                 -- duration > 1.5 rejects the GCD.
                 local start, duration
                 if trinketData.equipped then
-                    start, duration = GetInventoryItemCooldown("player", trinketData.slotIndex)
+                    start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", trinketData.slotIndex))
                     if start and start > 0 and duration > 1.5 then
                         cooldownRemaining = (start + duration) - now
                         if cooldownRemaining < 0 then cooldownRemaining = 0 end
@@ -297,7 +297,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
                             if button:IsShown() and button.trinketData then
                                 local trinketData = button.trinketData
                                 if trinketData.equipped then
-                                    local start, duration = GetInventoryItemCooldown("player", trinketData.slotIndex)
+                                    local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", trinketData.slotIndex))
                                     if start and start > 0 and duration > 1.5 and (start + duration) - now > 0 then
                                         updT = true; break
                                     end

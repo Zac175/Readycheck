@@ -330,7 +330,7 @@ local function InitializeHotswap()
 
         for slot = 1, 19 do
             if GetInventoryItemID("player", slot) == itemID then
-                local start, duration = GetInventoryItemCooldown("player", slot)
+                local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", slot))
                 if start and start > 0 and duration and duration > 1.5 then
                     return false
                 end

@@ -169,7 +169,14 @@ do
         local ledName, ledDur = RC._auraInstanceName, RC._auraInstanceDur
         if C_UnitAuras and C_UnitAuras.GetBuffDataByIndex then
             for i = 1, 40 do
-                local a = C_UnitAuras.GetBuffDataByIndex("player", i)
+                local a
+                if issecret ~= nil then
+                    -- (Forever can refuse the read outright: the end of the list)
+                    local ok, r = pcall(C_UnitAuras.GetBuffDataByIndex, "player", i)
+                    a = ok and r or nil
+                else
+                    a = C_UnitAuras.GetBuffDataByIndex("player", i)
+                end
                 if not a or SecretAura(a) then break end
                 if a.auraInstanceID and a.spellId then
                     led[a.auraInstanceID] = a.spellId
@@ -182,7 +189,13 @@ do
         end
         if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
             for i = 1, 40 do
-                local a = C_UnitAuras.GetDebuffDataByIndex("player", i)
+                local a
+                if issecret ~= nil then
+                    local ok, r = pcall(C_UnitAuras.GetDebuffDataByIndex, "player", i)
+                    a = ok and r or nil
+                else
+                    a = C_UnitAuras.GetDebuffDataByIndex("player", i)
+                end
                 if not a or SecretAura(a) then break end
                 if a.auraInstanceID and a.spellId then
                     led[a.auraInstanceID] = a.spellId
@@ -558,7 +571,7 @@ function RC:IsAbilityReady(abilityKey, allowGracePeriod, triggerType)
                 return false
             end
         end
-        local start, duration = GetInventoryItemCooldown("player", invSlot)
+        local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", invSlot))
         if start and start > 0 and duration > 1.5 then
             local remaining = math.max(0, (start + duration) - GetTime())
             local gracePeriod = self.db.abilityReadyGracePeriod or 0
@@ -600,7 +613,7 @@ function RC:IsAbilityReady(abilityKey, allowGracePeriod, triggerType)
                 if IsPlayerSpell(id) then checkSpellId = id; break end
             end
         end
-        local start, duration = GetSpellCooldown(checkSpellId)
+        local start, duration = Readycheck.PlainCD(GetSpellCooldown(checkSpellId))
         if start and duration and start > 0 and duration > 1.5 then
             local remaining = math.max(0, (start + duration) - GetTime())
             if allowGracePeriod and gracePeriod > 0 and remaining <= gracePeriod then
@@ -858,8 +871,8 @@ function RC:UpdateTargetInfo()
     end
 
     if UnitExists("target") and UnitCanAttack("player", "target") then
-        local newGUID = UnitGUID("target")
-        local newName = UnitName("target")
+        local newGUID = Readycheck.SafeGUID("target")
+        local newName = Readycheck.SafeName("target")
 
         if target.guid ~= newGUID then
             if target.guid then
@@ -1003,7 +1016,7 @@ function RC:HandlePostCombatGearSwap()
         bossAlive = bossName
             and UnitExists("target")
             and not UnitIsDead("target")
-            and UnitName("target") == bossName
+            and Readycheck.SafeName("target") == bossName
     end
     -- PLAYER_REGEN_ENABLED can fire mid-encounter (e.g. player briefly
     -- leaves combat via a self-buff/root break) while the boss is still

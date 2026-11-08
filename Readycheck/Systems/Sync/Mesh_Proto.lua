@@ -108,12 +108,15 @@ local _mss = RC._mss
             -- `addon` (owner-only feature) is carried for the UI lists
             -- only; the category keeps its digest slot on every client so
             -- the layout fingerprint matches with or without that addon.
+            -- `feature` likewise (a part this game version does not run,
+            -- Core_Flavor: the lists hide it, the digest keeps its slot)
             MS.SYNC_CATEGORIES[#MS.SYNC_CATEGORIES + 1] = {
                 id    = cat.id,
                 label = cat.label,
                 group = cat.group,
                 keys  = keys,
                 addon = cat.addon,
+                feature = cat.feature,
             }
             end
         end

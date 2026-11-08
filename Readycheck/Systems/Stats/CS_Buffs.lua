@@ -71,7 +71,16 @@ function CS:UpdateBarStats()
             local def = STAT_DEFS[key]
             local text = self.barStatTexts[key]
             if def and text then
-                local value = def.get(self) or 0
+                -- WoW Forever can hand your own stats back hidden (secret
+                -- values: no maths on them): the cell keeps its last reading
+                local value, hidden
+                if _G.READYCHECK_IS_FOREVER then
+                    local got, v = pcall(def.get, self)
+                    hidden = not got or RC.Hidden(v)
+                    value = (not hidden and v) or 0
+                else
+                    value = def.get(self) or 0
+                end
                 -- Round percent-based stats to one decimal before comparing to cache;
                 -- avoids redundant text/color churn from float noise between reads.
                 local bucketKey
@@ -87,7 +96,7 @@ function CS:UpdateBarStats()
                     bucketKey = value
                 end
 
-                if bucketKey ~= cache[key] then
+                if not hidden and bucketKey ~= cache[key] then
                     cache[key] = bucketKey
                     if self:PaintBarStat(key, value, def.fmt(value)) then grew = true end
                 end
@@ -396,6 +405,7 @@ function CS:GetMissChance(levelDiff)
     end
 
     local totalHit = self:GetTotalHit()
+    if RC.Hidden(totalHit) then return nil end   -- (hidden on WoW Forever: no reading)
     local missChance = baseMiss - totalHit
 
     if missChance < 0 then
@@ -410,6 +420,7 @@ end
 function CS:GetDefenseSkill()
     if not UnitDefense then return 0 end   -- (not on every client)
     local base, modifier = UnitDefense("player")
+    if RC.Hidden(base, modifier) then return nil end   -- (hidden on WoW Forever)
     return (base or 0) + (modifier or 0)
 end
 

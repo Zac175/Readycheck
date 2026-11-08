@@ -376,6 +376,26 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         })
         container:SetBackdropColor(elBG.r, elBG.g, elBG.b, 1)
         container:SetBackdropBorderColor(bNorm.r, bNorm.g, bNorm.b, bNorm.a or 1)
+        -- In the /rc window (5.0): the /zui input - a warm near-black at
+        -- 0.35, a white 0.10 edge, the accent edge while typing
+        local S = _uif.S
+        local set = RC.UI:InSettings(parent)
+        container._rcSet = set or nil
+        local function PaintEdge(focus)
+            if focus then
+                local a = set and RC.UI:SAccent() or GetAccentGold()
+                container:SetBackdropBorderColor(a.r, a.g, a.b, set and S.INPUT_FOCUS_A or 1)
+            elseif set then
+                container:SetBackdropBorderColor(RC.UI:SCol("text", S.INPUT_BRD_A))
+            else
+                local bk = GetBorderNormal()
+                container:SetBackdropBorderColor(bk.r, bk.g, bk.b, bk.a or 1)
+            end
+        end
+        if set then
+            container:SetBackdropColor(RC.UI:SCol("input", S.INPUT_A))
+            PaintEdge(false)
+        end
 
         local eb
         local scrollFrame
@@ -437,13 +457,11 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         eb:SetCursorPosition(0)
 
         eb:SetScript("OnEditFocusGained", function(s)
-            local accent = GetAccentGold()
-            container:SetBackdropBorderColor(accent.r, accent.g, accent.b, 1)
+            PaintEdge(true)
             if readOnly then s:HighlightText() end
         end)
         eb:SetScript("OnEditFocusLost", function(s)
-            local bk = GetBorderNormal()
-            container:SetBackdropBorderColor(bk.r, bk.g, bk.b, bk.a or 1)
+            PaintEdge(false)
             if readOnly then
                 s:HighlightText(0, 0)
                 if opts.initialText then

@@ -436,7 +436,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
                 )
                 local currentNearlyReady = false
                 if state.isOnUse then
-                    local invStart, invDur = GetInventoryItemCooldown("player", inventorySlot)
+                    local invStart, invDur = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
                     if invStart and invStart > 0 and invDur and invDur > 1.5 then
                         local invRemaining = invDur - (now - invStart)
                         if invRemaining > 0 and invRemaining <= PRE_EQUIP_WINDOW then
@@ -593,7 +593,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
 
         local inventorySlot = INVENTORY_SLOTS[slotNumber]
         if self:IsTrinketOnUse(currentItemId) then
-            local start, duration = GetInventoryItemCooldown("player", inventorySlot)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", inventorySlot))
             if not start or start == 0 or duration <= 1.5 then
                 self:DebugPrint("Slot " .. slotNumber .. ": " .. currentItemId .. " not in queue but unused on-use trinket - pinned", "trinket")
                 return true
@@ -617,13 +617,13 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         if not (st and st.deathSwap and st.locked) then return end
 
         if st.locked[1] then
-            local start, duration = GetInventoryItemCooldown("player", 13)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", 13))
             if start and start > 0 and duration and duration > 5 then
                 self:ReleaseDeathSwapLockForSlot(1)
             end
         end
         if st.locked[2] then
-            local start, duration = GetInventoryItemCooldown("player", 14)
+            local start, duration = Readycheck.PlainCD(GetInventoryItemCooldown("player", 14))
             if start and start > 0 and duration and duration > 5 then
                 self:ReleaseDeathSwapLockForSlot(2)
             end

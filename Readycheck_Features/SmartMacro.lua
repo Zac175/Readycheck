@@ -151,7 +151,7 @@ local function InitializeSmartMacro()
 
         named      = function(v)
             if not UnitExists("target") then return false end
-            local name = (UnitName("target") or ""):lower()
+            local name = (Readycheck.SafeName("target") or ""):lower()
             local pat  = (v or ""):lower()
             return pat ~= "" and name:find(pat, 1, true) ~= nil
         end,
@@ -160,7 +160,7 @@ local function InitializeSmartMacro()
         -- case-sensitive match against the name the picker stored.
         bossPicker = function(v)
             if not UnitExists("target") or not v or v == "" then return false end
-            return UnitName("target") == v
+            return Readycheck.SafeName("target") == v
         end,
 
         corpse     = function(_)
