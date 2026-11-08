@@ -1686,11 +1686,11 @@ RC.encounterAddPhases = {
         setupWizard = {
             completed = false,
             lastStep = 1,
-            -- SETUP2: the step-by-step setup (Readycheck_Extras SetupWizard2)
-            -- also keeps here which steps were visited (visited) and the
-            -- role the Character step recorded (role: nil = as detected,
-            -- "tank" / "melee" / "ranged" / "healer"). Never exported or
-            -- synced (RC.NONSYNCED_SETTINGS lists setupWizard).
+            -- The setup (Readycheck_Extras SetupWizard2) also keeps here:
+            -- version (3), visited steps, the role the You step recorded
+            -- ("auto" / "tank" / "melee" / "ranged" / "healer"), layout (a
+            -- layout picked, applied on Finish) and tour (the Finish tick).
+            -- Never exported or synced (RC.NONSYNCED_SETTINGS).
             visited = {},
         },
 

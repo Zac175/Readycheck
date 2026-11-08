@@ -105,6 +105,8 @@ local _sbs = RC._sbs
     end
 
     function RC:RefreshUIColors()
+        -- every popup in the 5.0 shell (UIF_Dialogs RC.UI:SkinPopup)
+        if self.UI and self.UI.RepaintShells then self.UI:RepaintShells() end
         local frame = self.sidebarConfigFrame
         if not frame then return end
 

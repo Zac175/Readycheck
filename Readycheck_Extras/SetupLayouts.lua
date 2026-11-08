@@ -9,15 +9,17 @@
 -- own label. A PLACEMENT is resolution-aware: { fx, fy } are FRACTIONS of
 -- the screen's width and height from its centre, so a layout lands the
 -- same on every resolution. "Keep mine" is always offered and selected
--- first; "Default" puts every frame back to its own default. Nothing
--- moves until Apply.
+-- first; "Default" puts every frame back to its own default. The step is
+-- a row of tiles: the one picked is the choice, applied by the setup's
+-- Finish. The on-screen preview only looks (it has no Apply of its own).
 --
 --   RC.SetupLayouts.Available()        the mover is up with frames
 --   RC.SetupLayouts.Targets()          the targets, discovered now
 --   RC.SetupLayouts.PRESETS            in order
---   RC.SetupLayouts.Preview(id, cb)    the ghost overlay (false: nothing to show)
+--   RC.SetupLayouts.Preview(id)        the ghost overlay (false: nothing to show)
 --   RC.SetupLayouts.EndPreview()
---   RC.SetupLayouts.Apply(id)          moves everything; how many
+--   RC.SetupLayouts.Apply(id, opts)    moves everything; how many
+--                                      (opts.quiet: no chat hint)
 --   RC.SetupLayouts.BuildStep(host, y, ctx)   the setup's step
 ------------------------------------------------------------------------
 local RC = _G.Readycheck
@@ -94,10 +96,11 @@ end
 local function P(fx, fy) return { fx = fx, fy = fy } end
 
 LP.PRESETS = {
-    { id = "keep", name = RCL["Keep mine"], desc = RCL["Nothing moves. Every bar and reminder stays exactly where it is."] },
-    { id = "default", name = RCL["Default"], reset = true,
+    { id = "keep", name = RCL["Keep mine"], short = RCL["Nothing moves"],
+      desc = RCL["Nothing moves. Every bar and reminder stays exactly where it is."] },
+    { id = "default", name = RCL["Default"], reset = true, short = RCL["Every frame at its own default"],
       desc = RCL["Every bar and reminder back at its own default spot."] },
-    { id = "compact", name = RCL["Compact"],
+    { id = "compact", name = RCL["Compact"], short = RCL["Gathered low in the middle"],
       desc = RCL["Everything gathered low in the middle: the consumables, potions and weapon bars stacked just above the action bars, the reminder popup and the time-to-kill display above them, the two trackers to the right, the stats bar along the bottom."],
       places = {
           consumablesHelper = P(0, -0.30), potionsBar = P(0, -0.345), weaponsBar = P(0, -0.39), trinketBar = P(0, -0.435),
@@ -177,7 +180,7 @@ local function BuildOverlay()
     overlay:Hide()
 
     control = CreateFrame("Frame", "ReadycheckLayoutPreview", UIParent)
-    control:SetSize(320, 110)
+    control:SetSize(340, 104)
     control:SetPoint("TOP", UIParent, "TOP", 0, -80)
     control:SetFrameStrata("FULLSCREEN_DIALOG")
     control:EnableMouse(true)
@@ -217,19 +220,12 @@ local function BuildOverlay()
     control.text:SetWordWrap(true)
     local g = C("text", "normal")
     control.text:SetTextColor(g.r, g.g, g.b, 1)
-    control.apply = RC.UI:CreateStyledButton(control, RCL["Apply"], 100, 24)
-    control.apply:SetPoint("BOTTOMLEFT", control, "BOTTOMLEFT", 14, 12)
-    control.apply:SetActive(true)
-    control.apply:SetScript("OnClick", function()
-        local id = control.presetId
-        LP.EndPreview()
-        local n = LP.Apply(id)
-        if control.onApplied then control.onApplied(id, n) end
-    end)
-    control.cancel = RC.UI:CreateStyledButton(control, RCL["Cancel"], 100, 24)
-    control.cancel:SetPoint("LEFT", control.apply, "RIGHT", 8, 0)
-    control.cancel:SetScript("OnClick", function() LP.EndPreview() end)
+    -- look only: the choice is the tile, applied by the setup's Finish
+    control.back = RC.UI:CreateStyledButton(control, RCL["Back to setup"], 130, 26)
+    control.back:SetPoint("BOTTOMRIGHT", control, "BOTTOMRIGHT", -14, 12)
+    control.back:SetScript("OnClick", function() LP.EndPreview() end)
     control:HookScript("OnHide", function() if overlay then overlay:Hide() end end)
+    RC.UI:SkinPopup(control, { header = header, title = title, close = closeBtn, texts = { control.text }, primary = control.back })
     control:Hide()
 end
 
@@ -254,7 +250,7 @@ local function Ghost(i)
     return g
 end
 
-function LP.Preview(id, onApplied)
+function LP.Preview(id)
     local ghosts = LP.Ghosts(id)
     if #ghosts == 0 then return false end
     if not overlay then BuildOverlay() end
@@ -270,8 +266,8 @@ function LP.Preview(id, onApplied)
     end
     for i = #ghosts + 1, #overlay.ghosts do overlay.ghosts[i]:Hide() end
     local preset = LP.Preset(id)
-    control.presetId, control.onApplied = id, onApplied
-    control.text:SetText((preset and preset.name or id) .. RCL[": the lit boxes are where things land. Nothing has moved yet."])
+    control.presetId = id
+    control.text:SetText((preset and preset.name or id) .. RCL[": the lit boxes are where things land. Nothing moves until you press Finish in the setup."])
     overlay:Show()
     control:Show()
     control:Raise()
@@ -290,7 +286,7 @@ function LP.PreviewShown() return overlay ~= nil and overlay:IsShown() end
 ------------------------------------------------------------------------
 -- Apply
 ------------------------------------------------------------------------
-function LP.Apply(id)
+function LP.Apply(id, opts)
     local preset = LP.Preset(id)
     if not preset or id == "keep" then return 0 end
     local n = 0
@@ -306,113 +302,133 @@ function LP.Apply(id)
         end
     end
     RC:SaveConfigurationToProfile()
-    if RC.Hints then
+    if RC.Hints and not (opts and opts.quiet) then
         RC.Hints.Say("layout_applied", RCL["A layout was applied. Every frame can still be dragged: the UI Mover (Settings > Interface) shows them all."])
     end
     return n
 end
 
 ------------------------------------------------------------------------
--- The step
+-- The step: a tile per preset (a thumbnail of the screen with a box
+-- where each frame lands, the name and one line), the picked one in the
+-- accent. ctx: pageW, pad, canvas (the setup's), chosen (the id picked
+-- so far), choose(id) (the setup records it; nothing moves here).
 ------------------------------------------------------------------------
 function LP.BuildStep(host, y, ctx)
-    local x = ctx.pad or 14
-    local pageW = ctx.pageW or 560
-    local chosen = "keep"
+    local S = RC.UI.S
+    local x = ctx.pad or 24
+    local pageW = ctx.pageW or 718
+    local chosen = ctx.chosen or "keep"
     local targets = LP.Targets()
-
-    local TW = 240
+    local n = #LP.PRESETS
+    local gap = 12
+    local tileW = math.floor((pageW - 2 * x - (n - 1) * gap) / n)
     local sw, sh = Screen()
+    local TW = tileW - 24
     local TH = math.floor(TW * sh / sw + 0.5)
-    local thumb = ctx.canvas(host, TW, TH)
-    thumb:SetPoint("TOPRIGHT", host, "TOPRIGHT", -x, y)
-    host.layoutThumb = thumb
-    local function DrawThumb()
-        thumb:Reset()
+    local tileH = 12 + TH + 12 + 18 + 4 + 16 + 12
+    host.layoutTiles = {}
+
+    local function Paint()
+        local A = RC.UI:SAccent()
+        local edge = RC:GetColor("settings", "text")
+        for id, t in pairs(host.layoutTiles) do
+            local on = id == chosen
+            if on then RC.UI:UpdateBorderColor(t.border, A, 1) else RC.UI:UpdateBorderColor(t.border, edge, S.BORDER_A * 2) end
+            t.tick:SetShown(on)
+            t.name:SetTextColor(RC.UI:SCol("text", on and 1 or 0.86))
+        end
+    end
+
+    local function Thumb(tile, id)
+        local thumb = ctx.canvas(tile, TW, TH)
+        thumb:SetPoint("TOPLEFT", tile, "TOPLEFT", 12, -12)
         local k = TW / sw
-        for _, gh in ipairs(LP.Ghosts(chosen, targets)) do
+        for _, gh in ipairs(LP.Ghosts(id, targets)) do
             local w, h = math.max(2, gh.w * k), math.max(2, gh.h * k)
             local l = TW / 2 + gh.cx * k - w / 2
             local b = TH / 2 + gh.cy * k - h / 2
             l = math.max(0, math.min(TW - w, l))
             b = math.max(0, math.min(TH - h, b))
-            thumb:Rect(l, TH - b - h, w, h, "ui", "accentGold", gh.moves and 0.8 or 0.3)
+            thumb:Rect(l, TH - b - h, w, h, "settings", "accent", gh.moves and 0.8 or 0.3)
         end
+        return thumb
     end
 
-    local wide = pageW - 2 * x - TW - 16
-    local lbl = RC:CreateFontString(host, "OVERLAY", nil, 12)
-    lbl:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
-    lbl:SetText(RCL["Layout"])
-    local hc = C("ui", "headerText")
-    lbl:SetTextColor(hc.r, hc.g, hc.b, 1)
-    y = y - 20
-    local dd = RC.UI:CreateScrollableDropdown(host, 220, RCL["Keep mine"], 6)
-    dd:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
-    host.layoutDropdown = dd
-    y = y - 24 - 8
-    local desc = RC:CreateFontString(host, "OVERLAY", nil, 10)
-    desc:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
-    desc:SetWidth(wide)
-    desc:SetJustifyH("LEFT")
-    desc:SetWordWrap(true)
-    local g = C("text", "gray")
-    desc:SetTextColor(g.r, g.g, g.b, 1)
+    local desc
     local function Describe()
         local p = LP.Preset(chosen)
-        local n = 0
-        for _, gh in ipairs(LP.Ghosts(chosen, targets)) do if gh.moves then n = n + 1 end end
-        desc:SetText((p and p.desc or "") .. (chosen ~= "keep" and (RCL[" Moves "] .. n .. RCL[" of "] .. #targets .. RCL[" frames."]) or ""))
+        local moved = 0
+        for _, gh in ipairs(LP.Ghosts(chosen, targets)) do if gh.moves then moved = moved + 1 end end
+        desc:SetText((p and p.desc or "") .. (chosen ~= "keep" and (RCL[" Moves "] .. moved .. RCL[" of "] .. #targets .. RCL[" frames."]) or ""))
     end
-    local items = {}
-    for _, p in ipairs(LP.PRESETS) do items[#items + 1] = { text = p.name, value = p.id } end
-    dd:SetItems(items, function(value) chosen = value Describe() DrawThumb() end)
-    dd:SetSelectedValue("keep", RCL["Keep mine"])
-    Describe()
-    y = y - math.max(26, (desc:GetStringHeight() or 12) + 2) - 10
 
-    local function Applied(id, n)
-        local p = LP.Preset(id)
-        ctx.note("layout", RCL["Layout: "] .. (p and p.name or id) .. " (" .. n .. RCL[" frames placed)"])
-        if host.layoutStatus then host.layoutStatus:SetText((p and p.name or id) .. RCL[" applied: "] .. n .. RCL[" frames placed."]) end
-        DrawThumb()
+    for i, p in ipairs(LP.PRESETS) do
+        local tile = CreateFrame("Button", nil, host)
+        tile:SetSize(tileW, tileH)
+        tile:SetPoint("TOPLEFT", host, "TOPLEFT", x + (i - 1) * (tileW + gap), y)
+        tile.bg = tile:CreateTexture(nil, "BACKGROUND")
+        tile.bg:SetAllPoints()
+        tile.bg:SetTexture(FLAT)
+        tile.bg:SetVertexColor(RC.UI:SCol("shade", S.ROW_EVEN))
+        tile.border = RC.UI:CreateSimpleBorder(tile)
+        tile.thumb = Thumb(tile, p.id)
+        tile.name = RC:CreateFontString(tile, "OVERLAY", nil, 14, "OUTLINE")
+        tile.name:SetPoint("TOPLEFT", tile.thumb, "BOTTOMLEFT", 0, -12)
+        tile.name:SetText(p.name)
+        tile.line = RC:CreateFontString(tile, "OVERLAY", nil, 11, "")
+        tile.line:SetPoint("TOPLEFT", tile.name, "BOTTOMLEFT", 0, -4)
+        tile.line:SetWidth(TW)
+        tile.line:SetJustifyH("LEFT")
+        tile.line:SetWordWrap(false)
+        tile.line:SetText(p.short or "")
+        tile.line:SetTextColor(RC.UI:SCol("text", S.DIM_A))
+        tile.tick = tile:CreateTexture(nil, "OVERLAY")
+        tile.tick:SetSize(18, 18)
+        tile.tick:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -6, -6)
+        tile.tick:SetTexture("Interface\\AddOns\\Readycheck\\Media\\Checkmark")
+        tile.tick:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        if RC.UI.PaintMark then RC.UI:PaintMark(tile.tick) end
+        local id = p.id
+        tile:SetScript("OnClick", function()
+            chosen = id
+            if ctx.choose then ctx.choose(id) end
+            Describe()
+            Paint()
+        end)
+        tile:SetScript("OnEnter", function(self)
+            if id ~= chosen then RC.UI:UpdateBorderColor(self.border, RC.UI:SAccent(), 0.5) end
+        end)
+        tile:SetScript("OnLeave", function() Paint() end)
+        host.layoutTiles[id] = tile
     end
-    local preview = RC.UI:CreateStyledButton(host, RCL["Preview on screen"], 140, 24)
+    y = y - tileH - 16
+
+    desc = RC:CreateFontString(host, "OVERLAY", nil, S.F_HINT, "")
+    desc:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
+    desc:SetWidth(pageW - 2 * x)
+    desc:SetJustifyH("LEFT")
+    desc:SetWordWrap(true)
+    desc:SetTextColor(RC.UI:SCol("text", 0.86))
+    host.layoutDesc = desc
+    Describe()
+    y = y - math.max(28, (desc:GetStringHeight() or 12) + 4) - 10
+
+    local preview = RC.UI:CreateStyledButton(host, RCL["Preview on screen"], 160, 28)
     preview:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
     preview:SetScript("OnClick", function()
         if chosen == "keep" then RC:Print(RCL["Keep mine moves nothing - there is nothing to preview."]) return end
-        if not LP.Preview(chosen, Applied) then RC:Print(RCL["Nothing to preview on this install."]) end
+        if InCombat() then return end
+        if not LP.Preview(chosen) then RC:Print(RCL["Nothing to preview on this install."]) end
     end)
-    if RC.SetupTip then RC.SetupTip(preview, RCL["Preview on screen"], RCL["Dims the world and shows a box where every frame would land. Nothing moves until you apply."]) end
+    if RC.SetupTip then RC.SetupTip(preview, RCL["Preview on screen"], RCL["Dims the world and shows a box where every frame would land. Look only: it closes back to this step."]) end
     host.layoutPreview = preview
-    local apply = RC.UI:CreateStyledButton(host, RCL["Apply"], 90, 24)
-    apply:SetPoint("LEFT", preview, "RIGHT", 8, 0)
-    apply:SetScript("OnClick", function()
-        if chosen == "keep" then RC:Print(RCL["Keep mine: every frame stays where it is."]) return end
-        if InCombat() then RC:Print(RCL["Layouts apply after combat."]) return end
-        LP.EndPreview()
-        Applied(chosen, LP.Apply(chosen))
-    end)
-    if RC.SetupTip then RC.SetupTip(apply, RCL["Apply"], RCL["Moves every frame the layout names. Each frame can still be dragged afterwards."]) end
-    host.layoutApply = apply
-    y = y - 24 - 10
-    host.layoutStatus = RC:CreateFontString(host, "OVERLAY", nil, 10)
-    host.layoutStatus:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
-    host.layoutStatus:SetWidth(wide)
-    host.layoutStatus:SetJustifyH("LEFT")
-    host.layoutStatus:SetTextColor(g.r, g.g, g.b, 1)
-    y = y - 28
-    local names = {}
-    for _, t in ipairs(targets) do names[#names + 1] = t.label end
-    local list = RC:CreateFontString(host, "OVERLAY", nil, 10)
-    list:SetPoint("TOPLEFT", host, "TOPLEFT", x, y)
-    list:SetWidth(wide)
-    list:SetJustifyH("LEFT")
-    list:SetWordWrap(true)
-    list:SetTextColor(g.r, g.g, g.b, 1)
-    list:SetText(RCL["On this character a layout can place: "] .. (#names > 0 and table.concat(names, ", ") or RCL["nothing yet"]) .. ".")
+    local note = RC:CreateFontString(host, "OVERLAY", nil, 11, "")
+    note:SetPoint("LEFT", preview, "RIGHT", 12, 0)
+    note:SetText(RCL["Every frame can still be dragged later (Edit Mode)."])
+    note:SetTextColor(RC.UI:SCol("text", S.DIM_A))
     host.layoutTargets = targets
-    DrawThumb()
+    Paint()
 end
 
 

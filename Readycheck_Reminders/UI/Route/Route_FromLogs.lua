@@ -168,6 +168,8 @@ local function BuildLogsWindow()
         self.urlBox:HighlightText()
     end)
     f._gold = gold
+    -- the 5.0 popup look (UIF_Dialogs)
+    RC.UI:SkinPopup(f, { header = titleBar, title = title, close = close, buttons = { done }, primary = paste })
     return f
 end
 

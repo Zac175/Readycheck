@@ -324,11 +324,20 @@ function RC:OnEnable()
         end
     end)
 
-    -- Setup wizard should only ever auto-open once per account, not once
-    -- per character - checks every character profile's completion state
-    -- (not just the current one) before deciding to show it.
+    -- The setup opens by itself once per account (every character's
+    -- completion is checked, not just this one's), and once more on a
+    -- character whose profile /rc resetprofile just reset.
     C_Timer.After(2, function()
         if not ReadycheckDB then return end
+        local acct = type(ReadycheckDB.account) == "table" and ReadycheckDB.account or nil
+        local me = self.GetCharacterKey and self:GetCharacterKey() or nil
+        if acct and type(acct.setupPending) == "table" and me and acct.setupPending[me] then
+            acct.setupPending[me] = nil
+            if next(acct.setupPending) == nil then acct.setupPending = nil end
+            self:LoadExtras()
+            if self.SetupWizard then self.SetupWizard:Open() end
+            return
+        end
         if ReadycheckDB.setupWizardAutoShown then return end
 
         if ReadycheckDB.characters then
@@ -369,34 +378,8 @@ function RC:LoadExtras()
     return (self.SetupWizard ~= nil) or (self.Changelog ~= nil)
 end
 
--- FIRST-RUN TOUR GATE. Called every time the settings window is opened
--- (Sidebar_Window). Only a fresh install carries ReadycheckDB.tutorial
--- (stamped in Core_Runtime), so for everyone else this returns at once.
--- A fresh install gets the tour on its first TUTORIAL_AUTO_OPENS opens,
--- unless it was finished or skipped; an open while the setup wizard is
--- still up is not counted, so the two never stack.
-local TUTORIAL_AUTO_OPENS = 2
-function RC:MaybeStartTutorial()
-    local t = type(ReadycheckDB) == "table" and ReadycheckDB.tutorial or nil
-    if type(t) ~= "table" or not t.fresh or t.done then return end
-    if self.Tutorial and self.Tutorial.active then return end
-    local wiz = _G.WRSetupWizardFrame
-    if wiz and wiz:IsShown() then return end
-    t.opens = (tonumber(t.opens) or 0) + 1
-    if t.opens > TUTORIAL_AUTO_OPENS then return end
-    self:LoadExtras()
-    if not self.Tutorial then return end
-    -- after the window's pop-in, so the ring fits the settled frame
-    C_Timer.After(0.4, function()
-        local win = RC.sidebarConfigFrame
-        if type(ReadycheckDB.tutorial) ~= "table" or ReadycheckDB.tutorial.done then return end
-        if RC.Tutorial and win and win:IsShown() and not RC.Tutorial.active then
-            RC.Tutorial:Start("auto")
-        end
-    end)
-end
-
--- /rc tutorial replays the tour for anyone; the rest is for testing it.
+-- /rc tutorial plays the tour for anyone (it never opens by itself: the
+-- setup's Finish offers it as a tick); the rest is for testing it.
 function RC:TutorialCommand(sub)
     self:LoadExtras()
     local T = self.Tutorial
@@ -407,7 +390,7 @@ function RC:TutorialCommand(sub)
     sub = (sub or ""):lower()
     if sub == "reset" then
         T:Reset()
-        self:Print(RCL["Tour reset - this account now counts as a fresh install. Open /rc to see it."])
+        self:Print(RCL["Tour reset - this account now counts as a fresh install."])
     elseif sub == "done" or sub == "off" then
         T:MarkDone()
         self:Print(RCL["Tour marked as done - it will not open by itself again."])
@@ -806,6 +789,16 @@ CMD(function(cmd, args, msg, isWarrior)
 
 end, "help")
 
+-- /rc discord: "Need help? Message Zac on Discord" with the name selected,
+-- ready to copy (UIF_Dialogs RC.UI:ShowDiscordContact)
+CMD(function(cmd, args, msg, isWarrior)
+        if RC.UI and RC.UI.ShowDiscordContact then
+            RC.UI:ShowDiscordContact()
+        else
+            RC:Print(RCL["Need help? Message Zac on Discord: "] .. tostring(RC.CONTACT_DISCORD or "Zac12"))
+        end
+end, "discord", "contact")
+
 -- /rc search <words>: the settings window with the words typed into its
 -- search box and the results dropped under it (Sidebar_SearchBox);
 -- bare, just the cursor in the box.
@@ -853,7 +846,7 @@ CMD(function(cmd, args, msg, isWarrior)
         if not RC.Hints then RC:Print(RCL["The hints did not load."]) return end
         if (args[2] or ""):lower() == "reset" then
             RC.Hints.Reset()
-            RC:Print(RCL["Hints reset - every one-time tip shows again, and the tour on your next open of the settings."])
+            RC:Print(RCL["Hints reset - every one-time tip shows again."])
         else
             local seen = RC.Hints.List()
             if #seen == 0 then RC:Print(RCL["No one-time hints shown yet."])

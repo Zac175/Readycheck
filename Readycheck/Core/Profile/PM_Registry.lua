@@ -215,11 +215,13 @@ RC.SETTINGS = {
 -- Settings that deliberately never export or sync, with the reason. Listed
 -- explicitly so the audit can tell "intentionally excluded" from "forgotten".
 RC.NONSYNCED_SETTINGS = {
-    setupWizard = "Setup progress, visited steps and the recorded role - per install, never shared",
+    setupWizard = "Setup progress, visited steps, the recorded role and a pending layout - per install, never shared",
     -- (account-level, outside the character profile, so never exported either:
     -- ReadycheckDB.account.cvarRecord - the game settings Readycheck changed and
     -- their values from before (Core_CVar); ReadycheckDB.account.setupHints - the
-    -- one-time hints shown (Core_Hints))
+    -- one-time hints shown (Core_Hints); ReadycheckDB.account.setupPending -
+    -- characters whose profile /rc resetprofile reset, so the setup opens once
+    -- after the reload (PM_Cleanup, Core_Scan))
     spikeLogger = "Profiler capture buffer - debug data, not a setting",
     debugMode   = "Removed setting, cleaned up by ProfileManager",
     autoDetectedTrinkets = "Per-character detection cache - rebuilt from bags, not a setting",

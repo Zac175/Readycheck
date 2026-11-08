@@ -569,6 +569,8 @@ local _ttk = RC._ttk
             end
         end
 
+        -- the 5.0 popup look (UIF_Dialogs)
+        RC.UI:SkinPopup(dialog, { header = titleBar, title = titleText, close = dialog.closeBtn })
         return dialog, accent
     end
 
@@ -579,6 +581,7 @@ local _ttk = RC._ttk
         cancelBtn:SetPoint("RIGHT", primaryBtn, "LEFT", -10, 0)
         if primaryBtn.SetActive then primaryBtn:SetActive(true) end
         cancelBtn:SetScript("OnClick", function() dialog:Close() end)
+        RC.UI:SkinPopup(dialog, { buttons = { cancelBtn }, primary = primaryBtn })
     end
 
     -- The raid profile a history key files its kills under: "" for the

@@ -529,6 +529,8 @@ local ABILITY_READY_TTL = 1.0
 
         f.rows = {}
         if sample then x:EnableMouse(false) end
+        -- the 5.0 popup look (UIF_Dialogs); the set buttons keep their own
+        UI:SkinPopup(f, { header = bar, title = title, close = x, dims = { sub }, titleSize = 13, scan = false })
     end
 
     -- A sample of the picker for the settings preview, on any parent:

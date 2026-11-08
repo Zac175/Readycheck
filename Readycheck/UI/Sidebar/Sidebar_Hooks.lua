@@ -187,6 +187,7 @@ C_Timer.After(0.5, function()
             rows = {
                 { cmd = "/rc",                          desc = RCL["Open settings"] },
                 { cmd = "/rc help",                     desc = RCL["Open this page"] },
+                { cmd = "/rc discord",                  desc = RCL["Need help? Message Zac on Discord (Zac12) - shows the name ready to copy"] },
                 { cmd = "/rc search <words>",           desc = RCL["Open settings with the words typed into the search box (Ctrl+F in the window focuses it)"] },
                 { cmd = "/rc changelog",                desc = RCL["Show what's new"] },
                 { cmd = "/rc tutorial",                 desc = RCL["Take a quick tour of this window"] },

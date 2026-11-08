@@ -43,6 +43,8 @@ local S = _uif.S
         if not frame or not frame.CreateTexture then
             return borders
         end
+        -- the frame's own (first) edge, for RC.UI:SkinPopup to repaint
+        if frame._rcBorder == nil then frame._rcBorder = borders end
 
         local borderColor = {0, 0, 0, 1}
         if RC.GetColor then
@@ -603,6 +605,8 @@ local S = _uif.S
             if self.border then RC.UI:UpdateBorderColor(self.border, text, Lerp(S.BTN_BRD_A, S.BTN_BRD_HA, t)) end
             if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(S.BTN_TXT_A, S.BTN_TXT_HA, t))) end
         end
+        -- a caller's own last word on the paint (a dialog's red Delete label)
+        if self._rcAfterPaint then self._rcAfterPaint(self) end
     end
     local function PaintStyledButton(self, hot)
         if not self.bg then return end

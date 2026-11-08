@@ -608,6 +608,9 @@ local function InitializeUIMover()
             end
         end)
 
+        -- the 5.0 popup header (UIF_Dialogs); the panel keeps its own
+        -- Move UI colours and buttons
+        RC.UI:SkinPopup(panel, { header = header, title = title, close = closeButton, chrome = false, scan = false })
         panel:Hide()
         self.controlPanel = panel
 
@@ -1545,6 +1548,7 @@ local function InitializeUIMover()
         w.scrollBar = RC.UI:AttachScrollbar(scroll, body, { width = 12 })
         w.rows = {}
 
+        RC.UI:SkinPopup(w, { header = header, title = title, close = close, chrome = false, scan = false })
         w:Hide()
         self.visList = w
         return w

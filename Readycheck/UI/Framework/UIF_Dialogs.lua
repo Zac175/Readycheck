@@ -88,6 +88,306 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         if callback then callback() end
     end
 
+    ------------------------------------------------------------------
+    -- THE POPUP SHELL (5.0). Every popup, dialog and small window wears
+    -- the /rc window's look (RC.UI.S, the "settings" colours): the window
+    -- fill, a 1px white 0.05 edge, no title band (the header art is
+    -- cleared; its opening sheen and the living mark stay), the title in
+    -- white, the corner close glyph (dim, white under the mouse), and the
+    -- button row in the window's footer look with one gold primary.
+    --   RC.UI:SkinPopup(frame, opts)         a window already built
+    --   RC.UI:CreatePopupShell(name, opts)   a new one, built this way
+    -- SkinPopup opts (all optional; what is left out is found on frame):
+    --   header    the title bar (the child wearing ApplyHeaderArt)
+    --   title     its title FontString;   subtitle  a line under it
+    --   titleSize the title's size where the window is small (default 16)
+    --   close     the X (CreateXCloseButton); it keeps its own click
+    --   buttons   the footer row;   primary  the one gold button
+    --   fill / border  the window's own fill texture / edge (found on
+    --             frame.bg or frame.border when left out)
+    --   texts     body FontStrings, painted in the window's text colour
+    --   dims      secondary FontStrings (a version, a hint), dim
+    --   rules     1px divider textures, painted as the window's edge
+    --   chrome = false  a window whose fill and edge the player styles
+    --             (the customization standard's chrome): left alone
+    --   scan = false    only the buttons named here change (a tool window
+    --             whose rows are its own)
+    -- Every other styled button on the window takes the page look, also
+    -- ones made later (each show looks again). Idempotent; repaints on
+    -- show and on a theme change.
+    ------------------------------------------------------------------
+    local shells = setmetatable({}, { __mode = "k" })
+    local function SCol(key, a) return RC.UI:SCol(key, a) end
+    local SHELL_FILL_A, SHELL_BODY_A = 0.97, 0.86
+    RC.UI.POPUP_TITLE = 16
+
+    local function IsStyledButton(f)
+        return type(f) == "table" and f.bg ~= nil and f.text ~= nil and f.SetActive ~= nil and f.Repaint ~= nil
+    end
+
+    local function FindHeader(frame)
+        for _, c in ipairs({ frame:GetChildren() }) do
+            if c._art and not c._art.compact then return c end
+        end
+        for _, c in ipairs({ frame:GetChildren() }) do
+            if c.titleIcon then return c end
+        end
+    end
+
+    local function FindTitle(header)
+        if not header then return nil end
+        local best
+        for _, r in ipairs({ header:GetRegions() }) do
+            if r.GetObjectType and r:GetObjectType() == "FontString" then
+                local _, rel = r:GetPoint(1)
+                if header.titleIcon and rel == header.titleIcon then return r end
+                best = best or r
+            end
+        end
+        return best
+    end
+
+    local function FindClose(header)
+        if not header then return nil end
+        for _, c in ipairs({ header:GetChildren() }) do
+            if c.x1 and c.x2 then return c end
+        end
+    end
+
+    local function EachStyledButton(root, fn, skip, depth)
+        depth = depth or 0
+        if depth > 8 or root == skip then return end
+        for _, c in ipairs({ root:GetChildren() }) do
+            if IsStyledButton(c) then fn(c) end
+            EachStyledButton(c, fn, skip, depth + 1)
+        end
+    end
+
+    -- the corner close glyph on an existing X button: same frame, same
+    -- click (callers and the ESC path keep their reference)
+    function RC.UI:SkinCloseBox(btn)
+        if not btn or btn._rcCloseBox then return btn end
+        btn._rcCloseBox = true
+        if btn.x1 then btn.x1:Hide() end
+        if btn.x2 then btn.x2:Hide() end
+        local s = math_max(10, math_floor((btn:GetHeight() or 22) * 0.6 + 0.5))
+        local t = btn:CreateTexture(nil, "ARTWORK")
+        t:SetSize(s, s)
+        t:SetPoint("CENTER")
+        t:SetTexture((RC.UI.ICONS or "Interface\\AddOns\\Readycheck\\Media\\Icons\\") .. "close")
+        btn.closeIcon = t
+        local S = _uif.S
+        function btn:RepaintClose() t:SetVertexColor(SCol("text", self._rcHot and 1 or S.DIM_A)) end
+        btn:HookScript("OnEnter", function(self) self._rcHot = true self:RepaintClose() end)
+        btn:HookScript("OnLeave", function(self) self._rcHot = nil self:RepaintClose() end)
+        btn:RepaintClose()
+        return btn
+    end
+
+    local function ClearHeader(header)
+        local art = header._art
+        if art then
+            if art.fill then art.fill:Hide() end
+            if art.cutL then art.cutL:Hide() end
+            if art.cutD then art.cutD:Hide() end
+            for _, t in ipairs(art.rules or {}) do t:Hide() end
+            -- the theme refresh calls this: the band stays cleared
+            header.RepaintArt = function() end
+        elseif header.bg and header.bg.Hide then
+            header.bg:Hide()
+        end
+    end
+
+    local function PaintShell(frame)
+        local st = shells[frame]
+        if not st then return end
+        local S = _uif.S
+        if st.chrome then
+            local fill = st.fill
+            if fill then
+                fill:SetTexture(FLAT)
+                fill:SetVertexColor(SCol("windowBackground", SHELL_FILL_A))
+            elseif frame.SetBackdropColor then
+                frame:SetBackdropColor(SCol("windowBackground", SHELL_FILL_A))
+            end
+            if st.border then
+                RC.UI:UpdateBorderColor(st.border, RC:GetColor("settings", "text"), S.BORDER_A)
+            elseif frame.SetBackdropBorderColor then
+                frame:SetBackdropBorderColor(SCol("text", S.BORDER_A))
+            end
+        end
+        if st.header then ClearHeader(st.header) end
+        if st.title then st.title:SetTextColor(SCol("text", 1)) end
+        if st.subtitle then st.subtitle:SetTextColor(SCol("text", S.DIM_A)) end
+        for _, fs in ipairs(st.texts) do fs:SetTextColor(SCol("text", SHELL_BODY_A)) end
+        for _, fs in ipairs(st.dims) do fs:SetTextColor(SCol("text", S.DIM_A)) end
+        for _, t in ipairs(st.rules) do t:SetVertexColor(SCol("text", S.BORDER_A)) end
+        if st.close and st.close.RepaintClose then st.close:RepaintClose() end
+        for _, b in ipairs(st.buttons) do if b.Repaint then b:Repaint() end end
+    end
+
+    function RC.UI:SkinPopup(frame, opts)
+        if not frame then return frame end
+        opts = opts or {}
+        local st = shells[frame]
+        local first = st == nil
+        if first then
+            st = { texts = {}, dims = {}, buttons = {}, rules = {} }
+            shells[frame] = st
+            frame._rcShell = true
+            st.chrome = opts.chrome ~= false
+            if st.chrome then
+                local function Tex(x) return (type(x) == "table" and x.SetVertexColor) and x or nil end
+                local fill = Tex(opts.fill) or Tex(frame.bg) or Tex(frame.background) or Tex(frame.fill)
+                if not fill and not frame.SetBackdropColor then
+                    fill = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+                    fill:SetAllPoints()
+                end
+                st.fill = fill
+                st.border = opts.border or frame._rcBorder or (type(frame.border) == "table" and frame.border.top and frame.border) or nil
+                if not st.border and not frame.SetBackdropBorderColor then st.border = self:CreateSimpleBorder(frame) end
+            end
+            -- each open: buttons made since join the look, colours re-read
+            frame:HookScript("OnShow", function(f) RC.UI:SkinPopup(f) end)
+        end
+        local header = opts.header or st.header or FindHeader(frame)
+        st.header = header
+        local title = opts.title or st.title or FindTitle(header)
+        if title and title ~= st.title then
+            local _, _, flags = title:GetFont()
+            local size = opts.titleSize or RC.UI.POPUP_TITLE
+            title._wrFontSize = size
+            RC:ApplyCustomFont(title, size, title._wrFontOutline or flags or "")
+        end
+        st.title = title
+        if opts.subtitle then st.subtitle = opts.subtitle end
+        for _, fs in ipairs(opts.texts or {}) do st.texts[#st.texts + 1] = fs end
+        for _, fs in ipairs(opts.dims or {}) do st.dims[#st.dims + 1] = fs end
+        for _, t in ipairs(opts.rules or {}) do t:SetTexture(FLAT) st.rules[#st.rules + 1] = t end
+        local close = opts.close or st.close or FindClose(header)
+        if close then self:SkinCloseBox(close) end
+        st.close = close
+        local seen = {}
+        for _, b in ipairs(st.buttons) do seen[b] = true end
+        local function Add(b, style)
+            if not IsStyledButton(b) then return end
+            if not seen[b] then seen[b] = true st.buttons[#st.buttons + 1] = b end
+            self:StyleSettingsButton(b, style)
+        end
+        for _, b in ipairs(opts.buttons or {}) do if b ~= opts.primary then Add(b, "footer") end end
+        if opts.primary then Add(opts.primary, "close") end
+        if opts.scan == false then st.noScan = true end
+        if not st.noScan then EachStyledButton(frame, function(b) if not seen[b] then Add(b, nil) end end, header) end
+        PaintShell(frame)
+        if first then RC:DebugPrint("SkinPopup: " .. tostring(frame.GetName and frame:GetName() or "?"), "ui") end
+        return frame
+    end
+
+    function RC.UI:IsShellSkinned(frame) return shells[frame] ~= nil end
+    function RC.UI:RepaintShells()
+        for f in pairs(shells) do PaintShell(f) end
+    end
+
+    -- A new popup in the shell: frame, header (mark, title, optional
+    -- subtitle, close), .body between header and footer, and .footer with
+    -- frame:AddFooterButton(text, width, primary, onClick, side). opts:
+    -- width, height, title, subtitle, onClose, headerH (default 52),
+    -- footerH (default 56), strata (DIALOG), level.
+    function RC.UI:CreatePopupShell(name, opts)
+        opts = opts or {}
+        local S = _uif.S
+        local f = CreateFrame("Frame", name, UIParent)
+        f:SetSize(opts.width or 420, opts.height or 240)
+        f:SetPoint("CENTER", 0, 20)
+        f:SetFrameStrata(opts.strata or "DIALOG")
+        if opts.level then f:SetFrameLevel(opts.level) end
+        f:SetToplevel(true)
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:SetClampedToScreen(true)
+        f:SetScript("OnMouseDown", function(self) self:Raise() end)
+        f.bg = f:CreateTexture(nil, "BACKGROUND")
+        f.bg:SetAllPoints()
+        f.border = self:CreateSimpleBorder(f)
+
+        local headerH = opts.headerH or 52
+        local header = CreateFrame("Frame", nil, f)
+        header:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+        header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+        header:SetHeight(headerH)
+        header:EnableMouse(true)
+        header:RegisterForDrag("LeftButton")
+        header:SetScript("OnDragStart", function() f:StartMoving() end)
+        header:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+        local icon = self:AddTitleIcon(header, 22, 16)
+        -- the art is cleared by the skin; it is added for the mark's and
+        -- the bar's opening animation
+        if self.ApplyHeaderArt then self:ApplyHeaderArt(header, { stepX = 120 }) end
+        local title = CreateProfessionalFontString(header, "OVERLAY", RC.UI.POPUP_TITLE, "OUTLINE")
+        title:SetJustifyH("LEFT")
+        title:SetWordWrap(false)
+        title:SetText(opts.title or "")
+        local sub
+        if opts.subtitle ~= nil then
+            title:SetPoint("BOTTOMLEFT", icon, "RIGHT", 10, 1)
+            sub = CreateProfessionalFontString(header, "OVERLAY", S.F_HINT, "")
+            sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+            sub:SetPoint("RIGHT", header, "RIGHT", -48, 0)
+            sub:SetJustifyH("LEFT")
+            sub:SetWordWrap(false)
+            sub:SetText(opts.subtitle)
+        else
+            title:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+        end
+        title:SetPoint("RIGHT", header, "RIGHT", -48, 0)
+        local close = self:CreateXCloseButton(header, 32, function()
+            if opts.onClose then opts.onClose() else f:Hide() end
+        end)
+        close:SetPoint("TOPRIGHT", header, "TOPRIGHT", -8, -6)
+
+        local footerH = opts.footerH or 56
+        local footer = CreateFrame("Frame", nil, f)
+        footer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 1)
+        footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+        footer:SetHeight(footerH)
+        local rule = footer:CreateTexture(nil, "ARTWORK")
+        rule:SetTexture(FLAT)
+        rule:SetHeight(1)
+        rule:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
+        rule:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
+        footer.rule = rule
+
+        local body = CreateFrame("Frame", nil, f)
+        body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+        body:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", 0, 0)
+
+        f.header, f.titleText, f.subtitleText, f.closeBtn, f.footer, f.body = header, title, sub, close, footer, body
+        f.footerButtons = { left = {}, right = {} }
+        -- side: "left" or "right" (default); buttons stack inwards from
+        -- the window's edges, 24 in, 10 apart
+        function f:AddFooterButton(text, width, primary, onClick, side)
+            side = side or "right"
+            local b = RC.UI:CreateStyledButton(footer, text, width or 110, 30)
+            local list = self.footerButtons[side]
+            local prev = list[#list]
+            if side == "left" then
+                if prev then b:SetPoint("LEFT", prev, "RIGHT", 10, 0) else b:SetPoint("LEFT", footer, "LEFT", 24, 0) end
+            else
+                if prev then b:SetPoint("RIGHT", prev, "LEFT", -10, 0) else b:SetPoint("RIGHT", footer, "RIGHT", -24, 0) end
+            end
+            list[#list + 1] = b
+            if onClick then b:SetScript("OnClick", onClick) end
+            if primary then RC.UI:SkinPopup(self, { primary = b }) else RC.UI:SkinPopup(self, { buttons = { b } }) end
+            return b
+        end
+        -- what is built in the body wears the /rc page look (InSettings)
+        body._rcSetRoot = true
+        RC.UI:SkinPopup(f, { header = header, title = title, subtitle = sub, close = close, rules = { rule } })
+        if name then self:RegisterEscapeClose(name) end
+        f:Hide()
+        return f
+    end
+
     -- Shared dialog shell: flat ui.windowBackground fill at 0.97, 1px
     -- black ring, a 30px flat ui.headerBackground title bar with a 1px
     -- gold rule along its bottom, the title 15px gold at x 10, and a
@@ -193,6 +493,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                 self:SetPropagateKeyboardInput(not handled)
             end
         end)
+
+        -- the 5.0 popup look (the buttons join it once each dialog makes them)
+        self:SkinPopup(dialog, { header = titleBar, title = titleText, close = closeBtn, texts = { messageText } })
 
         -- Hidden from outside (UISpecialFrames ESC in combat, a caller's
         -- own Hide) without a button choice: that is a cancel.
@@ -311,6 +614,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             cancelBtn:SetPoint("RIGHT", confirmBtn, "LEFT", -10, 0)
             cancelBtn:SetScript("OnClick", function() dialog:DoCancel() end)
             dialog.cancelBtn = cancelBtn
+            -- (the red label survives the shell's hover fade)
+            confirmBtn._rcAfterPaint = PaintDestructive
+            self:SkinPopup(dialog, { buttons = { cancelBtn }, primary = confirmBtn })
 
             self:RegisterEscapeClose(dialogName)
 
@@ -333,6 +639,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         else
             primary = not isDestructive
         end
+        -- gold when it is the safe choice; a destructive one keeps the
+        -- footer look with its red label
+        btn._rcSet = (isDestructive and not primary) and "footer" or "close"
         btn:SetActive(primary)
         btn:Repaint()
 
@@ -696,6 +1005,7 @@ function RC.UI:CreateSearchBox(parent, opts)
             cancelBtn:SetPoint("RIGHT", acceptBtn, "LEFT", -10, 0)
             cancelBtn:SetScript("OnClick", function() dialog:DoCancel() end)
             dialog.cancelBtn = cancelBtn
+            self:SkinPopup(dialog, { buttons = { cancelBtn }, primary = acceptBtn })
 
             self:RegisterEscapeClose(dialogName)
             dialog._resolved = true
@@ -718,6 +1028,109 @@ function RC.UI:CreateSearchBox(parent, opts)
         ShowModal(dialog)
         dialog.editBox:SetFocus()
 
+        return dialog
+    end
+
+    -- "Need help? Message Zac on Discord" (2026-11-08): opened from the
+    -- settings window (the speech bubble by the Readycheck name, the
+    -- General page's card) and /rc discord. An addon cannot open a link
+    -- or reach the clipboard, so the name sits selected in a box, ready
+    -- for Ctrl+C; it cannot be typed over. A modal on the shared dim like
+    -- the other two dialogs (not an on-screen frame: no UIMover). Enter,
+    -- Escape, the X and Close all shut it.
+    RC.CONTACT_DISCORD = "Zac12"
+    function RC.UI:ShowDiscordContact()
+        local dialogName = "ReadycheckContactDialog"
+        local dialog = _G[dialogName]
+        local name = RC.CONTACT_DISCORD
+
+        if not dialog then
+            dialog = CreateFrame("Frame", dialogName, UIParent, "BackdropTemplate")
+            dialog:SetSize(380, 160)
+            dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+            dialog:SetFrameStrata("DIALOG")
+            dialog:SetFrameLevel(210)
+            dialog:SetToplevel(true)
+            dialog:EnableMouse(true)
+            dialog:SetMovable(true)
+            dialog:SetClampedToScreen(true)
+
+            BuildDialogShell(self, dialog, function()
+                if dialog.DoCancel then dialog:DoCancel() end
+            end)
+
+            function dialog:DoConfirm()
+                if self._resolved then return end
+                CloseModal(self, nil)
+            end
+            function dialog:DoCancel()
+                if self._resolved then return end
+                CloseModal(self, nil)
+            end
+
+            local nameBox = self:CreateStyledEditBox(dialog, {
+                height      = BASE.EDITBOX_HEIGHT,
+                font        = BASE.FONT_SIZE_SMALL,
+                readOnly    = true,
+                initialText = name,
+                -- the name cannot be typed over: any edit puts it back
+                onTextChanged = function(s, userInput)
+                    if userInput and s:GetText() ~= RC.CONTACT_DISCORD then
+                        s:SetText(RC.CONTACT_DISCORD)
+                        s:HighlightText()
+                    end
+                end,
+            })
+            local eb = nameBox.editBox
+            eb:SetScript("OnEnterPressed", function() dialog:DoConfirm() end)
+            eb:SetScript("OnEscapePressed", function(s)
+                s:ClearFocus()
+                dialog:DoCancel()
+            end)
+            dialog.editBox = eb
+            dialog.nameBox = nameBox
+
+            local hint = CreateProfessionalFontString(dialog, "OVERLAY", 10, "")
+            hint:SetPoint("TOPLEFT", nameBox, "BOTTOMLEFT", 1, -6)
+            hint:SetJustifyH("LEFT")
+            hint:SetText(RCL["Ctrl+C to copy"])
+            local tg = GetTextGray()
+            hint:SetTextColor(tg.r, tg.g, tg.b, 1)
+            dialog.hint = hint
+
+            local closeBtn = self:CreateStyledButton(dialog, RCL["Close"], 110, 22)
+            closeBtn:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -18, 14)
+            closeBtn:SetActive(true)
+            closeBtn:SetScript("OnClick", function() dialog:DoCancel() end)
+            dialog.closeButton = closeBtn
+            self:SkinPopup(dialog, { primary = closeBtn, dims = { hint } })
+
+            self:RegisterEscapeClose(dialogName)
+            dialog._resolved = true
+            dialog:Hide()
+        end
+
+        dialog.titleText:SetText(RCL["Need help?"])
+        dialog.messageText:SetText(RCL["Message Zac on Discord"])
+        dialog.onCancel = nil
+        local textH = LayoutDialogBody(dialog, { icon = (self.ICONS or "Interface\\AddOns\\Readycheck\\Media\\Icons\\") .. "discord" }, 380)
+        -- our glyph has its own margin: shown whole, in the accent
+        dialog.icon:SetTexCoord(0, 1, 0, 1)
+        local A = GetAccentGold()
+        dialog.icon:SetVertexColor(A.r, A.g, A.b, 1)
+        -- Height: title bar 31 + 14 + body + 10 + box 22 + 6 + hint 12 +
+        -- 12 + button 22 + 14
+        dialog.nameBox:ClearAllPoints()
+        dialog.nameBox:SetPoint("TOPLEFT", dialog, "TOPLEFT", 18, -(45 + textH + 10))
+        dialog.nameBox:SetPoint("RIGHT", dialog, "RIGHT", -18, 0)
+        dialog:SetHeight(math.max(160, 143 + textH))
+        dialog.closeButton:Repaint()
+
+        ShowModal(dialog)
+        dialog.editBox:SetText(name)
+        dialog.editBox:SetFocus()
+        dialog.editBox:HighlightText()
+        RC:DebugPrint("Discord contact shown", "ui")
         return dialog
     end
 

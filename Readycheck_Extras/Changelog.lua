@@ -53,6 +53,26 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.1",
+            date = "2026-11-08",
+            title = "A smoother setup",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "A Discord button to contact Zac for help.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "The first-time setup is one short, smooth flow.",
+                        "Popups and their headers match the new settings window.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.0",
             date = "2026-11-08",
             title = "A new settings window",
@@ -1354,6 +1374,10 @@ local function InitializeChangelog()
             RC.Changelog:PopulateContent(frame.showingAll)
         end)
 
+        -- the 5.0 popup look (UIF_Dialogs)
+        RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = title, close = closeBtn,
+            dims = { versionText }, rules = { footerRule }, buttons = { fullBtn }, primary = okBtn })
+
         self.frame = frame
         return frame
     end
@@ -1545,8 +1569,16 @@ local function InitializeChangelog()
             self:MarkAsSeen()
             return
         end
+        -- never on top of the setup: while it is up (or waiting out a
+        -- fight) the popup holds back, and the setup's Finish counts the
+        -- version as seen and names /rc changelog in its one line
+        local function SetupBusy()
+            local W = RC.SetupWizard
+            return W and W.IsBusy and W:IsBusy() or false
+        end
         if self:ShouldShowPopup() then
             C_Timer.After(3, function()
+                if SetupBusy() then return end
                 if not UnitAffectingCombat("player") then
                     self:Show()
                 else
@@ -1555,6 +1587,7 @@ local function InitializeChangelog()
                     combatWatcher:SetScript("OnEvent", function(f)
                         f:UnregisterAllEvents()
                         C_Timer.After(1, function()
+                            if SetupBusy() or not RC.Changelog:ShouldShowPopup() then return end
                             RC.Changelog:Show()
                         end)
                     end)

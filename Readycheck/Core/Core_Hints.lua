@@ -8,7 +8,7 @@
 --   RC.Hints.Say(id, text)   the common case: one line in chat, once
 --   RC.Hints.Seen(id)        has this hint been shown
 --   RC.Hints.Mark(id)        count it as shown without showing anything
---   RC.Hints.Reset()         every hint may show again (the first-run tour too)
+--   RC.Hints.Reset()         every hint may show again
 --   RC.Hints.List()          the ids seen, sorted
 --
 -- Also here, so the General page needs only one line: RC:SetupGeneralCard
@@ -55,14 +55,10 @@ function Hints.Say(id, text)
     return Hints.Once(id, function() RC:Print(text) end)
 end
 
--- Every hint comes back, and the first-run tour counts as not seen again.
+-- Every hint comes back.
 function Hints.Reset()
     if type(ReadycheckDB) ~= "table" then return end
     if type(ReadycheckDB.account) == "table" then ReadycheckDB.account.setupHints = {} end
-    if type(ReadycheckDB.tutorial) == "table" then
-        ReadycheckDB.tutorial.done = nil
-        ReadycheckDB.tutorial.opens = 0
-    end
 end
 
 function Hints.List()
@@ -100,7 +96,7 @@ function RC:SetupGeneralCard(card, y)
     note:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
     note:SetPoint("RIGHT", card, "RIGHT", -14, 0)
     note:SetJustifyH("LEFT")
-    note:SetText(RCL["The setup runs again any time with its current values. Reset hints brings back every one-time tip and the first-run tour. Uninstall puts back every game setting Readycheck changed and turns Readycheck off for all your characters."])
+    note:SetText(RCL["The setup runs again any time with its current values. Reset hints brings back every one-time tip. Uninstall puts back every game setting Readycheck changed and turns Readycheck off for all your characters."])
     note:SetTextColor(gray.r, gray.g, gray.b, gray.a or 1)
     y = y - math.max(12, note:GetStringHeight() or 12) - 10
 
@@ -113,7 +109,7 @@ function RC:SetupGeneralCard(card, y)
     hints:SetPoint("LEFT", run, "RIGHT", 8, 0)
     hints:SetScript("OnClick", function()
         Hints.Reset()
-        RC:Print(RCL["Hints reset - every one-time tip shows again, and the tour on your next open of the settings."])
+        RC:Print(RCL["Hints reset - every one-time tip shows again."])
     end)
     Tip(hints, RCL["Reset hints"], RCL["Every one-time tip shows again. /rc hints reset does the same."])
 

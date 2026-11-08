@@ -1739,6 +1739,8 @@ local function InitializeSidebarWorldBuffs()
             local xb = RC.UI:CreateXCloseButton(headerBar, 22, function() if not sample then f:Hide() end end)
             xb:SetPoint("RIGHT", headerBar, "RIGHT", -5, 0)
         end
+        -- the 5.0 popup header (UIF_Dialogs); the board keeps its own look
+        RC.UI:SkinPopup(f, { header = headerBar, title = title, chrome = false, scan = false })
 
         local controls = CreateFrame("Frame", nil, f)
         controls:SetPoint("TOPLEFT",  headerBar, "BOTTOMLEFT",  0, 0)

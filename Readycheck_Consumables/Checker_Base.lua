@@ -342,6 +342,8 @@ WRF._cckInit[#WRF._cckInit + 1] = function()
 
         popup.closeBtn = RC.UI:CreateXCloseButton(titleBar, 22, function() popup:Close() end)
         popup.closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -5, 0)
+        -- the 5.0 popup look (UIF_Dialogs); its buttons join on each open
+        RC.UI:SkinPopup(popup, { header = titleBar, title = popup.titleText, close = popup.closeBtn })
 
         RC.UI:RegisterEscapeClose(name)
         return popup

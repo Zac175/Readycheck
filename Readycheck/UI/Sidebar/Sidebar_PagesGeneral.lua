@@ -244,6 +244,27 @@ local TEXT = _sbs.TEXT
             RCL["Core addon settings and behavior"], "Interface\\Icons\\INV_Misc_Gear_01")
         yPos = newY
 
+        -- NEED HELP (2026-11-08): Zac's Discord name, ready to copy
+        -- (UIF_Dialogs RC.UI:ShowDiscordContact; /rc discord)
+        if self.UI.ShowDiscordContact then
+            yPos = K.Card(parent, yPos, RCL["Need help?"], function(card, y)
+                local gray = self:GetColor("text", "gray")
+                local note = self:CreateFontString(card, "OVERLAY", nil, 10)
+                note:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
+                note:SetPoint("RIGHT", card, "RIGHT", -14, 0)
+                note:SetJustifyH("LEFT")
+                note:SetText(RCL["Message Zac on Discord: "] .. tostring(self.CONTACT_DISCORD or "Zac12")
+                    .. RCL[". The button shows the name ready to copy (/rc discord does the same)."])
+                note:SetTextColor(gray.r, gray.g, gray.b, gray.a or 1)
+                y = y - math.max(12, note:GetStringHeight() or 12) - 10
+                local btn = self.UI:CreateStyledButton(card, RCL["Discord"], 120, 24)
+                btn:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
+                btn:SetScript("OnClick", function() RC.UI:ShowDiscordContact() end)
+                card.discordButton = btn
+                return y - 24 - 10
+            end)
+        end
+
         -- Three plain switches, one card each: the reminders master switch,
         -- the minimap button and the world map stand-down.
         yPos = K.Card(parent, yPos, RCL["Addon control"], function(card, y)

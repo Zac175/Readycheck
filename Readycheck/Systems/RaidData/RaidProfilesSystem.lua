@@ -1114,6 +1114,9 @@ local function InitializeRaidProfiles()
         end
         frame.SyncBody = SyncBody
         scrollFrame:SetScript("OnSizeChanged", SyncBody)
+        -- the 5.0 popup look (UIF_Dialogs); the profile rows keep their own
+        RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = title, close = closeBtn,
+            buttons = { laterBtn }, primary = useBtn, scan = false })
 
         -- The same six-dot handle every other Readycheck window uses; only
         -- the "remember the size" half of the mouse-up is the picker's.

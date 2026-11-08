@@ -474,6 +474,8 @@ function CS:CreateStatsPanel()
     end)
 
     self.panelFrame = frame
+    -- the 5.0 popup look (UIF_Dialogs)
+    RC.UI:SkinPopup(frame, { header = headerBar, title = titleText, close = closeButton })
 
     self:StartAutoUpdate()
 

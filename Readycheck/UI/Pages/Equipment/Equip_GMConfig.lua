@@ -1391,6 +1391,8 @@ local C, GetCardBg, GetGearSetPreviewPath, TEXT = _seq.C, _seq.GetCardBg, _seq.G
                             p.tex = imgHost:CreateTexture(nil, "ARTWORK")
                             p.tex:SetAllPoints()
                             imgHost.border = RC.UI:CreateSimpleBorder(imgHost)
+                            -- the 5.0 popup look (UIF_Dialogs)
+                            RC.UI:SkinPopup(p, { header = titleBar, title = p.titleText, close = p.closeBtn })
                             p:Hide()
                             RC._gearPreviewPopup = p
                         end

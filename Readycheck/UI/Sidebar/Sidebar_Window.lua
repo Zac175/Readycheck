@@ -654,7 +654,6 @@ local BACK_PANELS = {
                         self:HandlePendingNavigation(self.sidebarConfigFrame)
                     end)
                 end
-                if self.MaybeStartTutorial then self:MaybeStartTutorial() end
             end
             return
         end
@@ -773,6 +772,55 @@ local BACK_PANELS = {
         logo.first, logo.second, logo.version = brandFirst, brandSecond, titleText
         sidebar.logo = logo
         if RC.UI.AnimateMark then pcall(RC.UI.AnimateMark, RC.UI, titleIcon, logo, { inset = 0 }) end
+
+        -- NEED HELP (2026-11-08): a speech bubble at the band's right,
+        -- level with the mark (28 centred on the 40 px mark: 36 down). It
+        -- opens "Message Zac on Discord" with the name ready to copy
+        -- (UIF_Dialogs RC.UI:ShowDiscordContact). White at the window's
+        -- dim alpha, the accent under the mouse.
+        local contactButton = CreateFrame("Button", nil, sidebar)
+        do
+            local help = contactButton
+            help:SetSize(28, 28)
+            help:SetPoint("TOPRIGHT", logo, "TOPRIGHT", -22, -36)
+            help:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+            local glyph = help:CreateTexture(nil, "ARTWORK")
+            glyph:SetAllPoints()
+            glyph:SetTexture(ICONS .. "discord")
+            help.icon = glyph
+            function help:Repaint()
+                if self._rcHot then
+                    local A = RC.UI:SAccent()
+                    glyph:SetVertexColor(A.r, A.g, A.b, 1)
+                else
+                    glyph:SetVertexColor(SC("text", S.DIM_A))
+                end
+            end
+            RC.UI:AttachHover(help, RC:GetColor("buttons", "normalBackground"), RC:GetColor("buttons", "hoverBackground"), {
+                onEnter = function(b)
+                    b._rcHot = true
+                    b:Repaint()
+                    GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+                    local tc = RC:GetColor("text", "gold") or RC.UI:SAccent()
+                    GameTooltip:SetText(RCL["Need help?"], tc.r, tc.g, tc.b)
+                    local bc = RC:GetColor("text", "gray") or { r = 0.7, g = 0.7, b = 0.7 }
+                    GameTooltip:AddLine(RCL["Message Zac on Discord: "] .. tostring(RC.CONTACT_DISCORD or "Zac12")
+                        .. RCL[". Click to copy the name."], bc.r, bc.g, bc.b, true)
+                    GameTooltip:Show()
+                end,
+                onLeave = function(b)
+                    b._rcHot = nil
+                    b:Repaint()
+                    GameTooltip:Hide()
+                end,
+            })
+            help:SetScript("OnClick", function()
+                if RC.UI.ShowDiscordContact then RC.UI:ShowDiscordContact() end
+            end)
+            help:Repaint()
+            sidebar.contactButton = help
+            frame.contactButton = help
+        end
 
         -- A glow over the mark, played by frame.PlayIconAnimation() (the
         -- opening itself is the mark's own animation, above).
@@ -1230,6 +1278,7 @@ local BACK_PANELS = {
             titleText:SetTextColor(SC("text", S.DIM_A))
             scaleText:SetTextColor(SC("text", S.DIM_A))
             editModeButton:Repaint()
+            contactButton:Repaint()
             searchContainer:Repaint()
             closeButton:Repaint()
             foldButton:Repaint()
@@ -1587,7 +1636,6 @@ local BACK_PANELS = {
             frame:Show()
             self:UpdateSidebarMenuScrollbar(frame)
         end
-        if self.MaybeStartTutorial then self:MaybeStartTutorial() end
         self:DebugPrint("Sidebar config window created", "config")
     end
 

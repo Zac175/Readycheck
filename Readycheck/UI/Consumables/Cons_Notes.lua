@@ -392,6 +392,9 @@ local TEXT = _sbc.TEXT
             local actionBtn = RC.UI:CreateStyledButton(pop, RCL["Import"], 80, 26)
             actionBtn:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -10, 6)
             pop.actionBtn = actionBtn
+            -- the 5.0 popup look (UIF_Dialogs)
+            RC.UI:SkinPopup(pop, { fill = popBg, header = titleBar, title = titleLabel, close = closeX,
+                dims = { descLabel }, buttons = { closeBtn }, primary = actionBtn })
 
             _noteSharePopup = pop
         end

@@ -1398,6 +1398,13 @@ RC._pms = RC._pms or {}
         if ReadycheckDB and ReadycheckDB.characters then
             ReadycheckDB.characters[charKey] = nil
         end
+        -- the setup opens once on this character after the reload
+        -- (Core_Scan); account bookkeeping, never exported
+        if type(ReadycheckDB) == "table" then
+            if type(ReadycheckDB.account) ~= "table" then ReadycheckDB.account = {} end
+            if type(ReadycheckDB.account.setupPending) ~= "table" then ReadycheckDB.account.setupPending = {} end
+            ReadycheckDB.account.setupPending[charKey] = true
+        end
 
         self:Print(RCL["|cFFFFFF00Please /reload to reinitialize with defaults|r"])
     end

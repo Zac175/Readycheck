@@ -300,6 +300,8 @@ WRF._cckInit[#WRF._cckInit + 1] = function()
         closeButton:SetPoint("RIGHT", headerBar, "RIGHT", -5, 0)
         closeButton:SetFrameLevel(headerBar:GetFrameLevel() + 1)
         frame.closeButton = closeButton
+        -- the 5.0 popup header (UIF_Dialogs); the window keeps its own look
+        RC.UI:SkinPopup(frame, { header = headerBar, title = frame.title, close = closeButton, chrome = false, scan = false })
 
         -- Title-bar tools: 20px framework buttons. "On" states (X/Y
         -- showing, edit mode) wear the active look via SetActive rather

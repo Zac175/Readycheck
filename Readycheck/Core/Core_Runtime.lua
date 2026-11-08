@@ -300,13 +300,12 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
             -- FRESH INSTALL. This is the first code to see the saved
             -- variables, so "the table does not exist" means exactly that:
             -- no character has run the addon on this account before. Only
-            -- such an install gets the first-run tour (Readycheck_Extras
-            -- Tutorial.lua, started by RC:MaybeStartTutorial); an existing
-            -- install never gets the stamp and the tour never auto-opens.
+            -- such an install is stamped (the changelog stays quiet on its
+            -- first login, the CVar record trusts what it writes down).
             local freshInstall = type(ReadycheckDB) ~= "table"
             ReadycheckDB = ReadycheckDB or {}
             if freshInstall and type(ReadycheckDB.tutorial) ~= "table" then
-                ReadycheckDB.tutorial = { fresh = true, opens = 0 }
+                ReadycheckDB.tutorial = { fresh = true }
             end
 
             -- Each companion gets exactly ONE automatic enable, recorded by

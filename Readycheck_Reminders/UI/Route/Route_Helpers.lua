@@ -573,6 +573,9 @@ local _srr = RC._srr
             actionBtn:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -10, 6)
             actionBtn:SetActive(true)
             pop.actionBtn = actionBtn
+            -- the 5.0 popup look (UIF_Dialogs)
+            RC.UI:SkinPopup(pop, { header = titleBar, title = titleLabel, close = closeX,
+                dims = { descLabel }, primary = actionBtn })
             _routeSharePopup = pop
         end
 

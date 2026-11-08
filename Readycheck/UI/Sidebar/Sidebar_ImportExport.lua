@@ -213,6 +213,8 @@ local TEXT = _sbs.TEXT
         content:SetPoint("TOPLEFT", 15, -42)
         content:SetPoint("BOTTOMRIGHT", -15, 15)
         frame.content = content
+        -- the 5.0 popup look (UIF_Dialogs)
+        RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = titleText, close = closeBtn })
 
         return frame, content
     end
@@ -235,6 +237,7 @@ local TEXT = _sbs.TEXT
             local doneBtn = self.UI:CreateStyledButton(content, RCL["Close"], 80, 26)
             doneBtn:SetPoint("BOTTOMRIGHT", 0, 0)
             doneBtn:SetScript("OnClick", function() frame:Hide() end)
+            RC.UI:SkinPopup(frame, { primary = doneBtn })
 
             self.exportDialogFrame = frame
         end
@@ -447,6 +450,7 @@ local TEXT = _sbs.TEXT
             local cancelBtn = self.UI:CreateStyledButton(content, RCL["Cancel"], 80, 26)
             cancelBtn:SetPoint("BOTTOMRIGHT", 0, 0)
             cancelBtn:SetScript("OnClick", function() frame:Hide() end)
+            RC.UI:SkinPopup(frame, { buttons = { cancelBtn }, primary = importBtn })
 
             self.universalImportFrame = frame
         end

@@ -5,14 +5,9 @@
 -- gold ring pulses around it) with a callout beside it that says what
 -- it is for, plus Back / Next / Skip.
 --
--- WHO SEES IT. Only a fresh install, as the second half of the setup
--- wizard: Finish there opens the settings window and starts the tour
--- (SetupWizard.lua). Core_Runtime stamps ReadycheckDB.tutorial =
--- { fresh = true } the first time the saved variables do not exist, and
--- RC:MaybeStartTutorial (Core_Scan) is the fallback that starts the tour
--- on the first few opens of the window if the wizard was closed instead.
--- An existing install has no stamp, so nothing here ever runs for it
--- unless asked for by name: /rc tutorial replays the tour for anyone.
+-- WHO SEES IT. Whoever asks: the setup's Finish when its "Show me
+-- around" tick is on (SetupWizard2.lua), and /rc tutorial. It never
+-- opens by itself.
 --
 -- Each group on the left gets a stop (the group is opened and its pages
 -- listed), then each main feature gets a closer look with its page open.
@@ -564,6 +559,10 @@ local function InitializeTutorial()
         co.back = RC.UI:CreateStyledButton(co, RCL["Back"], 64, 22)
         co.back:SetPoint("RIGHT", co.next, "LEFT", -6, 0)
         co.back:SetScript("OnClick", function() T:Back() end)
+        -- the 5.0 popup type, close glyph and buttons (UIF_Dialogs); the
+        -- callout keeps its gold edge so it stands out from the window
+        RC.UI:SkinPopup(co, { title = co.title, titleSize = 14, close = co.skip, texts = { co.body },
+            dims = { co.counter }, buttons = { co.back }, primary = co.next, chrome = false })
 
         co:Hide()
         T.callout = co
@@ -782,8 +781,8 @@ local function InitializeTutorial()
         self:Stop("skipped", true)
     end
 
-    -- mode: "auto" (opened by RC:MaybeStartTutorial on a fresh install)
-    -- or "manual" (/rc tutorial, the wizard, the debug page).
+    -- mode: "wizard" (the setup's Finish) or "manual" (/rc tutorial,
+    -- the debug page).
     function T:Start(mode)
         if self.active then return true end
         if not Win() then return false end
@@ -826,9 +825,8 @@ local function InitializeTutorial()
         return true
     end
 
-    -- markDone: the player finished or skipped it, so it never auto-opens
-    -- again. A window closed under the tour leaves that alone; the next
-    -- open (within the auto limit) starts it afresh.
+    -- markDone: the player finished or skipped it (written down for the
+    -- status line). A window closed under the tour leaves that alone.
     function T:Stop(reason, markDone)
         if self.ticker then self.ticker:Cancel() self.ticker = nil end
         if self.dim then self.dim:Hide() end
@@ -852,7 +850,7 @@ local function InitializeTutorial()
     function T:Reset()
         self:Stop("reset")
         if type(ReadycheckDB) ~= "table" then return end
-        ReadycheckDB.tutorial = { fresh = true, opens = 0 }
+        ReadycheckDB.tutorial = { fresh = true }
     end
 
     function T:MarkDone()
@@ -864,10 +862,10 @@ local function InitializeTutorial()
     function T:Status()
         local st = (type(ReadycheckDB) == "table") and ReadycheckDB.tutorial or nil
         if not st then
-            return RCL["Tour: not a fresh install - it only auto-opens for new installs. /rc tutorial replays it."]
+            return RCL["Tour: not a fresh install. /rc tutorial plays it."]
         end
-        return string.format(RCL["Tour: fresh=%s opens=%d done=%s active=%s"],
-            tostring(st.fresh and true or false), tonumber(st.opens) or 0,
+        return string.format(RCL["Tour: fresh=%s done=%s active=%s"],
+            tostring(st.fresh and true or false),
             tostring(st.done and true or false), tostring(self.active and true or false))
     end
 end
