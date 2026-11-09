@@ -1039,10 +1039,13 @@ function RC.UI:CreateSearchBox(parent, opts)
     -- the other two dialogs (not an on-screen frame: no UIMover). Enter,
     -- Escape, the X and Close all shut it.
     RC.CONTACT_DISCORD = "Zac12"
-    function RC.UI:ShowDiscordContact()
+    RC.CONTACT_TWITCH = "twitch.tv/zac984"
+    -- kind: nil (Discord: Zac's name) or "twitch" (his channel's link)
+    function RC.UI:ShowDiscordContact(kind)
         local dialogName = "ReadycheckContactDialog"
         local dialog = _G[dialogName]
-        local name = RC.CONTACT_DISCORD
+        local tw = kind == "twitch"
+        local name = tw and RC.CONTACT_TWITCH or RC.CONTACT_DISCORD
 
         if not dialog then
             dialog = CreateFrame("Frame", dialogName, UIParent, "BackdropTemplate")
@@ -1075,8 +1078,9 @@ function RC.UI:CreateSearchBox(parent, opts)
                 initialText = name,
                 -- the name cannot be typed over: any edit puts it back
                 onTextChanged = function(s, userInput)
-                    if userInput and s:GetText() ~= RC.CONTACT_DISCORD then
-                        s:SetText(RC.CONTACT_DISCORD)
+                    local want = dialog._rcText or RC.CONTACT_DISCORD
+                    if userInput and s:GetText() ~= want then
+                        s:SetText(want)
                         s:HighlightText()
                     end
                 end,
@@ -1110,10 +1114,11 @@ function RC.UI:CreateSearchBox(parent, opts)
             dialog:Hide()
         end
 
-        dialog.titleText:SetText(RCL["Need help?"])
-        dialog.messageText:SetText(RCL["Message Zac on Discord"])
+        dialog._rcText = name
+        dialog.titleText:SetText(tw and RCL["Watch on Twitch"] or RCL["Need help?"])
+        dialog.messageText:SetText(tw and RCL["Zac's channel"] or RCL["Message Zac on Discord"])
         dialog.onCancel = nil
-        local textH = LayoutDialogBody(dialog, { icon = (self.ICONS or "Interface\\AddOns\\Readycheck\\Media\\Icons\\") .. "discord" }, 380)
+        local textH = LayoutDialogBody(dialog, { icon = (self.ICONS or "Interface\\AddOns\\Readycheck\\Media\\Icons\\") .. (tw and "twitch" or "discord") }, 380)
         -- our glyph has its own margin: shown whole, in the accent
         dialog.icon:SetTexCoord(0, 1, 0, 1)
         local A = GetAccentGold()

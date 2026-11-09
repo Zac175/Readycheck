@@ -1,12 +1,17 @@
 # Releases Readycheck whenever the version in Readycheck/Readycheck.toc changes.
 #
 # Push a commit that bumps "## Version:" and this workflow:
-#   1. tags the commit with that version (e.g. 4.8.5),
-#   2. takes that version's notes from Readycheck_Extras/Changelog.lua,
-#   3. builds the zip and publishes it as a GitHub release, and to
-#      CurseForge / Wago when their keys are added to the repo's secrets
-#      (CF_API_KEY, WAGO_API_TOKEN) and their project ids are in the TOC.
+#   1. tags the commit with that version (e.g. 5.0.1),
+#   2. starts itself again on that tag, and that run
+#   3. takes the version's notes from Readycheck_Extras/Changelog.lua,
+#   4. builds the zip and publishes it as a GitHub release and to CurseForge
+#      (CF_API_KEY in the repo's secrets; the project id is in the TOC).
 # Pushes that don't change the version do nothing.
+#
+# Why two steps: the packager only builds when the run itself is on a tag.
+# A tag pushed from inside a run never starts a new run on its own, so the
+# first run starts the second one by hand ("Found future tag ..., not
+# packaging" was the packager skipping a run that was on the branch).
 name: Release
 
 on:
@@ -17,9 +22,11 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
-  release:
+  tag:
+    if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +37,7 @@ jobs:
         id: ver
         run: |
           v=$(grep -m1 -E '^## Version:' Readycheck/Readycheck.toc | sed -E 's/^## Version:[[:space:]]*//; s/[[:space:]\r]+$//')
-          if [ -z "$v" ]; then echo "No version in Readycheck.toc"; exit 1; fi
+          if [ -z "$v" ]; then echo "No version in Readycheck/Readycheck.toc"; exit 1; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           # The version before this push (none on the very first push).
           before="${{ github.event.before }}"
@@ -39,7 +46,7 @@ jobs:
             old=$(git show "$before:Readycheck/Readycheck.toc" 2>/dev/null | grep -m1 -E '^## Version:' | sed -E 's/^## Version:[[:space:]]*//; s/[[:space:]\r]+$//')
           fi
           if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then
-            echo "Version $v is already released - nothing to do."
+            echo "Version $v is already tagged - nothing to do."
             echo "new=false" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" != "workflow_dispatch" ] && { [ -z "$old" ] || [ "$old" = "$v" ]; }; then
             echo "The version didn't change in this push ($v) - nothing to do."
@@ -57,15 +64,27 @@ jobs:
           git tag -a "${{ steps.ver.outputs.version }}" -m "Readycheck ${{ steps.ver.outputs.version }}"
           git push origin "${{ steps.ver.outputs.version }}"
 
-      - name: Write the release notes
+      - name: Build on the new tag
         if: steps.ver.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --repo "${{ github.repository }}" --ref "${{ steps.ver.outputs.version }}"
+
+  package:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Write the release notes
         run: |
           sudo apt-get install -y -qq lua5.1 >/dev/null
-          lua5.1 .github/tools/changelog_md.lua "${{ steps.ver.outputs.version }}" > CHANGELOG.md
+          lua5.1 .github/tools/changelog_md.lua "${{ github.ref_name }}" > CHANGELOG.md
           cat CHANGELOG.md
 
       - name: Build and publish
-        if: steps.ver.outputs.new == 'true'
         uses: BigWigsMods/packager@v2
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

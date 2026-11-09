@@ -299,11 +299,19 @@ local S = _uif.S
             bar:SetValue(last)
         end)
         runner:SetScript("OnHide", function() last = nil end)
+        -- (2026-11-08, Zac: "scrolling ... is really slow when im just
+        -- slamming my scroll wheel") notches that come fast travel further:
+        -- each one inside a fifth of a second of the last goes 1.5x the
+        -- one before, up to 4x a notch
+        local lastWheel, boost = 0, 1
         area:SetScript("OnMouseWheel", function(_, delta)
             local mn, mx = bar:GetMinMaxValues()
             if (mx or 0) <= 0 then return end
+            local now = GetTime and GetTime() or 0
+            if now - lastWheel < 0.2 then boost = math_min(4, boost * 1.5) else boost = 1 end
+            lastWheel = now
             local base = (runner:IsShown() and target) or bar:GetValue()
-            target = math_max(mn, math_min(mx, base - delta * step))
+            target = math_max(mn, math_min(mx, base - delta * step * boost))
             last = nil
             runner:Show()
         end)

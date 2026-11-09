@@ -53,6 +53,29 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.2",
+            date = "2026-11-08",
+            title = "A cleaner settings window",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "A Twitch button next to the Discord one.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "Reload and the window's size are in the header; the extra Close button at the bottom is gone.",
+                        "A sharper close button that matches ZacUI's.",
+                        "Scrolling the settings is faster, and speeds up when you spin the wheel quickly.",
+                        "The Discord and Twitch buttons sit next to the version number.",
+                        "Known issue: some popups still don't fully match the new settings style. A full styling pass is coming in the next update.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.1",
             date = "2026-11-08",
             title = "A smoother setup",

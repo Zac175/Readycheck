@@ -543,7 +543,7 @@ local _uif = RC._uif
     local S = {
         -- the window
         W = 1300, H = 946, MIN_W = 1000, MIN_H = 640, MAX_W = 1600, MAX_H = 1100,
-        SIDEBAR = 295, HEADER = 138, TABS = 40, FOOTER = 82, PAD = 45, TOP_PAD = 10,
+        SIDEBAR = 295, HEADER = 138, TABS = 40, FOOTER = 0, PAD = 45, TOP_PAD = 10,
         -- the page's own left edge (cards and headers sit 18 in from it):
         -- the scroll area is set in by the rest, so PAD lands at 45
         PAGE_X = 27,
@@ -557,7 +557,7 @@ local _uif = RC._uif
         CHECK = 18, TOGGLE_W = 40, TOGGLE_H = 20, KNOB_PAD = 2,
         TRACK_H = 4, THUMB = 14, VALUE_W = 40, VALUE_H = 26, TRACK_GAP = 12,
         FOOT_BTN_W = 180, FOOT_BTN_H = 36, FOOT_CLOSE_W = 160, FOOT_PAD = 24, FADE = 0.10,
-        CLOSE_BOX = 40, WHEEL = 60, LERP = 12,
+        CLOSE_BOX = 40, WHEEL = 80, LERP = 18,
         -- type
         F_TITLE = 36, F_DESC = 14, F_TAB = 16, F_NAV = 14, F_GROUP = 15, F_SECTION = 12,
         F_VALUE = 13, F_HINT = 12, F_BRAND = 28,

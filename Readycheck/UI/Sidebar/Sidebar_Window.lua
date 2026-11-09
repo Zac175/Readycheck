@@ -781,8 +781,10 @@ local BACK_PANELS = {
         local contactButton = CreateFrame("Button", nil, sidebar)
         do
             local help = contactButton
-            help:SetSize(28, 28)
-            help:SetPoint("TOPRIGHT", logo, "TOPRIGHT", -22, -36)
+            help:SetSize(22, 22)
+            -- (2026-11-08, Zac: they sat on the "check" of the name) on the
+            -- version's line, after it, Discord then Twitch
+            help:SetPoint("LEFT", titleText, "RIGHT", 40, -4)
             help:SetFrameLevel(sidebar:GetFrameLevel() + 5)
             local glyph = help:CreateTexture(nil, "ARTWORK")
             glyph:SetAllPoints()
@@ -820,6 +822,45 @@ local BACK_PANELS = {
             help:Repaint()
             sidebar.contactButton = help
             frame.contactButton = help
+
+            -- Zac's Twitch, left of the Discord button (2026-11-08)
+            local tw = CreateFrame("Button", nil, sidebar)
+            tw:SetSize(20, 20)
+            tw:SetPoint("LEFT", help, "RIGHT", 10, 0)
+            tw:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+            local tg = tw:CreateTexture(nil, "ARTWORK")
+            tg:SetAllPoints()
+            tg:SetTexture(ICONS .. "twitch")
+            function tw:Repaint()
+                if self._rcHot then
+                    local A = RC.UI:SAccent()
+                    tg:SetVertexColor(A.r, A.g, A.b, 1)
+                else
+                    tg:SetVertexColor(SC("text", S.DIM_A))
+                end
+            end
+            RC.UI:AttachHover(tw, RC:GetColor("buttons", "normalBackground"), RC:GetColor("buttons", "hoverBackground"), {
+                onEnter = function(b)
+                    b._rcHot = true
+                    b:Repaint()
+                    GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+                    local tc = RC:GetColor("text", "gold") or RC.UI:SAccent()
+                    GameTooltip:SetText(RCL["Watch on Twitch"], tc.r, tc.g, tc.b)
+                    local bc = RC:GetColor("text", "gray") or { r = 0.7, g = 0.7, b = 0.7 }
+                    GameTooltip:AddLine(tostring(RC.CONTACT_TWITCH or "twitch.tv/zac984") .. RCL[". Click to copy the link."], bc.r, bc.g, bc.b, true)
+                    GameTooltip:Show()
+                end,
+                onLeave = function(b)
+                    b._rcHot = nil
+                    b:Repaint()
+                    GameTooltip:Hide()
+                end,
+            })
+            tw:SetScript("OnClick", function()
+                if RC.UI.ShowDiscordContact then RC.UI:ShowDiscordContact("twitch") end
+            end)
+            tw:Repaint()
+            frame.twitchButton = tw
         end
 
         -- A glow over the mark, played by frame.PlayIconAnimation() (the
@@ -1176,7 +1217,14 @@ local BACK_PANELS = {
             local t = b:CreateTexture(nil, "ARTWORK")
             t:SetSize(16, 16)
             t:SetPoint("CENTER")
-            t:SetTexture(ICONS .. iconName)
+            if iconName == "close" or iconName:find("128$") then
+                -- the same crisp X as ZacUI's settings window, at its size
+                -- (2026-11-08, Zac: the two addons' X looked different)
+                t:SetSize(38, 38)
+                t:SetTexture(ICONS .. (iconName == "close" and "close128" or iconName), "CLAMP", "CLAMP", "TRILINEAR")
+            else
+                t:SetTexture(ICONS .. iconName)
+            end
             b.icon = t
             function b:Repaint() t:SetVertexColor(SC("text", self._rcHot and 1 or S.DIM_A)) end
             b:SetScript("OnEnter", function(self) self._rcHot = true self:Repaint() end)
@@ -1192,7 +1240,7 @@ local BACK_PANELS = {
 
         -- FOLD: the window shrinks to its mark and name (it keeps running,
         -- previews and Edit Mode included); the same box brings it back.
-        local foldButton = CornerBox("collapse", function() RC:FoldSidebarConfig() end)
+        local foldButton = CornerBox("chevup128", function() RC:FoldSidebarConfig() end)
         foldButton:SetPoint("TOPRIGHT", closeButton, "TOPLEFT", -4, 0)
         frame.foldButton = foldButton
         AttachTitleTooltip(foldButton, RCL["Fold"],
@@ -1203,15 +1251,20 @@ local BACK_PANELS = {
         local footer = CreateFrame("Frame", nil, frame)
         footer:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMRIGHT", 0, 0)
         footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-        footer:SetHeight(S.FOOTER)
+        footer:SetHeight(math.max(1, S.FOOTER))
+        footer:Hide()   -- (2026-11-08: no footer band at all)
         footer:SetFrameLevel(frame:GetFrameLevel() + 20)
         footer._rcSetRoot = true
         frame.footer = footer
 
-        local reloadButton = self.UI:CreateStyledButton(footer, RCL["Reload"], S.FOOT_BTN_W, S.FOOT_BTN_H)
-        self.UI:StyleSettingsButton(reloadButton, "footer")
-        reloadButton:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", S.FOOT_PAD, S.FOOT_PAD)
-        reloadButton:SetScript("OnClick", function() ReloadUI() end)
+        -- (2026-11-08, Zac: "the scale shit should be in the header and why
+        -- did you add an extra x button") Reload and the scale sit in the
+        -- header beside fold and close; the footer's Close is gone (the
+        -- header's X closes) and the footer is only the grip's margin
+        local HB = 24
+        -- (drawn glyphs from the X's art set, not text in boxes)
+        local reloadButton = CornerBox("reload128", function() ReloadUI() end)
+        reloadButton:SetSize(32, S.CLOSE_BOX)
         AttachTitleTooltip(reloadButton,
             RCL["Reload"],
             RCL["Reloads the interface. Needed for font, skin and minimap-button changes to fully apply."])
@@ -1219,8 +1272,8 @@ local BACK_PANELS = {
 
         local doneButton = self.UI:CreateStyledButton(footer, RCL["Close"], S.FOOT_CLOSE_W, S.FOOT_BTN_H)
         self.UI:StyleSettingsButton(doneButton, "close")
-        doneButton:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", -S.FOOT_PAD, S.FOOT_PAD)
         doneButton:SetScript("OnClick", function() frame:Hide() end)
+        doneButton:Hide()
         frame.doneButton = doneButton
 
         -- THE WINDOW'S SCALE (fontSettings.mainWindowScale, nil = 100%):
@@ -1241,20 +1294,19 @@ local BACK_PANELS = {
             -- the preview keeps its sample at the real, in-game size
             if RC.Preview and RC.Preview.Place then pcall(RC.Preview.Place) end
         end
-        local plus = self.UI:CreateStyledButton(footer, "+", S.FOOT_BTN_H, S.FOOT_BTN_H)
-        self.UI:StyleSettingsButton(plus, "footer")
-        plus:SetPoint("RIGHT", doneButton, "LEFT", -20, 0)
-        plus:SetScript("OnClick", function() SetWinScale(WinScale() + 0.05) end)
-        scaleText = self:CreateFontString(footer, "OVERLAY", nil, S.F_VALUE)
-        scaleText:SetWidth(52)
+        local plus = CornerBox("plus128", function() SetWinScale(WinScale() + 0.05) end)
+        plus:SetSize(32, S.CLOSE_BOX)
+        plus:SetPoint("RIGHT", foldButton, "LEFT", -6, 0)
+        scaleText = self:CreateFontString(plus, "OVERLAY", nil, S.F_VALUE)
+        scaleText:SetWidth(48)
         scaleText:SetJustifyH("CENTER")
         scaleText:SetPoint("RIGHT", plus, "LEFT", 0, 0)
         scaleText:SetTextColor(SC("text", S.DIM_A))
         scaleText:SetText(math.floor(WinScale() * 100 + 0.5) .. "%")
-        local minus = self.UI:CreateStyledButton(footer, "-", S.FOOT_BTN_H, S.FOOT_BTN_H)
-        self.UI:StyleSettingsButton(minus, "footer")
+        local minus = CornerBox("minus128", function() SetWinScale(WinScale() - 0.05) end)
+        minus:SetSize(32, S.CLOSE_BOX)
         minus:SetPoint("RIGHT", scaleText, "LEFT", 0, 0)
-        minus:SetScript("OnClick", function() SetWinScale(WinScale() - 0.05) end)
+        reloadButton:SetPoint("RIGHT", minus, "LEFT", -14, 0)
         AttachTitleTooltip(plus, RCL["Window scale"], RCL["Grows or shrinks this window only."])
         AttachTitleTooltip(minus, RCL["Window scale"], RCL["Grows or shrinks this window only."])
         frame.scaleText, frame.scaleUp, frame.scaleDown = scaleText, plus, minus
@@ -1279,6 +1331,7 @@ local BACK_PANELS = {
             scaleText:SetTextColor(SC("text", S.DIM_A))
             editModeButton:Repaint()
             contactButton:Repaint()
+            if frame.twitchButton then frame.twitchButton:Repaint() end
             searchContainer:Repaint()
             closeButton:Repaint()
             foldButton:Repaint()
