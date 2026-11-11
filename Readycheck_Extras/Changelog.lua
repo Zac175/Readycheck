@@ -53,6 +53,28 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.5",
+            date = "2026-11-11",
+            title = "One look for every control, and after-kill gear sets",
+            sections = {
+                {
+                    type = "changed",
+                    items = {
+                        "Checkboxes, dropdowns, sliders, tabs and text boxes look the same everywhere, inside the settings window and out.",
+                        "Buttons and close buttons outside the settings window match the ones inside it.",
+                        "Dark colours saved by older versions give way to the new lighter ones. Colours you picked yourself are kept.",
+                        "The stats bar's background is the same grey as the windows.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "A gear set meant for after one boss no longer goes on after a later boss that has none set.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.4",
             date = "2026-11-10",
             title = "Commanding Shout, lighter windows and a faster search",
