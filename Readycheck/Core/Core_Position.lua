@@ -185,6 +185,28 @@ end
 -- of Readycheck's placed frames at once (UI/MapStandDown.lua).
 P.bound = setmetatable({}, { __mode = "k" })
 
+-- NEW DEFAULT SPOTS (2026-11-10). A character whose profile is first made
+-- from now on carries defaultsGen = 2 (RC:BuildDefaultCharacterProfile);
+-- on it a frame bound with opts.gen2 = { point, relPoint, x, y } sits
+-- there by default. A character from before never has the mark, so a
+-- frame it never moved stays exactly where opts.default always put it:
+-- nothing moves on an update. The mark is not a setting and must never
+-- go into RC.defaults (those are filled into every profile).
+function RC:NewDefaults()
+    local db = self.db
+    return (type(db) == "table" and (tonumber(db.defaultsGen) or 0) >= 2) or false
+end
+-- old on a character from before, new on a fresh one (for defaults that
+-- are written into the profile the first time a feature starts)
+function RC:PickDefault(old, new)
+    if self:NewDefaults() then return new end
+    return old
+end
+local function DefaultOf(b)
+    if b.gen2 and RC:NewDefaults() then return b.gen2 end
+    return b.default
+end
+
 function P.Bind(frame, getStore, opts)
     opts = opts or {}
     P.bound[frame] = true
@@ -199,6 +221,7 @@ function P.Bind(frame, getStore, opts)
         legacyRel   = opts.legacyRel,
         markKey     = opts.markKey or "centred",
         default     = opts.default or { x = 0, y = 0 },
+        gen2        = opts.gen2,
     }
     if not frame.__rcClampHooked and frame.HookScript then
         frame.__rcClampHooked = true
@@ -260,7 +283,7 @@ function P.ScheduleClamp(frame)
 end
 
 local function ApplyDefault(frame, b)
-    local d = b.default
+    local d = DefaultOf(b)
     if d.point then
         return P.ApplyLegacy(frame, d.point, d.relPoint or d.point, d.x, d.y, b.point)
     end
@@ -311,7 +334,7 @@ function P.ApplyStored(frame)
     end
     local x, y = s[b.xKey], s[b.yKey]
     if type(x) ~= "number" or type(y) ~= "number" then
-        local d = b.default
+        local d = DefaultOf(b)
         if not CanAnchor(frame) then return false end
         frame:ClearAllPoints()
         frame:SetPoint(d.point or b.point, UIParent, d.relPoint or d.point or "CENTER", d.x or 0, d.y or 0)

@@ -295,7 +295,14 @@ local S = _uif.S
                 self:Hide()
                 return
             end
-            last = cur + diff * math_min(1, S.LERP * (dt or 0.016))
+            -- (2026-11-09: it crawled near the top and bottom, where the
+            -- target stops running ahead) never slower than 1400 a second
+            local stepv = diff * math_min(1, S.LERP * (dt or 0.016))
+            local floor = 1400 * (dt or 0.016)
+            if math_abs(stepv) < floor then
+                stepv = ((diff > 0) and 1 or -1) * math_min(math_abs(diff), floor)
+            end
+            last = cur + stepv
             bar:SetValue(last)
         end)
         runner:SetScript("OnHide", function() last = nil end)
@@ -592,12 +599,29 @@ local S = _uif.S
         local t = self._rcFadeT or (hot and 1 or 0)
         local text = RC:GetColor("settings", "text")
         if not self:IsEnabled() then
+            if self._rcPlate then self._rcPlate:Paint(0.03, 0.03) end
             self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", S.BTN_BG_A * 0.5))
             if self.text then self.text:SetTextColor(RC.UI:SCol("text", S.BTN_TXT_A * S.OFF_A)) end
             if self.border then RC.UI:UpdateBorderColor(self.border, text, S.BTN_BRD_A * 0.5) end
             return
         end
         local A = RC.UI:SAccent()
+        -- (2026-11-09) a page button is a raised plate: a lift and a top
+        -- line on its fill, the edge warming to the accent under the mouse
+        local plate = (st == "button") and RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg) or nil
+        if plate then plate:Paint(Lerp(0.085, 0.13, t), Lerp(0.08, 0.14, t)) end
+        if plate and not self.isConfigured then
+            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
+            if self.border then
+                local a0, a1 = S.BTN_BRD_A, 0.75
+                local e = Lerp(0, 1, t)
+                RC.UI:UpdateBorderColor(self.border,
+                    { r = Lerp(text.r, A.r, e), g = Lerp(text.g, A.g, e), b = Lerp(text.b, A.b, e) }, Lerp(a0, a1, t))
+            end
+            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(0.82, 1, t))) end
+            if self._rcAfterPaint then self._rcAfterPaint(self) end
+            return
+        end
         if st == "close" or self.isConfigured then
             local fa = (st == "close") and S.FOOT_BG_A or Lerp(S.BTN_BG_A, S.BTN_BG_HA, t)
             self.bg:SetVertexColor(RC.UI:SCol(st == "close" and "windowBackground" or "buttonBackground", fa))
@@ -1183,17 +1207,29 @@ local S = _uif.S
             -- accent edge and a full-white label, and its accent foot)
             local text = RC:GetColor("settings", "text")
             local A = RC.UI:SAccent()
-            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", hot and S.BTN_BG_HA or S.BTN_BG_A))
+            -- (2026-11-09) the picked tab is a raised plate with the accent
+            -- line along its top; the others sit back in the strip
+            local plate = RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg)
             if self.isSelected then
-                RC.UI:UpdateBorderColor(self.border, A, S.CLOSE_A)
+                self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
+                plate:Paint(0.11, 0)
+                RC.UI:UpdateBorderColor(self.border, text, 0.16)
                 self.text:SetTextColor(RC.UI:SCol("text", 1))
             else
-                RC.UI:UpdateBorderColor(self.border, text, hot and S.BTN_BRD_HA or S.BTN_BRD_A)
+                self.bg:SetVertexColor(RC.UI:SCol("shade", hot and 0.18 or 0.30))
+                plate:Paint(hot and 0.05 or 0, 0)
+                RC.UI:UpdateBorderColor(self.border, text, hot and 0.12 or 0.06)
                 self.text:SetTextColor(RC.UI:SCol("text", hot and S.NAV_HOVER or S.BTN_TXT_A))
             end
             if self.underline then
                 self.underline:SetColorTexture(A.r, A.g, A.b, 1)
                 self.underline:SetShown(self.isSelected and true or false)
+                if not self._rcLineTop then
+                    self._rcLineTop = true
+                    self.underline:ClearAllPoints()
+                    self.underline:SetPoint("TOPLEFT", self, "TOPLEFT", 1, -1)
+                    self.underline:SetPoint("TOPRIGHT", self, "TOPRIGHT", -1, -1)
+                end
             end
             return
         end
@@ -1363,12 +1399,26 @@ local S = _uif.S
                 btn.bg:SetVertexColor(0, 0, 0, 0)
                 RC.UI:UpdateBorderColor(btn.border, GetBorderNormal(), 0)
                 lbl:SetTextColor(RC.UI:SCol("text", isAct and 1 or (btn._rcHot and S.NAV_HOVER or S.DIM_A)))
+                -- (2026-11-09, Zac: "all these buttons also didnt get styled")
+                -- the open tab is a raised plate with the accent line along
+                -- its top; a closed one lifts a little under the mouse
+                local pl = RC.UI:Plate(btn, 0, 0, 5, 5, true)
+                local hot = btn._rcHot and true or false
+                local tc = RC:GetColor("settings", "text")
+                pl:SetShown(isAct or hot)
+                if isAct then
+                    pl.box:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
+                    pl:Paint(0.11, 0, tc, 0.16)
+                elseif hot then
+                    pl.box:SetVertexColor(RC.UI:SCol("buttonBackground", 0.5))
+                    pl:Paint(0.05, 0, tc, 0.10)
+                end
                 if btn.underline then
                     local A = RC.UI:SAccent()
                     btn.underline:SetColorTexture(A.r, A.g, A.b, 1)
                     btn.underline:ClearAllPoints()
-                    btn.underline:SetPoint("BOTTOM", btn, "BOTTOM", 0, 0)
-                    btn.underline:SetWidth(math.ceil(lbl:GetStringWidth() or 0) + 14)
+                    btn.underline:SetPoint("TOPLEFT", pl.box, "TOPLEFT", 1, -1)
+                    btn.underline:SetPoint("TOPRIGHT", pl.box, "TOPRIGHT", -1, -1)
                     btn.underline:SetShown(isAct and true or false)
                 end
                 return

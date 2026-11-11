@@ -898,6 +898,11 @@ initFrame:SetScript("OnEvent", function()
             { id = 4264,  name = "Barbaric Belt" },
             { id = 6972,  name = "Fire Hardened Hauberk" },
         }
+        -- (2026-11-09) TBC's own rocket boots
+        if RC.Flavor and RC:Flavor() == "tbc" then
+            table.insert(RC.speedSwapItems, { id = 23824, name = "Rocket Boots Xtreme" })
+            table.insert(RC.speedSwapItems, { id = 35581, name = "Rocket Boots Xtreme Lite" })
+        end
         local REVERT_ITEMS = {}
         for _, e in ipairs(RC.speedSwapItems) do REVERT_ITEMS[e.id] = true end
 

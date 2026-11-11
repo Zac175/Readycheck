@@ -30,6 +30,27 @@ local function InitializeBattleShoutReminder()
 
     local BATTLE_SHOUT_NAME = "Battle Shout"
     local BLOODRAGE_NAME = "Bloodrage"
+    -- TBC only: the warrior's other shout (spell 469, level 68; 1080
+    -- health for the party, 2 minutes). A warrior keeps one shout up, so
+    -- the reminder and the party tracker follow whichever one is chosen
+    -- (battleShoutReminder.shout). Commanding Shout matters to every
+    -- class and has no attack power to read.
+    local COMMANDING_SHOUT_NAME = "Commanding Shout"
+    local COMMANDING_SHOUT_ID = 469
+    local CS_ICON = "Interface\\Icons\\Ability_Warrior_RallyingCry"
+    local function CommandingAvailable()
+        return RC.Flavor ~= nil and RC:Flavor() == "tbc"
+    end
+    local function ShoutIsCommanding()
+        local db = RC.db and RC.db.battleShoutReminder
+        return (db and db.shout == "commanding" and CommandingAvailable()) or false
+    end
+    local function ShoutName()
+        return ShoutIsCommanding() and COMMANDING_SHOUT_NAME or BATTLE_SHOUT_NAME
+    end
+    function RC:BattleShoutCommandingAvailable() return CommandingAvailable() end
+    function RC:BattleShoutIsCommanding() return ShoutIsCommanding() end
+    function RC:BattleShoutWatchedName() return ShoutName() end
 
     local BATTLE_SHOUT_CLASSES = {
         ["WARRIOR"] = true,
@@ -89,6 +110,8 @@ local function InitializeBattleShoutReminder()
             -- "group" = warn when anyone in your 5-man is missing a shout;
             -- "self"  = only care about the Battle Shout on you.
             trackScope = "group",
+            -- "battle" or "commanding" (TBC only): the shout this warrior keeps up
+            shout = "battle",
             greedMode = false,
             greedSkipIfImpCleave = false,
             rangeCheck = false,
@@ -160,6 +183,8 @@ local function InitializeBattleShoutReminder()
             return false
         end
 
+        -- Commanding Shout's health is for everyone
+        if ShoutIsCommanding() then return true end
         local _, classToken = UnitClass(unit)
         return BATTLE_SHOUT_CLASSES[classToken] or false
     end
@@ -231,15 +256,19 @@ local function InitializeBattleShoutReminder()
     function RC:UnitBattleShoutStatus(unit)
         if not UnitExists(unit) then return false, 0, 0 end
 
+        local commanding = ShoutIsCommanding()
+        local want = commanding and COMMANDING_SHOUT_NAME or BATTLE_SHOUT_NAME
         for i = 1, 40 do
             local name, _, _, _, _, expirationTime, _, _, _, _, _, _, _, _, _, value1 = UnitBuff(unit, i)
             if not name then break end
 
-            if name == BATTLE_SHOUT_NAME then
+            if name == want then
                 local remaining = 0
                 if expirationTime and expirationTime > 0 then
                     remaining = math.max(0, expirationTime - GetTime())
                 end
+                -- (no attack power on Commanding Shout)
+                if commanding then return true, remaining, 0, (expirationTime or 0) end
 
                 -- Resolved once per shout per player, then cached.
                 -- Keyed by name rather than unit token: raid unit ids
@@ -383,6 +412,12 @@ local function InitializeBattleShoutReminder()
     RC.BATTLE_SHOUT_COUNT_FONT = { size = 16, outline = "OUTLINE", shadow = true }
     RC.BATTLE_SHOUT_NAMES_FONT = { size = 12, outline = "OUTLINE", shadow = true }
     local BS_ICON = "Interface\\Icons\\Ability_Warrior_BattleShout"
+    -- the watched shout's icon (the client's own for Commanding Shout)
+    local function ShoutIcon()
+        if not ShoutIsCommanding() then return BS_ICON end
+        local tex = GetSpellTexture and GetSpellTexture(COMMANDING_SHOUT_ID)
+        return tex or CS_ICON
+    end
 
     local function FontSpec(t, key, sizeKey)
         local s = type(t[key]) == "table" and t[key] or {}
@@ -533,6 +568,12 @@ local function InitializeBattleShoutReminder()
         local bgC = RC:GetColor("battleShoutReminder", "background")
         frame.bg:SetColorTexture(bgC.r, bgC.g, bgC.b, opacity * 0.7)
         frame.icon:SetAlpha(opacity)
+        local tex = ShoutIcon()
+        if frame._bsIconTex ~= tex then
+            frame._bsIconTex = tex
+            frame.icon:SetTexture(tex)
+            frame.desaturate:SetTexture(tex)
+        end
         frame.desaturate:SetVertexColor(0.4, 0.4, 0.4, opacity)
         if frame.border then
             local bs = tonumber(db.borderSize) or 1
@@ -919,8 +960,10 @@ local function InitializeBattleShoutReminder()
         local defaults = {
             enabled         = false,
             locked          = true,
-            xOffset         = 300,
-            yOffset         = 400,
+            -- (a fresh character: on the left edge above the potions and
+            -- consumables, not on top of them)
+            xOffset         = (RC.PickDefault and RC:PickDefault(300, 25) or 300),
+            yOffset         = (RC.PickDefault and RC:PickDefault(400, 600) or 400),
             scale           = 1.0,
             opacity         = 0.85,
             fontSize        = 11,
@@ -1098,6 +1141,13 @@ local function InitializeBattleShoutReminder()
         local titleSpec = { face = tf.face, outline = tf.outline, shadow = tf.shadow, size = tf.size or fsz }
         local hb = frame.headerBar
         RC:ApplyFontSpec(hb.titleText, titleSpec, RC.BATTLE_SHOUT_TRACKER_FONT)
+        -- the title follows the watched shout
+        local watched = ShoutName()
+        if hb._bsWatched ~= watched then
+            hb._bsWatched = watched
+            hb.titleText:SetText(RCL[watched])
+            if hb.titleIcon then hb.titleIcon:SetTexture(ShoutIcon()) end
+        end
         if hb.titleIcon then
             Apply(hb.titleIcon, SpecOf(db, "titleIcon"), SetDef(frame._bsTitleIconDef or {}, "LEFT", hb, "LEFT", 6, 1), frame._bsTo)
             frame._bsTitleDef = frame._bsTitleDef or {}
@@ -1136,6 +1186,7 @@ local function InitializeBattleShoutReminder()
         RC.Position.Bind(frame, function() return self.db.battleShoutPartyTracker end, {
             point = "TOPLEFT", legacyRel = "BOTTOMLEFT",
             default = { point = "TOPLEFT", relPoint = "BOTTOMLEFT", x = 300, y = 400 },
+            gen2 = { point = "TOPLEFT", relPoint = "BOTTOMLEFT", x = 25, y = 600 },
         })
         RC.Position.RestoreFrame(frame)
 
@@ -1230,7 +1281,7 @@ local function InitializeBattleShoutReminder()
         for _, unit in ipairs(units) do
             if UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
                 local _, classToken = UnitClass(unit)
-                if BATTLE_SHOUT_CLASSES[classToken] then
+                if self:UnitNeedsBattleShoutClass(unit) then
                     local hasBuff, remaining, apValue, expTime = self:UnitBattleShoutStatus(unit)
                     local belowThreshold = hasBuff and threshold > 0 and remaining <= threshold
                     local _inRng, _chkRng = UnitInRange(unit)

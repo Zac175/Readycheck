@@ -228,6 +228,9 @@ RC.FEATURE_FLAVORS = {
     { id = "trinket_scanner", name = RCL["Trinket scanner"] },
     { id = "smart_macros", name = RCL["Smart macros"] },
     { id = "nameplates", name = RCL["Nameplate debuffs, execute glow and view distance (on Forever, enemy debuffs and health do not show in combat)"] },
+    -- (2026-11-09, Zac: "hide for now") Forever's reworked debuffs are not listed yet
+    { id = "nameplate_debuffs", name = RCL["Nameplate debuff groups (Sunder / Expose, Faerie Fire / Curse, Execute Range)"],
+      off = { forever = RCL["Forever's reworked debuffs are not listed yet"] }, kind = { forever = "not_there" } },
     { id = "stats_bar", name = RCL["Stats bar and character stats"] },
     { id = "spec_detection", name = RCL["Spec detection"] },
     { id = "mesh", name = RCL["Mesh network, remote settings, version check and gold ledger (outside instances on Forever)"] },

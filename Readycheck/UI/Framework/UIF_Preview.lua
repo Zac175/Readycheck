@@ -612,6 +612,23 @@ local BASE, FLAT, CreateProfessionalFontString = _uif.BASE, _uif.FLAT, _uif.Crea
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", pane, "TOPLEFT", EDGE, collapsed and -1 or -BAR_Y)
         local bw = math_max(1, w - 2 * EDGE)
+        -- (2026-11-09, Zac: "weird overlap here in the top right") the /rc
+        -- window's own header icons (reload, scale, fold, close) sit over
+        -- the strip's top right corner: where the control line would run
+        -- under them it ends short of the leftmost one instead
+        do
+            local win = RC.sidebarConfigFrame
+            local rb = win and win.reloadButton
+            local pl, pt = pane:GetLeft(), pane:GetTop()
+            local rl, rbot = rb and rb:IsVisible() and rb:GetLeft(), rb and rb:GetBottom()
+            if pl and pt and rl and rbot then
+                local barTop = pt - (collapsed and 1 or BAR_Y)
+                if barTop > rbot and barTop - BTN_H < rb:GetTop() then
+                    local room = rl - 10 - (pl + EDGE)
+                    if room < bw then bw = math_max(120, room) end
+                end
+            end
+        end
         bar:SetSize(bw, BTN_H)
         for _, other in pairs(entries) do
             if other.row then

@@ -62,7 +62,7 @@ local _sbs = RC._sbs
 
         if title then
             local titleText = self:CreateFontString(card, "OVERLAY", nil, 12)
-            titleText:SetPoint("TOPLEFT", card, "TOPLEFT", set and 1 or 12, set and -8 or -9)
+            titleText:SetPoint("TOPLEFT", card, "TOPLEFT", set and 11 or 12, set and -8 or -9)
             titleText:SetText(title)
             local titleColor = self:GetColor("text", "gold")
             titleText:SetTextColor(titleColor.r, titleColor.g, titleColor.b)
@@ -81,6 +81,21 @@ local _sbs = RC._sbs
             rule:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -S.SECTION_RULE_Y)
             rule:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, -S.SECTION_RULE_Y)
             card.rule = rule
+            -- (2026-11-09) a header, not a word: an accent tick before the
+            -- title and a line from it to the section's right edge
+            if set and card.title then
+                local tick = card:CreateTexture(nil, "ARTWORK")
+                tick:SetTexture(FLAT)
+                tick:SetSize(3, 13)
+                tick:SetPoint("RIGHT", card.title, "LEFT", -7, 0)
+                card.tick = tick
+                local line = card:CreateTexture(nil, "ARTWORK")
+                line:SetTexture(FLAT)
+                line:SetHeight(1)
+                line:SetPoint("LEFT", card.title, "RIGHT", 10, 0)
+                line:SetPoint("RIGHT", card, "RIGHT", 0, 0)
+                card.titleLine = line
+            end
             card.bands = {}
         end
 
@@ -198,7 +213,12 @@ local _sbs = RC._sbs
                 RC.UI:UpdateBorderColor(self.border, RC:GetColor("ui", "borderNormal"), 0)
                 self.accent:SetVertexColor(0, 0, 0, 0)
                 self.rule:SetVertexColor(RC.UI:SCol("text", S.SECTION_RULE_A))
-                if self.title then self.title:SetTextColor(RC.UI:SCol("text", S.SECTION_A)) end
+                if self.title then self.title:SetTextColor(RC.UI:SCol("text", 0.92)) end
+                if self.tick then
+                    local A = RC.UI:SAccent()
+                    self.tick:SetVertexColor(A.r, A.g, A.b, 1)
+                end
+                if self.titleLine then RC.UI:Grad(self.titleLine, RC:GetColor("settings", "text"), 0.22) end
                 for i, b in ipairs(self.bands) do
                     b:SetVertexColor(RC.UI:SCol("shade", (i % 2 == 1) and S.ROW_ODD or S.ROW_EVEN))
                 end

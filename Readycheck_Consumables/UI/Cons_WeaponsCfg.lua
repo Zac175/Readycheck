@@ -298,6 +298,8 @@ local GetTabHoverBg, GetTabNormalBg, GetTabNormalText, GetTabSelectedBg, GetTabS
                 if RC.ShowSidebarWeaponsBarConfig then RC:ShowSidebarWeaponsBarConfig(frame, true) end
             end)
             cardY = cardY - 26
+            -- (2026-11-09) not offered on TBC
+            if RC.Flavor and RC:Flavor() == "tbc" then hordeCheck:Hide() cardY = cardY + 26 end
 
             if self.db.weaponsBar.showBagWeapons == nil then
                 self.db.weaponsBar.showBagWeapons = true

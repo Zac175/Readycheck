@@ -527,6 +527,10 @@ end
 -- anything, i.e. has at least one true entry. nil / {} means "all raids".
 function RC:HasRaidFilter(set)
     if type(set) ~= "table" then return false end
+    -- (2026-11-09, Zac: "clear it/ignore") a game version with no raid list
+    -- of its own has no ticks to clear a pick with: a pick carried over
+    -- from another version is ignored there (and kept for that version)
+    if self.FeatureOn and not self:FeatureOn("raid_configs") then return false end
     for _, v in pairs(set) do
         if v then return true end
     end

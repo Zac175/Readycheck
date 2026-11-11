@@ -1,8 +1,8 @@
 ## Interface: 11509, 20506, 16001
-## Title: |cffd6a640Readycheck|r |cff999999v5.0.2|r
+## Title: |cffd6a640Readycheck|r |cff999999v5.0.4|r
 ## Notes: The Complete Character Toolkit - reminders, consumables, gear, trinket swaps, TTK modeling and more
 ## Author: Zac
-## Version: 5.0.2
+## Version: 5.0.4
 ## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
 ## SavedVariables: ReadycheckDB, WarriorReminderDB
 ## X-Category: Combat

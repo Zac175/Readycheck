@@ -532,7 +532,7 @@ function CS:CreateBuffPushoffAlertFrame()
     RC.Position.Bind(frame, function()
         RC.db.buffPushoffAlert = RC.db.buffPushoffAlert or {}
         return RC.db.buffPushoffAlert
-    end, { point = "CENTER", pointKey = "anchorPoint", default = { x = 0, y = 150 } })
+    end, { point = "CENTER", pointKey = "anchorPoint", default = { x = -350, y = 84 } })
     RC.Position.RestoreFrame(frame)
 
     frame:EnableMouse(true)

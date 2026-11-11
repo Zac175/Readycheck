@@ -142,7 +142,8 @@ local function InitializeBossNotes()
             enabled         = true,
             locked          = true,
             xOffset         = 0,
-            yOffset         = 150,
+            -- (a fresh character: above the reminder text, not inside it)
+            yOffset         = (RC.PickDefault and RC:PickDefault(150, 290) or 150),
             scale           = 1.0,
             opacity         = 0.85,
             fontSize        = 14,
@@ -482,7 +483,7 @@ local function InitializeBossNotes()
         frame:SetWidth(300)
         frame:SetHeight(40)
         RC.Position.Bind(frame, function() return self.db.bossNotes end, {
-            point = "CENTER", default = { x = 0, y = 150 },
+            point = "CENTER", default = { x = 0, y = 150 }, gen2 = { x = 0, y = 290 },
         })
         RC.Position.RestoreFrame(frame)
         frame:SetFrameStrata("HIGH")

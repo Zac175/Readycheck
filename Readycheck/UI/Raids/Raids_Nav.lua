@@ -52,12 +52,25 @@ local _sbr = RC._sbr
         local edge = RC:GetColor("settings", "edgeTint")
         local sel = b.isSelected and not b.isCategory
         local hot = b._rcHot and not sel
+        -- (2026-11-09) every page row is a button: a plate with an edge
+        -- that goes to the accent under the mouse and on the open page; a
+        -- group is a header with a line running to the sidebar's edge
+        local pl = b._rcPlate
+        if pl then
+            pl:SetShown(not b.isCategory)
+            if not b.isCategory then
+                if sel then pl:Paint(0, 0, A, 0.70)
+                elseif hot then pl:Paint(0.085, 0.06, A, 0.50)
+                else pl:Paint(0.045, 0.03, RC:GetColor("settings", "text"), 0.085) end
+            end
+        end
+        if b.groupLine then RC.UI:Grad(b.groupLine, A, 0.45) end
         b.glow:SetShown(sel and true or false)
-        if sel then RC.UI:Grad(b.glow, A, S.NAV_GLOW) end
+        if sel then RC.UI:Grad(b.glow, A, pl and 0.32 or S.NAV_GLOW) end
         b.edgeT:SetShown(sel and true or false)
         b.edgeB:SetShown(sel and true or false)
         if sel then RC.UI:Grad(b.edgeT, edge, S.NAV_EDGE) RC.UI:Grad(b.edgeB, edge, S.NAV_EDGE) end
-        local rowHot = hot and not b.isCategory
+        local rowHot = hot and not b.isCategory and not pl
         b.bg:SetShown(rowHot and true or false)
         b.bg:SetVertexColor(RC.UI:SCol("text", S.NAV_HL))
         b.hoverGlow:SetShown(rowHot and true or false)
@@ -106,35 +119,39 @@ local _sbr = RC._sbr
             t:Hide()
             return t
         end
-        -- (button.bg: the hover highlight; the row has no fill of its own)
-        button.glow = Tex("BACKGROUND", 1) button.glow:SetAllPoints()
-        button.hoverGlow = Tex("BACKGROUND", 2) button.hoverGlow:SetAllPoints()
-        button.bg = Tex("BACKGROUND", 3) button.bg:SetAllPoints()
+        -- (button.bg: the hover highlight). A page row sits on a plate 12
+        -- in from each side with a 3 px gap between rows; its wash, bar and
+        -- hairlines live inside the plate. A group row has none.
+        local box = button
+        if not isCategory then box = RC.UI:Plate(button, 12, 12, 1, 2, true).box end
+        button.glow = Tex("BACKGROUND", 1) button.glow:SetAllPoints(box)
+        button.hoverGlow = Tex("BACKGROUND", 2) button.hoverGlow:SetAllPoints(box)
+        button.bg = Tex("BACKGROUND", 3) button.bg:SetAllPoints(box)
         local function Edge(side)
             local g = Tex("BORDER", 0)
             g:SetHeight(1)
-            g:SetPoint(side .. "LEFT", button, side .. "LEFT", 0, 0)
-            g:SetPoint(side .. "RIGHT", button, side .. "RIGHT", 0, 0)
+            g:SetPoint(side .. "LEFT", box, side .. "LEFT", 0, 0)
+            g:SetPoint(side .. "RIGHT", box, side .. "RIGHT", 0, 0)
             return g
         end
         button.edgeT, button.edgeB = Edge("TOP"), Edge("BOTTOM")
         local function Bar(sub)
             local t = Tex("ARTWORK", sub)
             t:SetWidth(3)
-            t:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-            t:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+            t:SetPoint("TOPLEFT", box, "TOPLEFT", 0, 0)
+            t:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", 0, 0)
             return t
         end
         button.selectIndicator, button.hoverInd = Bar(2), Bar(1)
 
-        local x = isSubmenu and S.CHILD_X or S.NAV_LEFT
+        local x = isCategory and S.NAV_LEFT or 24
         button.text = self:CreateFontString(button, "OVERLAY", nil, isCategory and S.F_GROUP or S.F_NAV)
         button.text:SetPoint("LEFT", button, "LEFT", x, isRaid and 9 or 0)
         button.text:SetJustifyH("LEFT")
         button.text:SetWordWrap(false)
         button.text:SetText(menuItem.name)
         if not isRaid and not isCategory then
-            button.text:SetPoint("RIGHT", button, "RIGHT", menuItem.id == "mesh_sync" and -30 or -18, 0)
+            button.text:SetPoint("RIGHT", button, "RIGHT", menuItem.id == "mesh_sync" and -36 or -22, 0)
         end
 
         if isCategory then
@@ -145,6 +162,13 @@ local _sbr = RC._sbr
             chev:SetTexture(RC.UI.ICONS .. "add")
             chev:SetAlpha(0)
             button.chevron = chev
+            -- the group's line: from after its name (and the +/-) to the edge
+            local gl = button:CreateTexture(nil, "ARTWORK")
+            gl:SetTexture(FLAT)
+            gl:SetHeight(1)
+            gl:SetPoint("LEFT", button.text, "RIGHT", 26, 0)
+            gl:SetPoint("RIGHT", button, "RIGHT", -14, 0)
+            button.groupLine = gl
         end
 
         if menuItem.id == "mesh_sync" then
@@ -152,7 +176,7 @@ local _sbr = RC._sbr
             local msOn = MS and MS:IsEnabled()
             local dot = CreateFrame("Frame", nil, button)
             dot:SetSize(6, 6)
-            dot:SetPoint("RIGHT", button, "RIGHT", -18, 0)
+            dot:SetPoint("RIGHT", button, "RIGHT", -24, 0)
             local dotFill = dot:CreateTexture(nil, "ARTWORK")
             dotFill:SetAllPoints()
             RC.UI:DiscArt(dotFill, 6)
@@ -163,16 +187,16 @@ local _sbr = RC._sbr
         end
 
         if isRaid then
-            button.text:SetPoint("RIGHT", button, "RIGHT", -18, 9)
+            button.text:SetPoint("RIGHT", button, "RIGHT", -22, 9)
 
             button.profileText = self:CreateFontString(button, "OVERLAY", nil, 10)
             button.profileText:SetPoint("TOPLEFT", button.text, "BOTTOMLEFT", 0, -2)
-            button.profileText:SetPoint("RIGHT", button, "RIGHT", -18, 0)
+            button.profileText:SetPoint("RIGHT", button, "RIGHT", -22, 0)
             button.profileText:SetJustifyH("LEFT")
 
             button.countText = self:CreateFontString(button, "OVERLAY", nil, 10)
             button.countText:SetPoint("TOPLEFT", button.profileText, "BOTTOMLEFT", 0, -1)
-            button.countText:SetPoint("RIGHT", button, "RIGHT", -18, 0)
+            button.countText:SetPoint("RIGHT", button, "RIGHT", -22, 0)
             button.countText:SetJustifyH("LEFT")
 
             local profileName = "Default"

@@ -151,6 +151,11 @@ local _sbc = RC._sbc
     }
     local function RaidFilterList()
         local avail, seen, out = {}, {}, {}
+        -- (options audit 2026-11-09) a game version whose raids Readycheck
+        -- does not list yet (Core_Flavor's "raid_configs" row: Forever) has
+        -- no raid to tick: the names left are Classic Era's. No rows there;
+        -- a saved pick stays as it is.
+        if RC.FeatureOn and not RC:FeatureOn("raid_configs") then return out end
         for _, name in ipairs(RC.availableRaids or {}) do avail[name] = true end
         for _, name in ipairs(RAID_FILTER_ORDER) do
             if avail[name] then out[#out + 1] = name; seen[name] = true end

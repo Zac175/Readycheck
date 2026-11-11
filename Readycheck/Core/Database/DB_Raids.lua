@@ -1278,8 +1278,12 @@ RC.encounterAddPhases = {
             iconSize = 32,
             scale = 1.0,
             anchorPoint = "CENTER",
-            xOffset = 0,
-            yOffset = 150,
+            -- (2026-11-10: was 0 / 150, the boss notes' own spot; now left
+            -- of the centre column, level with the buff trackers on the
+            -- right. Filled into a profile once, so only a character that
+            -- has none yet gets it.)
+            xOffset = -350,
+            yOffset = 84,
             ttsEnabled = false,
             -- warn when a Darkmoon Faire fortune carried as a debuff is
             -- pushed off by the 16-debuff cap (works with `enabled` off)
@@ -1302,8 +1306,10 @@ RC.encounterAddPhases = {
             locked = true,
             soundKey = "",
             anchorPoint = "CENTER",
-            xOffset = 0,
-            yOffset = 220,
+            -- (2026-11-10: was 0 / 220, on the reminder text; now upper
+            -- right of the centre)
+            xOffset = 470,
+            yOffset = 280,
         },
 
         sidebarNav = {
@@ -1462,9 +1468,13 @@ RC.encounterAddPhases = {
             selectedStoneBySlot = {},
             itemOrder = {},
             locked = false,
-            anchorPoint = "TOPRIGHT",
-            xOffset = -10,
-            yOffset = -200,
+            -- (2026-11-10: a new character's bars start on the left edge
+            -- over the chat, where Zac has them; the old spots sat on the
+            -- quest tracker and the right action bars. A character that
+            -- already has the addon keeps its saved spot.)
+            anchorPoint = "TOPLEFT",
+            xOffset = 25,
+            yOffset = -636,
             mouseoverFade = false,
             mouseoverFadeAlpha = 0.15,
             petrificationCampMode = false,
@@ -1482,7 +1492,10 @@ RC.encounterAddPhases = {
             enabled         = true,
             locked          = true,
             xOffset         = 0,
-            yOffset         = 150,
+            -- (2026-11-10: was 150, inside the reminder text; now above
+            -- it. Filled into a profile once, so only a character that
+            -- has none yet gets it - the same for the spots below.)
+            yOffset         = 290,
             scale           = 1.0,
             opacity         = 0.85,
             fontSize        = 14,
@@ -1604,9 +1617,9 @@ RC.encounterAddPhases = {
                 [14530] = true,
             },
             locked = false,
-            anchorPoint = "TOPRIGHT",
-            xOffset = -10,
-            yOffset = -400,
+            anchorPoint = "TOPLEFT",
+            xOffset = 25,
+            yOffset = -604,
             mouseoverFade = false,
             mouseoverFadeAlpha = 0.15,
             ttsEnabled = false
@@ -1636,9 +1649,10 @@ RC.encounterAddPhases = {
             -- again when emptied, so absent = every raid counts. Same
             -- field on consumablesHelper, potionsBar and trinketBar.
             locked = false,
-            anchorPoint = "BOTTOMLEFT",
-            xOffset = 300,
-            yOffset = 100,
+            -- (2026-11-10: beside the chat, not inside it)
+            anchorPoint = "TOPLEFT",
+            xOffset = 450,
+            yOffset = -721,
             mouseoverFade = false,
             mouseoverFadeAlpha = 0.15,
             ttsEnabled = false
@@ -1660,10 +1674,11 @@ RC.encounterAddPhases = {
             -- to bottom, once picked on the page: orderPicked)
             order = "priority",
             priorities = {},
+            -- (2026-11-10: was 0 / 0, on the character; now under it)
             toggleButtonPosition = {
                 point = "CENTER",
                 x = 0,
-                y = 0
+                y = -180
             },
             configNames = {
                 default = "Default",
@@ -1724,11 +1739,19 @@ RC.encounterAddPhases = {
     -- db.customColors[category][key] if the user overrode it, else this.
     RC.defaultColors = {
 
+        -- (2026-11-10, Zac: "these 2 windows the ah in zui and then
+        -- consumables checker in readycheck are still like pitch black")
+        -- Every window outside the /rc window paints from these groups,
+        -- and they were still the old near-black (0.08 / 0.10 / 0.12)
+        -- after the /rc window went to #1C1C1C. The same family now:
+        -- window 0.110, cards 0.150, controls 0.160 or so; the frames on
+        -- screen (bars, trackers, the mover panel) follow. A colour picked
+        -- on the Appearance page still wins.
         ui = {
-            windowBackground = {r = 0.08, g = 0.08, b = 0.08, a = 0.95, label = RCL["Main Window BG"]},
-            elementBackground = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Headers/Panels BG"]},
-            cardBackground = {r = 0.10, g = 0.10, b = 0.10, a = 1, label = RCL["Settings Cards BG"]},
-            headerBackground = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Title Bar BG"]},
+            windowBackground = {r = 0.110, g = 0.110, b = 0.110, a = 0.97, label = RCL["Main Window BG"]},
+            elementBackground = {r = 0.160, g = 0.160, b = 0.160, a = 1, label = RCL["Headers/Panels BG"]},
+            cardBackground = {r = 0.150, g = 0.150, b = 0.150, a = 1, label = RCL["Settings Cards BG"]},
+            headerBackground = {r = 0.140, g = 0.140, b = 0.140, a = 1, label = RCL["Title Bar BG"]},
 
             borderNormal = {r = 0, g = 0, b = 0, a = 1, label = RCL["Default Border"]},
             borderHover = {r = 0.85, g = 0.65, b = 0.25, a = 1, label = RCL["Hover Border"]},
@@ -1755,12 +1778,12 @@ RC.encounterAddPhases = {
         },
 
         buttons = {
-            normalBackground = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Normal BG"]},
-            hoverBackground = {r = 0.18, g = 0.18, b = 0.18, a = 1, label = RCL["Hover BG"]},
-            pressedBackground = {r = 0.06, g = 0.06, b = 0.06, a = 1, label = RCL["Pressed BG"]},
-            disabledBackground = {r = 0.08, g = 0.08, b = 0.08, a = 0.6, label = RCL["Disabled BG"]},
-            configuredBackground = {r = 0.10, g = 0.18, b = 0.12, a = 1, label = RCL["Active/Selected BG"]},
-            configuredHover = {r = 0.13, g = 0.23, b = 0.15, a = 1, label = RCL["Active Hover BG"]},
+            normalBackground = {r = 0.165, g = 0.165, b = 0.165, a = 1, label = RCL["Normal BG"]},
+            hoverBackground = {r = 0.215, g = 0.215, b = 0.215, a = 1, label = RCL["Hover BG"]},
+            pressedBackground = {r = 0.090, g = 0.090, b = 0.090, a = 1, label = RCL["Pressed BG"]},
+            disabledBackground = {r = 0.120, g = 0.120, b = 0.120, a = 0.6, label = RCL["Disabled BG"]},
+            configuredBackground = {r = 0.14, g = 0.22, b = 0.16, a = 1, label = RCL["Active/Selected BG"]},
+            configuredHover = {r = 0.17, g = 0.27, b = 0.19, a = 1, label = RCL["Active Hover BG"]},
 
             closeNormal = {r = 0.9, g = 0.2, b = 0.2, a = 1, label = RCL["Red X Color"]},
             closeHover = {r = 1, g = 0.4, b = 0.4, a = 1, label = RCL["Red X Hover"]},
@@ -1769,10 +1792,10 @@ RC.encounterAddPhases = {
         },
 
         sidebar = {
-            background = {r = 0.07, g = 0.07, b = 0.07, a = 1, label = RCL["Menu BG"]},
-            buttonNormal = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Item Normal"]},
-            buttonHover = {r = 0.18, g = 0.18, b = 0.18, a = 1, label = RCL["Item Hover"]},
-            buttonSelected = {r = 0.10, g = 0.18, b = 0.12, a = 1, label = RCL["Item Selected"]},
+            background = {r = 0.095, g = 0.095, b = 0.095, a = 1, label = RCL["Menu BG"]},
+            buttonNormal = {r = 0.150, g = 0.150, b = 0.150, a = 1, label = RCL["Item Normal"]},
+            buttonHover = {r = 0.215, g = 0.215, b = 0.215, a = 1, label = RCL["Item Hover"]},
+            buttonSelected = {r = 0.14, g = 0.22, b = 0.16, a = 1, label = RCL["Item Selected"]},
             selectionIndicator = {r = 0.35, g = 0.70, b = 0.40, a = 1, label = RCL["Selection Bar"]},
         },
 
@@ -1781,21 +1804,21 @@ RC.encounterAddPhases = {
         -- only hue. Each control's state reads its alpha from RC.UI.S; the
         -- colour itself is read here, so a pick still wins.
         settings = {
-            windowBackground = {r = 0.069, g = 0.058, b = 0.047, a = 1, label = RCL["Window BG"]},
+            windowBackground = {r = 0.110, g = 0.110, b = 0.110, a = 1, label = RCL["Window BG"]},
             accent = {r = 0.85, g = 0.65, b = 0.25, a = 1, label = RCL["Accent"]},
             text = {r = 1, g = 1, b = 1, a = 1, label = RCL["Text"]},
             shade = {r = 0, g = 0, b = 0, a = 1, label = RCL["Row Bands"]},
-            input = {r = 0.030, g = 0.023, b = 0.018, a = 1, label = RCL["Input BG"]},
-            buttonBackground = {r = 0.089, g = 0.080, b = 0.072, a = 1, label = RCL["Button BG"]},
-            dropdownBackground = {r = 0.103, g = 0.095, b = 0.088, a = 1, label = RCL["Dropdown BG"]},
-            checkboxBackground = {r = 0.112, g = 0.105, b = 0.098, a = 1, label = RCL["Checkbox BG"]},
+            input = {r = 0.024, g = 0.024, b = 0.024, a = 1, label = RCL["Input BG"]},
+            buttonBackground = {r = 0.160, g = 0.160, b = 0.160, a = 1, label = RCL["Button BG"]},
+            dropdownBackground = {r = 0.150, g = 0.150, b = 0.150, a = 1, label = RCL["Dropdown BG"]},
+            checkboxBackground = {r = 0.160, g = 0.160, b = 0.160, a = 1, label = RCL["Checkbox BG"]},
             toggleOff = {r = 0.267, g = 0.267, b = 0.267, a = 1, label = RCL["Switch Off"]},
             hoverTint = {r = 0.85, g = 0.95, b = 0.90, a = 1, label = RCL["Hover Tint"]},
             edgeTint = {r = 0.7, g = 0.7, b = 0.7, a = 1, label = RCL["Selected Edge"]},
         },
 
         checkbox = {
-            background = {r = 0.1, g = 0.1, b = 0.1, a = 1, label = RCL["Background"]},
+            background = {r = 0.160, g = 0.160, b = 0.160, a = 1, label = RCL["Background"]},
             border = {r = 0, g = 0, b = 0, a = 1, label = RCL["Border"]},
             -- gold, like the rest of the UI (Zac 2026-11-02); unpicked, the tick is
             -- the gold Checkmark art itself, untinted (UIF_Widgets PaintCheckbox)
@@ -1804,8 +1827,8 @@ RC.encounterAddPhases = {
         },
 
         dropdown = {
-            background = {r = 0.12, g = 0.12, b = 0.12, a = 0.98, label = RCL["Background"]},
-            itemHover = {r = 0.2, g = 0.18, b = 0.12, a = 1, label = RCL["Item Hover"]},
+            background = {r = 0.150, g = 0.150, b = 0.150, a = 0.98, label = RCL["Background"]},
+            itemHover = {r = 0.24, g = 0.21, b = 0.14, a = 1, label = RCL["Item Hover"]},
             itemText = {r = 0.9, g = 0.9, b = 0.9, a = 1, label = RCL["Item Text"]},
             arrow = {r = 0.8, g = 0.65, b = 0.35, a = 1, label = RCL["Arrow"]},
             selected = {r = 0.85, g = 0.65, b = 0.25, a = 1, label = RCL["Selected"]},
@@ -1866,9 +1889,9 @@ RC.encounterAddPhases = {
         raids = {
             enabled = {r = 0.35, g = 0.6, b = 0.35, a = 1, label = RCL["Enabled Dot"]},
             disabled = {r = 0.5, g = 0.5, b = 0.5, a = 1, label = RCL["Disabled Dot"]},
-            bossEnabled = {r = 0.10, g = 0.18, b = 0.12, a = 1, label = RCL["Boss Enabled BG"]},
-            bossDisabled = {r = 0.15, g = 0.15, b = 0.15, a = 1, label = RCL["Boss Disabled BG"]},
-            trashBackground = {r = 0.12, g = 0.12, b = 0.15, a = 1, label = RCL["Trash BG"]},
+            bossEnabled = {r = 0.14, g = 0.22, b = 0.16, a = 1, label = RCL["Boss Enabled BG"]},
+            bossDisabled = {r = 0.19, g = 0.19, b = 0.19, a = 1, label = RCL["Boss Disabled BG"]},
+            trashBackground = {r = 0.16, g = 0.16, b = 0.19, a = 1, label = RCL["Trash BG"]},
             abilityActive = {r = 0.10, g = 0.18, b = 0.12, a = 1, label = RCL["Ability Active"]},
             abilityInactive = {r = 0.15, g = 0.15, b = 0.15, a = 1, label = RCL["Ability Inactive"]},
         },
@@ -1898,7 +1921,7 @@ RC.encounterAddPhases = {
         },
 
         weaponBar = {
-            frameBackground = {r = 0.08, g = 0.08, b = 0.1, a = 0.95, label = RCL["Frame BG"]},
+            frameBackground = {r = 0.11, g = 0.11, b = 0.13, a = 0.95, label = RCL["Frame BG"]},
             frameBorder = {r = 0.5, g = 0.8, b = 1, a = 0.3, label = RCL["Frame Border"]},
             accentLine = {r = 0.5, g = 0.8, b = 1, a = 0.5, label = RCL["Accent Line"]},
             titleText = {r = 0.5, g = 0.8, b = 1, a = 1, label = RCL["Title"]},
@@ -1921,7 +1944,7 @@ RC.encounterAddPhases = {
         },
 
         consumablesBar = {
-            frameBackground = {r = 0.08, g = 0.08, b = 0.08, a = 0.95, label = RCL["Frame BG"]},
+            frameBackground = {r = 0.110, g = 0.110, b = 0.110, a = 0.95, label = RCL["Frame BG"]},
             frameBorder = {r = 0.5, g = 0.8, b = 1, a = 0.3, label = RCL["Frame Border"]},
             accentLine = {r = 0.5, g = 0.8, b = 1, a = 0.5, label = RCL["Accent Line"]},
             titleText = {r = 1, g = 0.88, b = 0.12, a = 1, label = RCL["Title"]},
@@ -1940,7 +1963,7 @@ RC.encounterAddPhases = {
         },
 
         potionsBar = {
-            frameBackground = {r = 0.08, g = 0.06, b = 0.08, a = 0.95, label = RCL["Frame BG"]},
+            frameBackground = {r = 0.11, g = 0.09, b = 0.11, a = 0.95, label = RCL["Frame BG"]},
             frameBorder = {r = 0.7, g = 0.5, b = 0.7, a = 0.3, label = RCL["Frame Border"]},
             accentLine = {r = 0.7, g = 0.5, b = 0.7, a = 0.5, label = RCL["Accent Line"]},
             titleText = {r = 1, g = 0.7, b = 0.9, a = 1, label = RCL["Title"]},
@@ -1955,7 +1978,7 @@ RC.encounterAddPhases = {
         },
 
         gearManager = {
-            frameBackground = {r = 0.08, g = 0.08, b = 0.08, a = 0.95, label = RCL["Panel BG"]},
+            frameBackground = {r = 0.110, g = 0.110, b = 0.110, a = 0.95, label = RCL["Panel BG"]},
             frameBorder = {r = 0, g = 0, b = 0, a = 1, label = RCL["Panel Border"]},
             titleText = {r = 1, g = 0.82, b = 0, a = 1, label = RCL["Title"]},
 
@@ -1992,7 +2015,7 @@ RC.encounterAddPhases = {
         },
 
         ttkDisplay = {
-            background = {r = 0.08, g = 0.08, b = 0.08, a = 0.9, label = RCL["Background"]},
+            background = {r = 0.110, g = 0.110, b = 0.110, a = 0.9, label = RCL["Background"]},
             border = {r = 0, g = 0, b = 0, a = 1, label = RCL["Border"]},
             headerText = {r = 1, g = 0.82, b = 0, a = 1, label = RCL["Boss Name"]},
             labelText = {r = 0.6, g = 0.6, b = 0.6, a = 1, label = RCL["Labels"]},
@@ -2014,13 +2037,13 @@ RC.encounterAddPhases = {
             missingBorder = {r = 1, g = 0.3, b = 0.3, a = 1, label = RCL["Missing Border"]},
             missingText = {r = 1, g = 0.3, b = 0.3, a = 1, label = RCL["Missing Count"]},
             allBuffedText = {r = 0.3, g = 1, b = 0.3, a = 1, label = RCL["All Buffed"]},
-            background = {r = 0.08, g = 0.08, b = 0.08, a = 0.9, label = RCL["Background"]},
+            background = {r = 0.110, g = 0.110, b = 0.110, a = 0.9, label = RCL["Background"]},
         },
 
         battleShoutPartyTracker = {
-            background      = {r = 0.06, g = 0.06, b = 0.06, a = 0.95, label = RCL["Background"]},
+            background      = {r = 0.100, g = 0.100, b = 0.100, a = 0.95, label = RCL["Background"]},
             border          = {r = 0,    g = 0,    b = 0,    a = 1,    label = RCL["Border"]},
-            headerBackground= {r = 0.10, g = 0.10, b = 0.10, a = 1,    label = RCL["Header BG"]},
+            headerBackground= {r = 0.140, g = 0.140, b = 0.140, a = 1,    label = RCL["Header BG"]},
             titleText       = {r = 1,    g = 0.82, b = 0,    a = 1,    label = RCL["Title Text"]},
             apGood          = {r = 0.3,  g = 1,    b = 0.3,  a = 1,    label = RCL["AP Good"]},
             apWarning       = {r = 1,    g = 0.8,  b = 0.1,  a = 1,    label = RCL["AP Warning"]},
@@ -2036,7 +2059,7 @@ RC.encounterAddPhases = {
         -- loaded. Row text colours come from text.normal / text.warning /
         -- text.red.
         auraTracker = {
-            background    = {r = 0.06, g = 0.06, b = 0.06, a = 0.9,  label = RCL["Background"]},
+            background    = {r = 0.100, g = 0.100, b = 0.100, a = 0.9,  label = RCL["Background"]},
             border        = {r = 0,    g = 0,    b = 0,    a = 1,    label = RCL["Border"]},
             titleText     = {r = 1,    g = 0.82, b = 0,    a = 1,    label = RCL["Title Text"]},
             stackText     = {r = 1,    g = 1,    b = 1,    a = 1,    label = RCL["Stack Count"]},
@@ -2044,9 +2067,9 @@ RC.encounterAddPhases = {
         },
 
         uiMover = {
-            panelBackground = {r = 0.08, g = 0.08, b = 0.08, a = 0.95, label = RCL["Panel BG"]},
+            panelBackground = {r = 0.110, g = 0.110, b = 0.110, a = 0.95, label = RCL["Panel BG"]},
             panelBorder = {r = 0, g = 0, b = 0, a = 1, label = RCL["Panel Border"]},
-            headerBackground = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Header BG"]},
+            headerBackground = {r = 0.150, g = 0.150, b = 0.150, a = 1, label = RCL["Header BG"]},
             headerText = {r = 1, g = 0.82, b = 0, a = 1, label = RCL["Header Text"]},
 
             anchorBackground = {r = 1, g = 1, b = 1, a = 0.06, label = RCL["Anchor BG"]},
@@ -2061,8 +2084,8 @@ RC.encounterAddPhases = {
             inputBackground = {r = 0.07, g = 0.07, b = 0.07, a = 1, label = RCL["Input BG"]},
             labelText = {r = 0.7, g = 0.7, b = 0.7, a = 1, label = RCL["Labels"]},
 
-            buttonBackground = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Button BG"]},
-            buttonBackgroundHover = {r = 0.18, g = 0.18, b = 0.18, a = 1, label = RCL["Button Hover"]},
+            buttonBackground = {r = 0.165, g = 0.165, b = 0.165, a = 1, label = RCL["Button BG"]},
+            buttonBackgroundHover = {r = 0.215, g = 0.215, b = 0.215, a = 1, label = RCL["Button Hover"]},
             borderBlack = {r = 0, g = 0, b = 0, a = 1, label = RCL["Button Border"]},
 
             arrowNormal = {r = 0.85, g = 0.65, b = 0.25, a = 1, label = RCL["Arrow Normal"]},
@@ -2070,15 +2093,15 @@ RC.encounterAddPhases = {
             arrowPushed = {r = 1, g = 0.82, b = 0, a = 1, label = RCL["Arrow Pushed"]},
             arrowHighlight = {r = 0.85, g = 0.65, b = 0.25, a = 0.3, label = RCL["Arrow Highlight"]},
 
-            checkboxBackground = {r = 0.07, g = 0.07, b = 0.07, a = 1, label = RCL["Checkbox BG"]},
+            checkboxBackground = {r = 0.160, g = 0.160, b = 0.160, a = 1, label = RCL["Checkbox BG"]},
             checkboxLabel = {r = 0.7, g = 0.7, b = 0.7, a = 1, label = RCL["Checkbox Label"]},
             checkmarkColor = {r = 0.3, g = 1, b = 0.3, a = 1, label = RCL["Checkmark"]},
 
             whiteText = {r = 1, g = 1, b = 1, a = 1, label = RCL["White Text"]},
             tooltipText = {r = 0.8, g = 0.8, b = 0.8, a = 1, label = RCL["Tooltip Text"]},
 
-            saveButtonBg = {r = 0.12, g = 0.16, b = 0.12, a = 1, label = RCL["Save Button"]},
-            saveButtonBgHover = {r = 0.15, g = 0.2, b = 0.15, a = 1, label = RCL["Save Hover"]},
+            saveButtonBg = {r = 0.15, g = 0.21, b = 0.15, a = 1, label = RCL["Save Button"]},
+            saveButtonBgHover = {r = 0.18, g = 0.25, b = 0.18, a = 1, label = RCL["Save Hover"]},
         },
     }
 

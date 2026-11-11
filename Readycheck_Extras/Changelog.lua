@@ -53,6 +53,49 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.4",
+            date = "2026-11-10",
+            title = "Commanding Shout, lighter windows and a faster search",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "TBC: the Battle Shout reminder can watch Commanding Shout instead. Pick the shout you keep up on its page.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "The pages in the sidebar are proper buttons, with a gold edge under the mouse and on the open page.",
+                        "Tabs are raised buttons with a gold line on the open one.",
+                        "Section titles have a gold mark and a line across the page.",
+                        "Buttons have a raised face.",
+                        "The window's corner buttons (reload, size, fold, close) are small raised buttons.",
+                        "The Gear Manager's tabs match the rest of the window.",
+                        "The \"What's New\" window's buttons match ZacUI's.",
+                        "Options that do nothing on a game version are hidden on that version.",
+                        "Spec detection lists your talents on TBC and reads the new talent tree on WoW Forever.",
+                        "The consumables checker, the bars and the trackers are a lighter grey instead of near-black.",
+                        "On a new character more frames start in spots where they don't overlap. Characters you already have are not moved.",
+                        "The settings search remembers what it has read, so it no longer stalls the first time you search each session.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "The preview's small buttons no longer sit under the window's reload and close icons.",
+                        "The settings window was darker than ZacUI's. It now uses the same colour.",
+                        "Scrolling a long page no longer slows down near the top and bottom.",
+                        "Slider handles have a thin dark outline.",
+                        "The window's size is kept when you reopen it.",
+                        "Typing in the settings search no longer lags.",
+                        "The close button no longer glows white under the mouse, and the reload button is the same height as the others.",
+                        "Sapphiron's reminders were greyed out on game versions without Polarity Mode.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.2",
             date = "2026-11-08",
             title = "A cleaner settings window",
@@ -1332,7 +1375,7 @@ local function InitializeChangelog()
 
         local scrollFrame = CreateFrame("ScrollFrame", nil, frame)
         scrollFrame:SetPoint("TOPLEFT", 6, -36)
-        scrollFrame:SetPoint("BOTTOMRIGHT", -22, 42)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -22, 54)
         frame.scrollFrame = scrollFrame
 
         local content = CreateFrame("Frame", nil, scrollFrame)
@@ -1351,7 +1394,7 @@ local function InitializeChangelog()
         frame.scrollBar = scrollBar
 
         local buttonArea = CreateFrame("Frame", nil, frame)
-        buttonArea:SetHeight(36)
+        buttonArea:SetHeight(48)   -- (taller buttons, as ZacUI's Got it)
         buttonArea:SetPoint("BOTTOMLEFT", 0, 0)
         buttonArea:SetPoint("BOTTOMRIGHT", 0, 0)
 
@@ -1364,8 +1407,8 @@ local function InitializeChangelog()
         footerRule:SetTexture(FLAT)
         footerRule:SetVertexColor(ruleCol.r, ruleCol.g, ruleCol.b, ruleCol.a or 1)
 
-        local fullBtn = RC.UI:CreateStyledButton(buttonArea, "View Full Changelog", 140, 22)
-        fullBtn:SetPoint("LEFT", 10, 0)
+        local fullBtn = RC.UI:CreateStyledButton(buttonArea, "View Full Changelog", 170, 30)
+        fullBtn:SetPoint("LEFT", 14, 0)
         fullBtn:SetScript("OnClick", function()
             -- Same cached frame, just repopulated in "all versions" mode -
             -- no Hide()/Show() round trip (that only caused a visible flash
@@ -1376,7 +1419,7 @@ local function InitializeChangelog()
         end)
 
         -- Primary action wears the active look.
-        local okBtn = RC.UI:CreateStyledButton(buttonArea, "Got it!", 100, 22)
+        local okBtn = RC.UI:CreateStyledButton(buttonArea, "Got it", 130, 30)
         okBtn:SetPoint("RIGHT", -20, 0)
         okBtn:SetActive(true)
         okBtn:SetScript("OnClick", function()
@@ -1400,6 +1443,10 @@ local function InitializeChangelog()
         -- the 5.0 popup look (UIF_Dialogs)
         RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = title, close = closeBtn,
             dims = { versionText }, rules = { footerRule }, buttons = { fullBtn }, primary = okBtn })
+        -- (2026-11-09, Zac likes ZacUI's Got it: a raised plate, the
+        -- primary one with the accent on its edge and label)
+        RC.UI:StyleSettingsButton(fullBtn)
+        RC.UI:StyleSettingsButton(okBtn)
 
         self.frame = frame
         return frame

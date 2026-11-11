@@ -112,9 +112,10 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             thumb:SetSize(S.THUMB, S.THUMB)
             RC.UI:DiscArt(thumb, S.THUMB)
             thumbBack = slider:CreateTexture(nil, "ARTWORK")
-            thumbBack:SetSize(S.THUMB + 4, S.THUMB + 4)
+            -- a one pixel black ring round the gold grip
+            thumbBack:SetSize(S.THUMB + 2, S.THUMB + 2)
             thumbBack:SetPoint("CENTER", thumb, "CENTER", 0, 0)
-            RC.UI:DiscArt(thumbBack, S.THUMB + 4)
+            RC.UI:DiscArt(thumbBack, S.THUMB + 2)
         else
             RC.UI:AddThumbBorder(slider)
         end
@@ -144,7 +145,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                 local A = RC.UI:SAccent()
                 local k = (hovered or dragging) and 1.15 or 1
                 thumb:SetVertexColor(math_min(1, A.r * k), math_min(1, A.g * k), math_min(1, A.b * k), 1)
-                thumbBack:SetVertexColor(RC.UI:SCol("windowBackground", 1))
+                thumbBack:SetVertexColor(RC.UI:SCol("shade", 1))
                 trackPill:Color(RC.UI:SCol("text", S.SL_TRACK_A))
                 fillPill:Color(A.r, A.g, A.b, S.SL_FILL_A)
                 return

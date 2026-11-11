@@ -386,6 +386,14 @@ local function _seq_look() return RC._seq.Look end
                 {key = "ttsCustomItems",     label = RCL["Custom Items"]},
                 {key = "ttsDaggerInOffhand", label = RCL["Offhand Dagger"]},
             }
+            -- (2026-11-09) the T2 set and the Naxxramas off hands are Classic
+            -- Era raid gear: their rows show on Classic Era only
+            if RC.Flavor and RC:Flavor() ~= "era" then
+                for i = #ttsTypeRows, 1, -1 do
+                    local k = ttsTypeRows[i].key
+                    if k == "ttsWrathGear" or k == "ttsDaggerInOffhand" then table.remove(ttsTypeRows, i) end
+                end
+            end
             for _, row in ipairs(ttsTypeRows) do
                 local typeKey = row.key
                 local typeCheck = self.UI:CreateCheckbox(soundCard, row.label, db[typeKey] ~= false)
@@ -508,6 +516,12 @@ local function _seq_look() return RC._seq.Look end
             {key = "detectCustomItems",    condKey = "detectCustomItemsCondition",    label = RCL["Custom Items"]},
             {key = "detectDaggerInOffhand",condKey = "detectDaggerInOffhandCondition",label = RCL["Kingsfall / Claw in Offhand"]},
         }
+        if RC.Flavor and RC:Flavor() ~= "era" then
+            for i = #checks, 1, -1 do
+                local k = checks[i].key
+                if k == "detectWrathGear" or k == "detectDaggerInOffhand" then table.remove(checks, i) end
+            end
+        end
 
         local checkDefaults = {
             detectFastWeapons = true, detectShields = true,

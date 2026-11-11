@@ -75,7 +75,9 @@ local ColorPreviews = _sbs.ColorPreviews
             local f = RC.sidebarConfigFrame
             if f then
                 if f.bg then f.bg:SetAlpha(alpha) end
-                if f.sidebar and f.sidebar.bg then f.sidebar.bg:SetAlpha(alpha) end
+                if f.sidebar and f.sidebar.bg then
+                    f.sidebar.bg:SetAlpha(alpha * ((RC.UI and RC.UI.S and RC.UI.S.SIDEBAR_A) or 0.20))
+                end
                 if f.contentBg then f.contentBg:SetAlpha(alpha) end
             end
             if slider.saveTimer then slider.saveTimer:Cancel() end

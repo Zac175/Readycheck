@@ -110,7 +110,8 @@ local _sbs = RC._sbs
         local frame = self.sidebarConfigFrame
         if not frame then return end
 
-        local windowBgColor = self:GetColor("ui", "windowBackground")
+        -- (2026-11-09: the /rc window's own colour, the same as ZacUI's)
+        local windowBgColor = self:GetColor("settings", "windowBackground")
         local headerBgColor = self:GetColor("ui", "headerBackground")
         local accentColor = self:GetColor("ui", "accentGold")
         local headerTextColor = self:GetColor("ui", "headerText")
@@ -127,7 +128,9 @@ local _sbs = RC._sbs
 
         local bgOpacity = (self.db and self.db.fontSettings and self.db.fontSettings.mainWindowBgOpacity) or 1.0
         if frame.bg then frame.bg:SetAlpha(bgOpacity) end
-        if frame.sidebar and frame.sidebar.bg then frame.sidebar.bg:SetAlpha(bgOpacity) end
+        if frame.sidebar and frame.sidebar.bg then
+            frame.sidebar.bg:SetAlpha(bgOpacity * ((self.UI and self.UI.S and self.UI.S.SIDEBAR_A) or 0.20))
+        end
         if frame.contentBg then frame.contentBg:SetAlpha(bgOpacity) end
 
         if frame.border and self.UI and self.UI.UpdateBorderColor then

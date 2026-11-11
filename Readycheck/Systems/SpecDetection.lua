@@ -199,6 +199,66 @@ local function InitializeSpecDetection()
         local hasDefiance = false
         local hasLastStand = false
         local defianceRank = 0
+        local eraTree = not (self.Flavor and self:Flavor() ~= "era")
+
+        -- WoW Forever has no talent tabs: its talents are one trait tree
+        -- whose groups are the three old trees, in tree order. Every node
+        -- with a rank bought counts for its group and is listed by name.
+        if GetNumTalentTabs() == 0 and C_ClassTalents and C_Traits and C_ClassTalents.GetActiveConfigID
+            and C_Traits.GetConfigInfo and C_Traits.GetTreeNodes and C_Traits.GetNodeInfo then
+            local detected = self.specDetection.detectedTalents
+            pcall(function()
+                local Tr = C_Traits
+                local configID = C_ClassTalents.GetActiveConfigID()
+                if not configID then return end
+                local cfg = Tr.GetConfigInfo(configID)
+                local treeID = cfg and cfg.treeIDs and cfg.treeIDs[1]
+                if not treeID then return end
+                local index, n = {}, 0
+                if Tr.GetGroupDisplayInfoByTreeID then
+                    for _, g in ipairs(Tr.GetGroupDisplayInfoByTreeID(treeID) or {}) do
+                        local gid = type(g) == "table" and g.groupID or g
+                        if gid and not index[gid] then n = n + 1 index[gid] = n end
+                    end
+                end
+                local secret = issecretvalue
+                for _, nodeID in ipairs(Tr.GetTreeNodes(treeID) or {}) do
+                    local info = Tr.GetNodeInfo(configID, nodeID)
+                    local ranks = info and info.ranksPurchased
+                    if secret and secret(ranks) then ranks = 0 end
+                    if type(ranks) == "number" and ranks > 0 then
+                        local tab
+                        for _, gid in ipairs(type(info.groupIDs) == "table" and info.groupIDs or {}) do
+                            if not index[gid] then n = n + 1 index[gid] = n end
+                            tab = tab or index[gid]
+                        end
+                        if tab and tab <= 3 then tabPoints[tab] = (tabPoints[tab] or 0) + ranks end
+                        -- the node's name and icon, through its entry and definition
+                        local entryID = info.activeEntry and info.activeEntry.entryID
+                            or (type(info.entryIDs) == "table" and info.entryIDs[1])
+                        local entry = entryID and Tr.GetEntryInfo and Tr.GetEntryInfo(configID, entryID)
+                        local def = entry and entry.definitionID and Tr.GetDefinitionInfo
+                            and Tr.GetDefinitionInfo(entry.definitionID)
+                        local spellID = def and (def.spellID or def.overriddenSpellID)
+                        local name = def and def.overrideName
+                        if (not name or name == "") and spellID and C_Spell and C_Spell.GetSpellName then
+                            name = C_Spell.GetSpellName(spellID)
+                        end
+                        if type(name) == "string" and name ~= "" and not (secret and secret(name)) then
+                            detected[name] = {
+                                rank = ranks,
+                                maxRank = info.maxRanks or ranks,
+                                icon = def.overrideIcon or (spellID and C_Spell and C_Spell.GetSpellTexture
+                                    and C_Spell.GetSpellTexture(spellID)) or nil,
+                                tab = tab or 1,
+                                abbrev = name,
+                                important = true,
+                            }
+                        end
+                    end
+                end
+            end)
+        end
 
         for tab = 1, GetNumTalentTabs() do
             for talent = 1, GetNumTalents(tab) do
@@ -216,14 +276,18 @@ local function InitializeSpecDetection()
                         end
 
                         local keyTalent = self.specDetection.keyTalents and self.specDetection.keyTalents[name]
-                        if keyTalent then
+                        -- (2026-11-09, Zac: "redo it now") the list above is
+                        -- Classic Era's tree. On another game version every
+                        -- talent you have points in is taken, under its own
+                        -- name where the list has no short one.
+                        if keyTalent or not eraTree then
                             self.specDetection.detectedTalents[name] = {
                                 rank = rank,
                                 maxRank = maxRank,
                                 icon = icon,
                                 tab = tab,
-                                abbrev = keyTalent.abbrev,
-                                important = keyTalent.important
+                                abbrev = keyTalent and keyTalent.abbrev or name,
+                                important = (not keyTalent) or keyTalent.important
                             }
                         end
                     else
@@ -258,7 +322,16 @@ local function InitializeSpecDetection()
 
             -- Order matters: furyProt has to be caught before the plain
             -- prot test, or a deep-fury tank reads as prot.
-            if hasDefiance and furyTalents >= 20 then
+            if not eraTree then
+                -- another game version's trees: the tree with most points
+                if protTalents >= armsTalents and protTalents >= furyTalents and protTalents > 0 then
+                    spec = "prot"
+                elseif armsTalents > furyTalents then
+                    spec = "arms"
+                else
+                    spec = "fury"
+                end
+            elseif hasDefiance and furyTalents >= 20 then
                 spec = "furyProt"
             elseif hasLastStand or protTalents >= 30 then
                 spec = "prot"

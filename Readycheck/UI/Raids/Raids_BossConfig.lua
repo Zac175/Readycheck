@@ -843,11 +843,15 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
         -- fires these specific reminders itself; polarityOwnedKeys just
         -- greys them out here and blocks the click handler below so the
         -- player doesn't configure a duplicate/conflicting trigger.
+        -- (Only where Polarity Mode runs: on a game version without it -
+        -- Core_Flavor row "polarity" - a switch copied over from another
+        -- character must not grey these rows out with nothing firing them.)
         local polarityActive =
             (encounterType == "boss")
             and (encounterName == "Sapphiron")
             and self.db.polarityMode
             and self.db.polarityMode.enabled
+            and not (RC.FeatureOn and not RC:FeatureOn("polarity"))
 
         local polarityOwnedKeys = {}
         if polarityActive then

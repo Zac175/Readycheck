@@ -370,6 +370,14 @@ local function Store()
         ts.alertsEnabled = (ts.pullTimerEnabled ~= nil) and true or false
     end
 
+    -- (2026-11-10) A table never written before (pullTimerEnabled, its
+    -- oldest key, is not there yet) is a fresh install: the main bars
+    -- start under the reminder text instead of inside it. An install from
+    -- before keeps 188 (its own saved value, or the default below).
+    if ts.pullTimerEnabled == nil and ts.pullTimerMainOffsetY == nil then
+        ts.pullTimerMainOffsetY = 112
+    end
+
     -- Top level takes new keys only. Alert rows merge two levels down so a
     -- new category or a new buff appears, while an existing row is untouched.
     Backfill(ts, timerSettingsDefaults, 0)

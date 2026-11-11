@@ -17,20 +17,24 @@ RC.SETTING_CATEGORIES = {
     { id = "sidebar", group = "Display & UI", label = RCL["Sidebar"], },
     { id = "minimap", group = "Display & UI", label = RCL["Minimap Button"], },
     { id = "statsBar", group = "Display & UI", label = RCL["Stats Bar"], },
-    { id = "ttkDisplay", group = "Display & UI", label = RCL["TTK Display Bar"], },
-    { id = "buffAlert", group = "Display & UI", label = RCL["Buff Pushoff Alert"], },
+    { id = "ttkDisplay", group = "Display & UI", label = RCL["TTK Display Bar"], feature = "ttk", },
+    { id = "buffAlert", group = "Display & UI", label = RCL["Buff Pushoff Alert"], feature = "buff_pushoff", },
     { id = "abilityReminders", group = "Reminders", label = RCL["Ability Reminders"], },
     { id = "customReminders", group = "Reminders", label = RCL["Custom Reminders"], },
     { id = "smartMacros", group = "Reminders", label = RCL["Smart Macros"], },
     { id = "battleShout", group = "Reminders", label = RCL["Battle Shout"], },
     -- `feature`: a Core_Flavor row; the lists hide it where that is off
     -- (not on WoW Forever), as they do for `addon` below
+    -- (options audit 2026-11-09: every category whose whole feature is off on
+    -- a game version carries its row - TTK, buff pushoff, Chronoboon, world
+    -- buffs, raid configs, boss notes, the boss debuff tracker - so Sync
+    -- Rules, Broadcast and Import / Export do not list it there)
     { id = "battleShoutTracker", group = "Reminders", label = RCL["Battle Shout Party Tracker"], feature = "battle_shout_party", },
-    { id = "boonReminder", group = "Reminders", label = RCL["Chronoboon Reminder"], },
+    { id = "boonReminder", group = "Reminders", label = RCL["Chronoboon Reminder"], feature = "chronoboon", },
     { id = "repairReminder", group = "Reminders", label = RCL["Repair Reminder"], },
     { id = "fastWeapon", group = "Reminders", label = RCL["Fast Weapon Reminder"], },
     { id = "specDetection", group = "Combat", label = RCL["Spec Detection"], },
-    { id = "executeCalc", group = "Combat", label = RCL["ML Predictions & TTK"], },
+    { id = "executeCalc", group = "Combat", label = RCL["ML Predictions & TTK"], feature = "ttk", },
     { id = "bars", group = "Equipment", label = RCL["All Bars"], },
     { id = "trinketSwap", group = "Equipment", label = RCL["Trinket Swap"], },
     { id = "gearManager", group = "Equipment", label = RCL["Gear Manager Settings"], },
@@ -38,10 +42,10 @@ RC.SETTING_CATEGORIES = {
     { id = "hotswap", group = "Equipment", label = RCL["Hotswap Macros"], },
     { id = "consumablesHelper", group = "Consumables", label = RCL["Consumables Helper"], },
     { id = "consumablesChecker", group = "Consumables", label = RCL["Consumables Checker"], },
-    { id = "raidProfiles", group = "Raids", label = RCL["Raid Profiles"], },
-    { id = "bossNotes", group = "Raids", label = RCL["Boss Notes"], },
+    { id = "raidProfiles", group = "Raids", label = RCL["Raid Profiles"], feature = "raid_configs", },
+    { id = "bossNotes", group = "Raids", label = RCL["Boss Notes"], feature = "boss_notes", },
     { id = "nameplateAuras", group = "Display & UI", label = RCL["Nameplates"], },
-    { id = "worldBuffs", group = "Display & UI", label = RCL["World Buff Board"], },
+    { id = "worldBuffs", group = "Display & UI", label = RCL["World Buff Board"], feature = "world_tools", },
     { id = "raidPlanner", group = "Raids", label = RCL["Raid Planner"], retired = true, },
     { id = "meshBar", group = "Display & UI", label = RCL["Sync Transfer Bar"], },
     -- Appended (not next to their Reminders siblings) so the mesh digest's
@@ -52,7 +56,7 @@ RC.SETTING_CATEGORIES = {
     -- lists (Sync Rules, Import/Export, the request picker) hide it while
     -- that addon is not loaded - see RC:IsSettingCategoryAvailable.
     { id = "raidBuffTracker", group = "Reminders", label = RCL["Raid Buff Tracker"], addon = "Readycheck_Reminders", },
-    { id = "bossDebuffTracker", group = "Reminders", label = RCL["Boss Debuff Tracker"], addon = "Readycheck_Reminders", },
+    { id = "bossDebuffTracker", group = "Reminders", label = RCL["Boss Debuff Tracker"], addon = "Readycheck_Reminders", feature = "boss_debuff_tracker", },
     { id = "motion", group = "Display & UI", label = RCL["Animations"], },
 }
 
@@ -545,6 +549,7 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["battleShoutReminder.showAPValue"]       = RCL["Show attack power value"],
     ["battleShoutReminder.visibilityRaids"]   = RCL["Which raids count"],
     ["battleShoutReminder.trackScope"]        = RCL["Track my group or just me"],
+    ["battleShoutReminder.shout"]             = RCL["Battle Shout or Commanding Shout"],
     ["battleShoutReminder.greedMode"]         = RCL["Greed mode"],
     ["battleShoutReminder.greedSkipIfImpCleave"] = RCL["Greed: skip with Improved Cleave"],
     ["battleShoutReminder.rangeCheck"]        = RCL["Range check"],

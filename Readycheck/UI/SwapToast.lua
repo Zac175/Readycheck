@@ -38,8 +38,8 @@ local DEFAULTS = {
     locked = true,
     soundKey = "",          -- a LibSharedMedia sound, "" = silent
     anchorPoint = "CENTER",
-    xOffset = 0,
-    yOffset = 220,
+    xOffset = 470,
+    yOffset = 280,
 }
 
 local MAX_NAMED = 4         -- pieces named on the second line; more than that is a count
@@ -238,7 +238,9 @@ function ST.BuildNotice(parent, live)
         f:SetClampedToScreen(true)
         f:SetScale(tonumber(ST:Settings().scale) or 1)   -- the saved spot is in the frame's units
         RC.Position.Bind(f, function() return ST:Settings() end,
-            { point = "TOPLEFT", pointKey = "anchorPoint", default = { point = "CENTER", relPoint = "CENTER", x = 0, y = 220 } })
+            { point = "TOPLEFT", pointKey = "anchorPoint", default = { point = "CENTER", relPoint = "CENTER", x = 0, y = 220 },
+              -- (a fresh character: upper right of the centre, clear of the reminder text)
+              gen2 = { point = "CENTER", relPoint = "CENTER", x = 470, y = 280 } })
         RC.Position.RestoreFrame(f)
         RC.Position.MakeMovable(f, function() return ST:Settings().locked ~= true end)
         f:Hide()

@@ -662,7 +662,8 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         RC.Position.Bind(button, function()
             self.db.trinketSwap.toggleButtonPosition = self.db.trinketSwap.toggleButtonPosition or {}
             return self.db.trinketSwap.toggleButtonPosition
-        end, { point = "CENTER", pointKey = "point", xKey = "x", yKey = "y", default = { x = 0, y = 0 } })
+        end, { point = "CENTER", pointKey = "point", xKey = "x", yKey = "y", default = { x = 0, y = 0 },
+               gen2 = { x = 0, y = -180 } })   -- (a fresh character: under the character, not on it)
         RC.Position.RestoreFrame(button)
 
         self:BuildTrinketToggleFace(button)

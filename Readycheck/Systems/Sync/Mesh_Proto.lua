@@ -1893,7 +1893,8 @@ local _mss = RC._mss
                 if _mss.cfg then _mss.cfg.progressBarPos = nil end
             end
             return RC.db.meshProgressBar
-        end, { point = "CENTER", xKey = "x", yKey = "y", default = { x = 0, y = 220 } })
+        end, { point = "CENTER", xKey = "x", yKey = "y", default = { x = 0, y = 220 },
+               gen2 = { x = 470, y = 170 } })   -- (a fresh character: under the swap toast)
         RC.Position.RestoreFrame(f)
         f.ApplySavedPos = function(self) RC.Position.RestoreFrame(self) end
         if RC.UIMover and RC.UIMover.RegisterFrame then

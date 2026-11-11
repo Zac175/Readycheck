@@ -628,7 +628,9 @@ local ABILITY_READY_TTL = 1.0
         if RC.Position and RC.Position.Bind then
             RC.Position.Bind(f, PromptStore,
                 { point = "TOPLEFT", xKey = "x", yKey = "y",
-                  default = { point = "CENTER", x = 0, y = 160 } })
+                  default = { point = "CENTER", x = 0, y = 160 },
+                  -- (a fresh character: left of the character, under the must-have list)
+                  gen2 = { point = "CENTER", x = -470, y = 0 } })
             RC.Position.RestoreFrame(f)
             RC.Position.MakeMovable(f)
         end

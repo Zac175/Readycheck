@@ -251,6 +251,7 @@ end
 -- the sidebar by name); the search waits a beat so a fast word is one
 -- search, not six half-word redraws.
 function S.OnTextChanged(outer, text)
+    if S.NoteKey then S.NoteKey() end
     serial = serial + 1
     local mine = serial
     C_Timer.After(DEBOUNCE, function()

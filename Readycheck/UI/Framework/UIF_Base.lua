@@ -677,6 +677,78 @@ local _uif = RC._uif
         end
     end
 
+    -- THE PLATE (2026-11-09: buttons that look like buttons). A raised
+    -- face on a settings control: a pale lift fading down from its top, a
+    -- pale line along the inside of its top and, with edges = true, a
+    -- one-pixel edge all round. Inset l / r / t / b from the frame (or laid
+    -- on `over`, a texture). Made once per frame (frame._rcPlate).
+    -- :Paint(liftA, sheenA, edgeColor, edgeA) colours it from the theme;
+    -- :SetShown hides all of it. p.box is the area it covers.
+    function RC.UI:Plate(f, l, r, t, b, edges, over)
+        local p = f._rcPlate
+        if p then return p end
+        p = { parts = {} }
+        local function T(layer, sub)
+            local x = f:CreateTexture(nil, layer, nil, sub)
+            x:SetTexture(FLAT)
+            p.parts[#p.parts + 1] = x
+            return x
+        end
+        local box = over
+        if not box then
+            box = T("BACKGROUND", 0)
+            box:SetPoint("TOPLEFT", f, "TOPLEFT", l or 0, -(t or 0))
+            box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(r or 0), b or 0)
+            box:SetVertexColor(0, 0, 0, 0)
+        end
+        p.box = box
+        p.lift = T("BACKGROUND", 4)
+        p.lift:SetAllPoints(box)
+        p.sheen = T("BORDER", 2)
+        p.sheen:SetHeight(1)
+        p.sheen:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
+        p.sheen:SetPoint("TOPRIGHT", box, "TOPRIGHT", -1, -1)
+        if edges then
+            p.edges = {}
+            for _, side in ipairs({ "TOP", "BOTTOM" }) do
+                local e = T("BORDER", 3)
+                e:SetHeight(1)
+                e:SetPoint(side .. "LEFT", box, side .. "LEFT", 0, 0)
+                e:SetPoint(side .. "RIGHT", box, side .. "RIGHT", 0, 0)
+                p.edges[#p.edges + 1] = e
+            end
+            for _, side in ipairs({ "LEFT", "RIGHT" }) do
+                local e = T("BORDER", 3)
+                e:SetWidth(1)
+                e:SetPoint("TOP" .. side, box, "TOP" .. side, 0, 0)
+                e:SetPoint("BOTTOM" .. side, box, "BOTTOM" .. side, 0, 0)
+                p.edges[#p.edges + 1] = e
+            end
+        end
+        function p:Paint(liftA, sheenA, edgeColor, edgeA)
+            local c = RC:GetColor("settings", "text")
+            local lo = (liftA or 0) * 0.35
+            if CreateColor and self.lift.SetGradient then
+                self.lift:SetVertexColor(1, 1, 1, 1)
+                self.lift:SetGradient("VERTICAL", CreateColor(c.r, c.g, c.b, lo), CreateColor(c.r, c.g, c.b, liftA or 0))
+            elseif self.lift.SetGradientAlpha then
+                self.lift:SetVertexColor(1, 1, 1, 1)
+                self.lift:SetGradientAlpha("VERTICAL", c.r, c.g, c.b, lo, c.r, c.g, c.b, liftA or 0)
+            else
+                self.lift:SetVertexColor(c.r, c.g, c.b, ((liftA or 0) + lo) / 2)
+            end
+            self.sheen:SetVertexColor(c.r, c.g, c.b, sheenA or 0)
+            if self.edges and edgeColor then
+                for _, e in ipairs(self.edges) do e:SetVertexColor(edgeColor.r, edgeColor.g, edgeColor.b, edgeA or 1) end
+            end
+        end
+        function p:SetShown(on)
+            for _, x in ipairs(self.parts) do x:SetShown(on and true or false) end
+        end
+        f._rcPlate = p
+        return p
+    end
+
     _uif.S = S
     _uif.BASE = BASE
     _uif.C = C

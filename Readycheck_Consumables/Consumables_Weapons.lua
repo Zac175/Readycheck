@@ -70,7 +70,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
         frame:SetSize(200, 50)
         RC.Position.Bind(frame, function() return self.db.weaponsBar end, {
             point = "TOPLEFT", pointKey = "anchorPoint",
-            default = { point = "TOPRIGHT", x = -10, y = -300 },
+            default = { point = "TOPLEFT", x = 450, y = -721 },
         })
         RC.Position.ApplyStored(frame) -- real layout restores at true size
         frame:SetMovable(true)

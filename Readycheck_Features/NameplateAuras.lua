@@ -1250,7 +1250,7 @@ local function InitializeNameplateAuras()
     end)
 
     function NA:Start()
-        if not cfg().enabled then self:Stop(); return end
+        if not cfg().enabled or (RC.FeatureOn and not RC:FeatureOn("nameplate_debuffs")) then self:Stop(); return end
         resolveCatalog()
         local f = self.frame
         f:RegisterEvent("NAME_PLATE_UNIT_ADDED")
@@ -1428,6 +1428,10 @@ local function InitializeNameplateAurasUI()
         local K = RC._disp
         local tab = self._npTab or "auras"
         if tab == "range" and not self.BuildTargetRangeCard then tab = "auras" end
+        -- (2026-11-09) the debuff groups are not on this game version yet:
+        -- only the Target Range tab is offered
+        local debuffsOff = RC.FeatureOn and not RC:FeatureOn("nameplate_debuffs")
+        if debuffsOff and self.BuildTargetRangeCard then tab = "range" end
         local P
         if tab ~= "range" then
             P = self.UI:DeclarePreview({
@@ -1448,6 +1452,7 @@ local function InitializeNameplateAurasUI()
                 { "auras", RCL["Debuffs"] }, { "look", RCL["Look"] }, { "text", RCL["Text"] },
                 { "animation", RCL["Animation"] },
             }
+            if debuffsOff and self.BuildTargetRangeCard then tabs = {} end
             if self.BuildTargetRangeCard then tabs[#tabs + 1] = { "range", RCL["Target Range"] } end
             yPos = K.Tabs(parent, yPos, tabs, tab, function(k)
                 RC._npTab = k

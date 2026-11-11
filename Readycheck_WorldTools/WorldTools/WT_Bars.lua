@@ -263,7 +263,7 @@ alertFrame:Hide()
 -- Each anchor plus the banner: pinned point, saved-variable pair, default.
 local POS_SPEC = {
     { id = "wtPullTimersMain", frame = mainAnchor, point = "CENTER",
-      label = "WT Buff Drop Bars (Main)", x = 8, y = 188,
+      label = "WT Buff Drop Bars (Main)", x = 8, y = 188, gen2y = 112,
       xKey = "pullTimerMainOffsetX", yKey = "pullTimerMainOffsetY" },
     { id = "wtPullTimersIdle", frame = idleAnchor, point = "TOPRIGHT",
       label = "WT Buff Drop Bars (Small)", x = -527, y = -323,
@@ -279,6 +279,8 @@ for i = 1, #POS_SPEC do
         point = spec.point, xKey = spec.xKey, yKey = spec.yKey,
         markKey = spec.xKey .. "Centred",
         default = { point = spec.point, x = spec.x, y = spec.y },
+        -- (a fresh character: under the reminder text, not inside it)
+        gen2 = spec.gen2y and { point = spec.point, x = spec.x, y = spec.gen2y } or nil,
     })
 end
 

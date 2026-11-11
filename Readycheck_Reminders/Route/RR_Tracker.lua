@@ -365,7 +365,10 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
             f:SetScale(sc)
         end
         RC.Position.Bind(f, TrackerStore, { point = TrackerPoint(), xKey = "x", yKey = "y",
-            pointKey = "point", default = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -12, y = -210 } })
+            pointKey = "point", default = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -12, y = -210 },
+            -- (a fresh character: beside the quest tracker, not on it;
+            -- the numbers are in the tracker's own 85% units)
+            gen2 = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -318, y = -210 } })
         RC.Position.RestoreFrame(f)
         function RR:ApplyTrackerAlign()
             local want = TrackerPoint()

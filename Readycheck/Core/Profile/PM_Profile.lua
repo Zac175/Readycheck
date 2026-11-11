@@ -68,6 +68,9 @@ RC._pms = RC._pms or {}
         end
         return {
             enabled = true,
+            -- a profile first made with the newer default layout (frames
+            -- in their new default spots; see RC:NewDefaults)
+            defaultsGen = 2,
             raidProfiles = {},
             fontSettings = fromDefaults("fontSettings"),
             executeSettings = fromDefaults("executeSettings"),

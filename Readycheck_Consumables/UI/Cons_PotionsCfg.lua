@@ -287,6 +287,8 @@ local GetTabHoverBg, GetTabNormalBg, GetTabNormalText, GetTabSelectedBg, GetTabS
                 RC:SaveConfigurationToProfile()
             end)
             cardY = cardY - 26
+            -- (2026-11-09) not offered on TBC
+            if RC.Flavor and RC:Flavor() == "tbc" then petrCampCheck:Hide() cardY = cardY + 26 end
 
             behaviorCard:SetContentHeight(math.abs(cardY))
             yPos = yPos - behaviorCard:GetHeight() - 15

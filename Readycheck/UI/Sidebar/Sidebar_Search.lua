@@ -555,10 +555,135 @@ end
 
 function S.IsIndexing() return running end
 
+-- ============================================================
+-- THE INDEX IS KEPT BETWEEN SESSIONS (2026-11-10)
+-- Zac: "typing in the search box omega lags my game". Reading every page
+-- unseen is the expensive part (each one is a full page build), and it
+-- ran again on the first search of every session, one page a frame, the
+-- moment the box was clicked - right under the typing. Now:
+--   * what was read is saved account-wide (ReadycheckDB.searchIndex) with
+--     a stamp of what it was read on: the version, the game version,
+--     the language and which Readycheck parts are loaded. With the same
+--     stamp the next session loads it and builds nothing; a new version
+--     (or another part loaded) reads again, once.
+--   * a page you open is re-read from the real page as before
+--     (S.RefreshFromPage) and the saved copy follows.
+--   * when pages do have to be read, the reading waits while keys are
+--     arriving (TYPE_PAUSE after the last one), so typing stays smooth
+--     and the results fill in a moment later.
+-- Not a setting: never exported, and safe to delete (it is rebuilt).
+-- ============================================================
+local CACHE_FORMAT = 1
+local TYPE_PAUSE = 0.4
+local lastKey = -100
+local cacheLoaded = false
+local GetTime = GetTime
+
+function S.NoteKey() lastKey = GetTime and GetTime() or 0 end
+
+local function CacheSig()
+    -- (not the class: one saved index serves every character on the
+    -- account; a page only a Warrior has is read and added the first time
+    -- a Warrior searches, and is simply not loaded for the others)
+    local parts = { "f" .. CACHE_FORMAT, tostring(RC.version or "?"),
+        tostring(RC.Flavor and RC:Flavor() or "?"),
+        tostring(GetLocale and GetLocale() or "?") }
+    local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+    for _, a in ipairs({ "Readycheck_Features", "Readycheck_Reminders", "Readycheck_Consumables", "Readycheck_Gear",
+                         "Readycheck_WorldTools", "Readycheck_Extras" }) do
+        local okL, on = pcall(isLoaded or function() return false end, a)
+        parts[#parts + 1] = (okL and on) and "1" or "0"
+    end
+    return table_concat(parts, "|")
+end
+
+-- A page as it is saved: its entries without what can be worked out
+-- again (hay, key, the page id, the tab label a tab path gives), and its
+-- tab paths once each (every entry on a tab carried its own copy).
+local function Slim(id, list)
+    local paths, out = {}, {}
+    for i, e in ipairs(list) do
+        local c = {}
+        for k, v in pairs(e) do
+            if k ~= "hay" and k ~= "key" and k ~= "item" and k ~= "tabPath" then c[k] = v end
+        end
+        if e.tabPath then
+            paths[e.tabKey or ""] = e.tabPath
+            c.tabLabel = nil
+        end
+        out[i] = c
+    end
+    return { p = paths, e = out }
+end
+local function Fatten(id, saved)
+    local list = {}
+    local paths = type(saved.p) == "table" and saved.p or {}
+    for i, c in ipairs(saved.e or {}) do
+        local e = {}
+        for k, v in pairs(c) do e[k] = v end
+        e.item = id
+        local path = paths[e.tabKey or ""]
+        if path then
+            e.tabPath = path
+            local labels = {}
+            for _, st in ipairs(path) do
+                if st.many and st.label then labels[#labels + 1] = st.label end
+            end
+            if #labels > 0 then e.tabLabel = table_concat(labels, "  >  ") end
+        end
+        e.hay = ((e.label or "") .. " " .. (e.text or "")):lower()
+        e.key = (e.kind or "") .. "\1" .. (e.label or "") .. "\1" .. (e.card or "")
+            .. "\1" .. (e.text or "") .. "\1" .. (e.tabKey or "")
+        list[i] = e
+    end
+    return list
+end
+
+local function Cache(create)
+    if type(ReadycheckDB) ~= "table" then return nil end
+    local c = ReadycheckDB.searchIndex
+    local sig = CacheSig()
+    if type(c) ~= "table" or c.sig ~= sig or type(c.pages) ~= "table" then
+        if not create then return nil end
+        c = { sig = sig, pages = {} }
+        ReadycheckDB.searchIndex = c
+    end
+    return c
+end
+
+-- once per session: the saved pages for this stamp come in
+local function LoadCache()
+    if cacheLoaded then return end
+    cacheLoaded = true
+    local c = Cache(false)
+    if not c then return end
+    EachItem(function(item)
+        local saved = c.pages[item.id]
+        if type(saved) == "table" and not done[item.id] and Indexable(item) then
+            local okF, list = pcall(Fatten, item.id, saved)
+            if okF and type(list) == "table" then
+                index[item.id] = list
+                done[item.id] = true
+            end
+        end
+    end)
+end
+local function SavePage(id)
+    if not done[id] then return end
+    local c = Cache(true)
+    -- (a page with nothing to find is saved empty, so it is not read again)
+    if c then c.pages[id] = Slim(id, index[id] or {}) end
+end
+function S.ForgetSaved()
+    if type(ReadycheckDB) == "table" then ReadycheckDB.searchIndex = nil end
+end
+function S.SavedSig() local c = Cache(false) return c and c.sig or nil end
+
 -- Builds the index in the background, one page (or tab) per frame.
 -- onDone runs once everything is in.
 function S.EnsureIndex(onDone)
     if running or not RC.sidebarConfigFrame then return end
+    LoadCache()
     local todo = {}
     EachItem(function(item)
         if not done[item.id] and Indexable(item) then
@@ -575,6 +700,11 @@ function S.EnsureIndex(onDone)
     local fresh = {}
     local i = 0
     local function Step()
+        -- (keys are arriving: the reading waits, typing stays smooth)
+        if GetTime and (GetTime() - lastKey) < TYPE_PAUSE then
+            C_Timer.After(0.1, Step)
+            return
+        end
         i = i + 1
         local job = todo[i]
         if not job then
@@ -582,6 +712,7 @@ function S.EnsureIndex(onDone)
             for id, list in pairs(fresh) do
                 index[id] = list
                 done[id] = true
+                SavePage(id)
             end
             if onDone then pcall(onDone) end
             return
@@ -943,6 +1074,7 @@ function S.RefreshFromPage(itemId)
         if e.alias or e.fold or (e.tabKey or "") ~= here then keep[#keep + 1] = e end
     end
     index[itemId] = Merge(keep, fresh)
+    SavePage(itemId)
 end
 
 -- ============================================================

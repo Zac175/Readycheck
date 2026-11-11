@@ -409,6 +409,28 @@ local TEXT = _sbc.TEXT
             cardY = cardY - 26
             cardY = K.Desc(card, cardY, RCL["Only Me ignores your group and just watches the Battle Shout on you."])
 
+            -- TBC: a warrior keeps Battle Shout or Commanding Shout up;
+            -- the reminder and the party tracker follow the one chosen.
+            if RC.BattleShoutCommandingAvailable and RC:BattleShoutCommandingAvailable() then
+                self.UI:CreateSegmentedControl(card, {
+                    x = 14, y = cardY, height = 22, label = RCL["The shout I keep up:"],
+                    items = {
+                        {key="battle", label=RCL["Battle Shout"],
+                         tooltip=RCL["Attack power for the Warriors and Rogues in your group."]},
+                        {key="commanding", label=RCL["Commanding Shout"],
+                         tooltip=RCL["Health for everyone in your group. Every class counts, and there is no attack power to show."]},
+                    },
+                    selected = (db.shout == "commanding") and "commanding" or "battle",
+                    onSelect = function(key)
+                        db.shout = key
+                        LiveIcon(); LiveTracker()
+                        Save()
+                    end,
+                })
+                cardY = cardY - 26
+                cardY = K.Desc(card, cardY, RCL["Commanding Shout is learned at level 68. The reminder and the party tracker watch the shout picked here."])
+            end
+
             cardY = K.Slider(card, cardY, RCL["Warn threshold (0 = only when missing):"], 0, 120, db.buffThreshold or 0, 5,
                 function(v) return v == 0 and RCL["Missing only"] or (math_floor(v) .. "s") end,
                 function(v) db.buffThreshold = v; RC:UpdateBattleShoutReminder() end)

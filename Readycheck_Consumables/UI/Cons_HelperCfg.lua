@@ -495,6 +495,8 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 RC:SaveConfigurationToProfile()
             end)
             cardY = cardY - 26
+            -- (2026-11-09) not offered on TBC
+            if RC.Flavor and RC:Flavor() == "tbc" then hordeCheck:Hide() cardY = cardY + 26 end
 
             local hideActiveCheck = self.UI:CreateSettingCheckbox(behaviorCard, cardY, "Hide when buff active", self.db.consumablesHelper.hideWhenActive, function(cb)
                 local newState = cb:GetChecked()
@@ -536,6 +538,8 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 RC:SaveConfigurationToProfile()
             end)
             cardY = cardY - 26
+            -- (2026-11-09) not offered on TBC
+            if RC.Flavor and RC:Flavor() == "tbc" then selfCastCheck:Hide() cardY = cardY + 26 end
 
             if RC.db.consumablesHelper.petrificationCampMode == nil then
                 RC.db.consumablesHelper.petrificationCampMode = false
@@ -550,6 +554,8 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 RC:SaveConfigurationToProfile()
             end)
             cardY = cardY - 26
+            -- (2026-11-09) not offered on TBC
+            if RC.Flavor and RC:Flavor() == "tbc" then petrCampCheck:Hide() cardY = cardY + 26 end
 
             if self.db.consumablesHelper.groupConflictButtons then
                 local groupNames = RC.flavorGroupLabels or {

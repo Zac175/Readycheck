@@ -70,6 +70,9 @@ WRF._chInit[#WRF._chInit + 1] = function()
         RC.Position.Bind(frame, function() return self.db.trinketBar end, {
             point = "TOPRIGHT", pointKey = "anchorPoint",
             default = { point = "TOPRIGHT", x = -10, y = -400 },
+            -- (a fresh character: just above the weapons bar, off the
+            -- right-hand action bars)
+            gen2 = { point = "TOPLEFT", x = 450, y = -675 },
         })
         RC.Position.ApplyStored(frame) -- real layout restores at true size
         frame:SetMovable(true)

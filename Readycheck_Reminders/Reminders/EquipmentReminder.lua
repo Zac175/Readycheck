@@ -51,8 +51,10 @@ local function InitializeEquipmentReminder()
                 enabled = false,
                 locked = false,
                 anchorPoint = "CENTER",
-                xOffset = 0,
-                yOffset = 200,
+                -- (a fresh character: left of the character, the mirror
+                -- of the shout icon, clear of the reminder text)
+                xOffset = (RC.PickDefault and RC:PickDefault(0, -200) or 0),
+                yOffset = (RC.PickDefault and RC:PickDefault(200, 0) or 200),
                 scale = 1.0,
                 iconSize = 48,
                 fontSize = 14,
@@ -242,7 +244,9 @@ local function InitializeEquipmentReminder()
     function RC:ScanCurrentEquipment()
         local db = self.db.fastWeaponReminder
 
-        local needArmor   = db.detectWrathGear ~= false
+        -- (2026-11-09) Classic Era raid gear: not looked for on other versions
+        local eraGear     = not (RC.Flavor and RC:Flavor() ~= "era")
+        local needArmor   = eraGear and db.detectWrathGear ~= false
         local needAll     = db.detectCustomItems ~= false and db.customItems and next(db.customItems)
         local needUtility = db.detectUtilityItems ~= false
 
@@ -363,7 +367,7 @@ local function InitializeEquipmentReminder()
         end
 
         local hasDaggerInOffhand, daggerItemName = false, nil
-        if db.detectDaggerInOffhand and offId and ConditionMet("detectDaggerInOffhandCondition") then
+        if eraGear and db.detectDaggerInOffhand and offId and ConditionMet("detectDaggerInOffhandCondition") then
             if OFFHAND_DAGGER_ITEMS[offId] then
                 hasDaggerInOffhand = true
                 daggerItemName = OFFHAND_DAGGER_ITEMS[offId].short
@@ -718,6 +722,7 @@ local function InitializeEquipmentReminder()
         local frame = self:BuildEquipmentReminderFrame(UIParent, true)
         RC.Position.Bind(frame, function() return self.db.fastWeaponReminder end, {
             point = "CENTER", pointKey = "anchorPoint", default = { x = 0, y = 200 },
+            gen2 = { x = -200, y = 0 },
         })
         RC.Position.RestoreFrame(frame)
         frame:SetMovable(true)

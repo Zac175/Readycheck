@@ -59,7 +59,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
         frame:SetSize(100, 400)
         RC.Position.Bind(frame, function() return self.db.consumablesHelper end, {
             point = "TOPLEFT", pointKey = "anchorPoint",
-            default = { point = "TOPRIGHT", x = -10, y = -200 },
+            default = { point = "TOPLEFT", x = 25, y = -636 },
         })
         RC.Position.ApplyStored(frame) -- real layout restores at true size
         frame:SetMovable(true)
@@ -500,7 +500,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
         frame:SetSize(100, 400)
         RC.Position.Bind(frame, function() return self.db.potionsBar end, {
             point = "TOPLEFT", pointKey = "anchorPoint",
-            default = { point = "TOPRIGHT", x = -10, y = -400 },
+            default = { point = "TOPLEFT", x = 25, y = -604 },
         })
         RC.Position.ApplyStored(frame) -- real layout restores at true size
         frame:SetMovable(true)

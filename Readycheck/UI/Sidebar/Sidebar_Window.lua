@@ -632,7 +632,9 @@ local BACK_PANELS = {
 
                 if self.UI and self.UI.PopIn then
                     self.sidebarConfigFrame:SetAlpha(0)
-                    self.sidebarConfigFrame:SetScale(0.95)
+                    -- (the saved window scale, not a pop scale: PopIn is alpha only,
+                    -- so a 0.95 set here stayed and the saved scale was lost)
+                    if self.sidebarConfigFrame.ApplyWinScale then self.sidebarConfigFrame:ApplyWinScale() end
                     self.sidebarConfigFrame:Show()
                     self.UI:PopIn(self.sidebarConfigFrame, 0.18)
 
@@ -936,10 +938,13 @@ local BACK_PANELS = {
                 t:SetTexture(FLAT)
                 return t
             end
-            local hl = Tex("BACKGROUND", 3) hl:SetAllPoints()
-            local glow = Tex("BACKGROUND", 2) glow:SetAllPoints()
+            -- (a button like the page rows: a plate 12 in from each side)
+            local plate = RC.UI:Plate(row, 12, 12, 3, 3, true)
+            local box = plate.box
+            local hl = Tex("BACKGROUND", 3) hl:SetAllPoints(box)
+            local glow = Tex("BACKGROUND", 2) glow:SetAllPoints(box)
             local ind = Tex("ARTWORK", 1) ind:SetWidth(3)
-            ind:SetPoint("TOPLEFT") ind:SetPoint("BOTTOMLEFT")
+            ind:SetPoint("TOPLEFT", box, "TOPLEFT") ind:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT")
             local icon = row:CreateTexture(nil, "ARTWORK", nil, 2)
             icon:SetSize(S.NAV_ICON_H, S.NAV_ICON_H)
             icon:SetPoint("LEFT", row, "LEFT", S.NAV_LEFT + (S.NAV_ICON_W - S.NAV_ICON_H) / 2, 0)
@@ -952,11 +957,14 @@ local BACK_PANELS = {
                 local hot, on = self._rcHot, self._rcActive
                 local A = RC.UI:SAccent()
                 local h = RC:GetColor("settings", "hoverTint")
-                hl:SetShown(hot and not on and true or false)
+                if on then plate:Paint(0, 0, A, 0.70)
+                elseif hot then plate:Paint(0.085, 0.06, A, 0.50)
+                else plate:Paint(0.045, 0.03, RC:GetColor("settings", "text"), 0.085) end
+                hl:SetShown(false)
                 hl:SetVertexColor(SC("text", S.NAV_HL))
-                glow:SetShown((hot or on) and true or false)
-                if on then RC.UI:Grad(glow, A, S.NAV_GLOW) elseif hot then RC.UI:Grad(glow, h, S.NAV_HOVER_GLOW) end
-                ind:SetShown((hot or on) and true or false)
+                glow:SetShown(on and true or false)
+                if on then RC.UI:Grad(glow, A, 0.32) end
+                ind:SetShown(on and true or false)
                 if on then ind:SetVertexColor(A.r, A.g, A.b, 1) else ind:SetVertexColor(h.r, h.g, h.b, S.NAV_HOVER_IND) end
                 local a = on and 1 or (hot and S.NAV_HOVER or S.NAV_EN)
                 label:SetTextColor(SC("text", a))
@@ -1023,10 +1031,15 @@ local BACK_PANELS = {
             if sidebar.searchClearBtn then
                 sidebar.searchClearBtn:SetShown(txt ~= "")
             end
-            RC:BuildSidebar(frame, false)
             -- The settings search: ranked results in a dropdown under the
             -- box (Sidebar_SearchBox), each one a jump to the setting itself.
-            if RC.SidebarSearch then RC.SidebarSearch.OnTextChanged(frame, txt) end
+            -- (2026-11-10) It redraws the sidebar itself a beat after the
+            -- last key, so the sidebar is not also rebuilt on every key.
+            if RC.SidebarSearch then
+                RC.SidebarSearch.OnTextChanged(frame, txt)
+            else
+                RC:BuildSidebar(frame, false)
+            end
         end)
         searchBox:SetScript("OnEscapePressed", function(self)
             self:SetText("")
@@ -1148,6 +1161,11 @@ local BACK_PANELS = {
         contentBg:SetTexture(FLAT)
         contentArea.bg = contentBg
         frame.contentBg = contentBg
+        -- (2026-11-09, Zac: "readycheck is still a much darker black than
+        -- zui") the page area has no fill of its own - the window's shows
+        -- through - but the opacity setters gave this black texture its
+        -- alpha back and it covered the window colour. It stays hidden.
+        contentBg:Hide()
 
         -- the page scrolls 27 in from each side: what it puts 18 in (cards,
         -- headers, tab rows) lands on the window's 45 px content pad
@@ -1210,23 +1228,59 @@ local BACK_PANELS = {
         frame.contentScrollChild = contentChild
 
         -- THE CORNER: fold and close, 40 x 40 boxes at the top right
+        -- (2026-11-09, Zac picked mock A) small raised plates like the
+        -- settings buttons, the same as ZacUI's window: reload, the scale as
+        -- one joined control, fold, and the X, which goes red under the mouse
+        local CORNER, CORNER_GAP = 26, 6
+        local function CornerPaint(b, danger)
+            local plate = RC.UI:Plate(b, 0, 0, 0, 0, true)
+            local red
+            local edgeCol = { r = 1, g = 1, b = 1 }
+            if danger then
+                red = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+                red:SetAllPoints()
+                red:SetTexture(FLAT)
+                red:Hide()
+            end
+            return function(hot)
+                local tc = RC:GetColor("settings", "text")
+                if danger and hot then
+                    -- (2026-11-10, Zac: "a white glow i dont like that") the
+                    -- same dark red as ZacUI's X: a solid fill and a red edge,
+                    -- no bright rim
+                    local x = RC:GetColor("buttons", "closeHover")
+                    local r, g, bl = math.min(x.r, 0.90), math.min(x.g, 0.30), math.min(x.b, 0.30)
+                    red:SetVertexColor(r * 0.45, g * 0.45, bl * 0.45, 1)
+                    red:Show()
+                    edgeCol.r, edgeCol.g, edgeCol.b = r * 0.87, g * 0.87, bl * 0.87
+                    plate:Paint(0.04, 0.14, edgeCol, 1)
+                else
+                    if red then red:Hide() end
+                    plate:Paint(hot and 0.13 or 0.085, hot and 0.14 or 0.08, tc, hot and 0.22 or 0.13)
+                end
+            end
+        end
         local function CornerBox(iconName, onClick)
             local b = CreateFrame("Button", nil, titleBar)
-            b:SetSize(S.CLOSE_BOX, S.CLOSE_BOX)
+            b:SetSize(CORNER, CORNER)
             b:SetFrameLevel(frame:GetFrameLevel() + 30)
             local t = b:CreateTexture(nil, "ARTWORK")
             t:SetSize(16, 16)
             t:SetPoint("CENTER")
             if iconName == "close" or iconName:find("128$") then
-                -- the same crisp X as ZacUI's settings window, at its size
-                -- (2026-11-08, Zac: the two addons' X looked different)
-                t:SetSize(38, 38)
+                -- the same crisp glyphs as ZacUI's settings window, at its size
+                t:SetSize(22, 22)
                 t:SetTexture(ICONS .. (iconName == "close" and "close128" or iconName), "CLAMP", "CLAMP", "TRILINEAR")
             else
                 t:SetTexture(ICONS .. iconName)
             end
             b.icon = t
-            function b:Repaint() t:SetVertexColor(SC("text", self._rcHot and 1 or S.DIM_A)) end
+            local paint = CornerPaint(b, iconName == "close")
+            function b:Repaint()
+                local hot = self._rcHot and true or false
+                paint(hot)
+                t:SetVertexColor(SC("text", (hot or iconName == "close") and 1 or 0.80))
+            end
             b:SetScript("OnEnter", function(self) self._rcHot = true self:Repaint() end)
             b:SetScript("OnLeave", function(self) self._rcHot = nil self:Repaint() GameTooltip:Hide() end)
             b:SetScript("OnClick", onClick)
@@ -1234,14 +1288,14 @@ local BACK_PANELS = {
             return b
         end
         local closeButton = CornerBox("close", function() frame:Hide() end)
-        closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -11)
+        closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -18)
         frame.closeButton = closeButton
         AttachTitleTooltip(closeButton, RCL["Close"])
 
         -- FOLD: the window shrinks to its mark and name (it keeps running,
         -- previews and Edit Mode included); the same box brings it back.
         local foldButton = CornerBox("chevup128", function() RC:FoldSidebarConfig() end)
-        foldButton:SetPoint("TOPRIGHT", closeButton, "TOPLEFT", -4, 0)
+        foldButton:SetPoint("TOPRIGHT", closeButton, "TOPLEFT", -CORNER_GAP, 0)
         frame.foldButton = foldButton
         AttachTitleTooltip(foldButton, RCL["Fold"],
             RCL["Fold this window to its name so you can see the game. Click again to open it."])
@@ -1264,7 +1318,7 @@ local BACK_PANELS = {
         local HB = 24
         -- (drawn glyphs from the X's art set, not text in boxes)
         local reloadButton = CornerBox("reload128", function() ReloadUI() end)
-        reloadButton:SetSize(32, S.CLOSE_BOX)
+        -- (the same square plate as the rest of the row)
         AttachTitleTooltip(reloadButton,
             RCL["Reload"],
             RCL["Reloads the interface. Needed for font, skin and minimap-button changes to fully apply."])
@@ -1295,22 +1349,35 @@ local BACK_PANELS = {
             if RC.Preview and RC.Preview.Place then pcall(RC.Preview.Place) end
         end
         local plus = CornerBox("plus128", function() SetWinScale(WinScale() + 0.05) end)
-        plus:SetSize(32, S.CLOSE_BOX)
-        plus:SetPoint("RIGHT", foldButton, "LEFT", -6, 0)
-        scaleText = self:CreateFontString(plus, "OVERLAY", nil, S.F_VALUE)
-        scaleText:SetWidth(48)
+        plus:SetPoint("RIGHT", foldButton, "LEFT", -(CORNER_GAP + 8), 0)
+        -- the number on a plate of its own between - and +, sharing their
+        -- edges so the three read as one control
+        local pctBox = CreateFrame("Frame", nil, titleBar)
+        pctBox:SetSize(46, CORNER)
+        pctBox:SetFrameLevel(frame:GetFrameLevel() + 30)
+        pctBox:SetPoint("RIGHT", plus, "LEFT", 1, 0)
+        local pctPaint = CornerPaint(pctBox)
+        pctPaint(false)
+        frame.scaleBox, frame.scaleBoxPaint = pctBox, pctPaint
+        scaleText = self:CreateFontString(pctBox, "OVERLAY", nil, S.F_VALUE)
+        scaleText:SetWidth(46)
         scaleText:SetJustifyH("CENTER")
-        scaleText:SetPoint("RIGHT", plus, "LEFT", 0, 0)
-        scaleText:SetTextColor(SC("text", S.DIM_A))
+        scaleText:SetPoint("CENTER", pctBox, "CENTER", 0, 0)
+        scaleText:SetTextColor(SC("text", 1))
         scaleText:SetText(math.floor(WinScale() * 100 + 0.5) .. "%")
         local minus = CornerBox("minus128", function() SetWinScale(WinScale() - 0.05) end)
-        minus:SetSize(32, S.CLOSE_BOX)
-        minus:SetPoint("RIGHT", scaleText, "LEFT", 0, 0)
-        reloadButton:SetPoint("RIGHT", minus, "LEFT", -14, 0)
+        minus:SetPoint("RIGHT", pctBox, "LEFT", 1, 0)
+        reloadButton:SetPoint("RIGHT", minus, "LEFT", -(CORNER_GAP + 8), 0)
         AttachTitleTooltip(plus, RCL["Window scale"], RCL["Grows or shrinks this window only."])
         AttachTitleTooltip(minus, RCL["Window scale"], RCL["Grows or shrinks this window only."])
         frame.scaleText, frame.scaleUp, frame.scaleDown = scaleText, plus, minus
-        if math.abs(WinScale() - 1) > 0.001 then frame:SetScale(WinScale()) end
+        -- the saved scale, put on every time the window opens
+        function frame:ApplyWinScale()
+            local v = WinScale()
+            if math.abs((self:GetScale() or 1) - v) > 0.001 then self:SetScale(v) end
+            if scaleText then scaleText:SetText(math.floor(v * 100 + 0.5) .. "%") end
+        end
+        frame:ApplyWinScale()
 
         -- The shell's own colours (RefreshUIColors calls this).
         function frame:RepaintShell()
@@ -1321,14 +1388,16 @@ local BACK_PANELS = {
             self.bg:SetAlpha(op)
             RC.UI:UpdateBorderColor(self.border, RC:GetColor("settings", "text"), S.BORDER_A)
             sidebarBg:SetVertexColor(SC("shade", S.SIDEBAR_A))
-            sidebarBg:SetAlpha(op)
+            -- (2026-11-09: the band is a 0.20 shade over the window colour,
+            -- as ZacUI's; setting its alpha to the opacity made it solid black)
+            sidebarBg:SetAlpha(op * S.SIDEBAR_A)
             sidebarRule:SetVertexColor(SC("text", S.BORDER_A))
             contentBg:SetVertexColor(0, 0, 0, 0)
             local A = RC.UI:SAccent()
             brandFirst:SetTextColor(SC("text", 1))
             brandSecond:SetTextColor(A.r, A.g, A.b, 1)
             titleText:SetTextColor(SC("text", S.DIM_A))
-            scaleText:SetTextColor(SC("text", S.DIM_A))
+            scaleText:SetTextColor(SC("text", 1))
             editModeButton:Repaint()
             contactButton:Repaint()
             if frame.twitchButton then frame.twitchButton:Repaint() end
@@ -1534,9 +1603,21 @@ local BACK_PANELS = {
             ContentHeight = function() return contentArea:GetHeight() end,
             StripWidth = function() return (contentChild:GetWidth() or (CONTENT_WIDTH - 18)) - 36 end }) end
 
+        -- (2026-11-09) the page used to wear two layers at this opacity, one
+        -- over the other. It wears one now, so a saved value below 100% is
+        -- raised once to what those two layers added up to: the window
+        -- keeps the see-through it had.
+        do
+            local fs = self.db and self.db.fontSettings
+            if fs and not fs.bgOpacityOneLayer then
+                local x = tonumber(fs.mainWindowBgOpacity)
+                if x and x < 1 then fs.mainWindowBgOpacity = 1 - (1 - x) * (1 - x) end
+                fs.bgOpacityOneLayer = true
+            end
+        end
         local savedBgOpacity = (self.db and self.db.fontSettings and self.db.fontSettings.mainWindowBgOpacity) or 1.0
         if frame.bg then frame.bg:SetAlpha(savedBgOpacity) end
-        if frame.sidebar and frame.sidebar.bg then frame.sidebar.bg:SetAlpha(savedBgOpacity) end
+        if frame.sidebar and frame.sidebar.bg then frame.sidebar.bg:SetAlpha(savedBgOpacity * S.SIDEBAR_A) end
         if frame.contentBg then frame.contentBg:SetAlpha(savedBgOpacity) end
 
         if self.db and self.db.sidebarState and self.db.sidebarState.expandedCategories then
@@ -1673,7 +1754,7 @@ local BACK_PANELS = {
 
         if self.UI and self.UI.PopIn then
             frame:SetAlpha(0)
-            frame:SetScale(0.95)
+            if frame.ApplyWinScale then frame:ApplyWinScale() end
             frame:Show()
             self.UI:PopIn(frame, 0.18)
 

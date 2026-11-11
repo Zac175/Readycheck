@@ -857,6 +857,8 @@ local function PlayerFaction()
 end
 
 function WRF:IsHordeMode(barKey)
+    -- (2026-11-09) not on TBC: both factions have Windfury Totem there
+    if self.Flavor and self:Flavor() == "tbc" then return false end
     local faction = PlayerFaction()
     local db = self.db and self.db[barKey]
     local set = db and type(db.hordeByFaction) == "table" and db.hordeByFaction or nil

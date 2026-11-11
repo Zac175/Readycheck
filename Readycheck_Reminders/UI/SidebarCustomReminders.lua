@@ -537,6 +537,9 @@ end
 local function BuildBossItems()
     local list={{text=RCL[" - Any boss - "],value=""}}
     local raiders={"Molten Core","Blackwing Lair","Temple of Ahn'Qiraj","Naxxramas"}
+    -- (options audit 2026-11-09) another game version lists its own raids
+    -- (RaidFlavor.lua): TBC's bosses on TBC, as Raids_Remote does
+    if RC._raidFlavorApplied and RC.RaidNames then raiders=RC:RaidNames() end
     local cfg=RC.raidMobConfigs or {}
     for _,raid in ipairs(raiders) do
         if cfg[raid] then

@@ -221,7 +221,9 @@ local function Build()
 
     if RC.Position and RC.Position.Bind then
         RC.Position.Bind(f, function() return ESS.Settings() end,
-            { point = "CENTER", default = { point = "CENTER", x = 0, y = 180 } })
+            { point = "CENTER", default = { point = "CENTER", x = 0, y = 180 },
+              -- (a fresh character: left of the reminder text, not under it)
+              gen2 = { point = "CENTER", x = -470, y = 240 } })
         RC.Position.RestoreFrame(f)
     end
     if RC.UIMover and RC.UIMover.RegisterFrame then
