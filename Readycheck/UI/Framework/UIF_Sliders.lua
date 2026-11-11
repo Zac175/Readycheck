@@ -48,6 +48,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         -- an accent edge while typing).
         local set = RC.UI:InSettings(parent)
         sliderFrame._rcSet = set or nil
+        -- (2026-11-10) ONE SLIDER LOOK: the pill track and the round accent
+        -- grip on a slider anywhere; `set` is only the typed-value box now
+        local look = true
 
         -- THE LOOK: a thin flat track, the part up to the thumb filled in
         -- the thumb's colour, a square thumb that lights gold under the
@@ -76,7 +79,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         fill:SetWidth(1)
         sliderFrame.fill = fill
         local trackPill, fillHost, fillPill
-        if set then
+        if look then
             trackBg:SetAlpha(0)
             RC.UI:UpdateBorderColor(sliderFrame.trackBorder, GetBorderNormal(), 0)
             fill:SetAlpha(0)
@@ -108,7 +111,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         slider:SetThumbTexture(thumb)
         slider.thumb = thumb
         local thumbBack
-        if set then
+        if look then
             thumb:SetSize(S.THUMB, S.THUMB)
             RC.UI:DiscArt(thumb, S.THUMB)
             thumbBack = slider:CreateTexture(nil, "ARTWORK")
@@ -141,7 +144,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         -- thumb: gold under the mouse and while dragged
         local hovered, dragging = false, false
         local function PaintThumb()
-            if set then
+            if look then
                 local A = RC.UI:SAccent()
                 local k = (hovered or dragging) and 1.15 or 1
                 thumb:SetVertexColor(math_min(1, A.r * k), math_min(1, A.g * k), math_min(1, A.b * k), 1)
@@ -613,8 +616,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         -- 0.20 edge (0.30), the choice in white 0.50 (0.60), the arrow with
         -- it; the open list the same box at 0.98, a row under the mouse
         -- white 0.08 with a full-white label, the picked row white 0.04.
-        local set = RC.UI:InSettings(parent)
-        container._rcSet = set or nil
+        -- (2026-11-10) ONE DROPDOWN LOOK: this paint on a dropdown anywhere
+        local set = true
+        container._rcSet = RC.UI:InSettings(parent) or nil
         local function PaintClosed(hot)
             bg:SetVertexColor(RC.UI:SCol("dropdownBackground", hot and S.DD_BG_HA or S.DD_BG_A))
             RC.UI:UpdateBorderColor(container.border, RC:GetColor("settings", "text"), hot and S.DD_BRD_HA or S.DD_BRD_A)

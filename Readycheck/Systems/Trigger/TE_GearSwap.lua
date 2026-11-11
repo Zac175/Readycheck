@@ -171,6 +171,50 @@ local ABILITY_READY_TTL = 1.0
         return owned
     end
 
+    --------------------------------------------------------------------
+    -- AN AFTER-KILL SET BELONGS TO ITS BOSS (2026-11-10, Zac: "after swaps
+    -- swapping to my trash set even though it wasnt configured").
+    -- gearSwapState.postCombatSet stays armed until it lands: a swap cut
+    -- short by the next pull re-arms itself for the next time combat ends.
+    -- Every place that arms it for a new fight only did so when nothing was
+    -- armed, and a boss with no after-kill set never touched it - so a set
+    -- one boss left armed went on after a LATER boss's kill, one that had
+    -- none configured (or a different one).
+    -- Each arm now records whose it is (postCombatBoss), and a different
+    -- boss's engage drops a set that is not its own before it arms
+    -- anything. A set armed with no owner on record is left alone.
+    --------------------------------------------------------------------
+    local function CanonBoss(self, name)
+        if type(name) ~= "string" or name == "" then return nil end
+        local raid = self.GetEffectiveRaidName and self:GetEffectiveRaidName() or nil
+        local enc = raid and self.GetEncounterNameForBoss and self:GetEncounterNameForBoss(raid, name) or nil
+        local canon = ((enc and enc ~= "" and enc) or name):lower():gsub("^the%s+", "")
+        return canon
+    end
+
+    -- Returns true when a set armed for another boss was dropped.
+    function RC:DropForeignPostCombatSet(bossName, where)
+        local st = self.gearSwapState
+        if type(st) ~= "table" then return false end
+        local set, owner = st.postCombatSet, st.postCombatBoss
+        if not (set and set ~= "" and owner and bossName) then return false end
+        local a, b = CanonBoss(self, owner), CanonBoss(self, bossName)
+        if not (a and b) or a == b then return false end
+        st.postCombatSet  = nil
+        st.postCombatBoss = nil
+        st._postSwapActiveSet   = nil
+        st._postSwapActiveUntil = nil
+        -- its queued copy too, or the regen edge would still equip it
+        if RC.gearSwapQueue then
+            for qi = #RC.gearSwapQueue, 1, -1 do
+                if RC.gearSwapQueue[qi] == set then table.remove(RC.gearSwapQueue, qi) end
+            end
+        end
+        self:DebugPrint("After-kill set '" .. tostring(set) .. "' armed for " .. tostring(owner)
+            .. " dropped: " .. tostring(bossName) .. " engaged (" .. tostring(where or "?") .. ")", "gear")
+        return true
+    end
+
     function RC:AttemptPostCombatGearSwap(targetSet, attempt)
 
         if not targetSet or targetSet == "" then
@@ -864,6 +908,7 @@ local ABILITY_READY_TTL = 1.0
                 if setMismatch then
                     RC.gearSwapState = RC.gearSwapState or {}
                     RC.gearSwapState.postCombatSet = postCombatSet
+                    RC.gearSwapState.postCombatBoss = resolved
                     if self.AttemptPostCombatGearSwap then self:AttemptPostCombatGearSwap(postCombatSet) end
                     reapplied[#reapplied + 1] = "set '" .. postCombatSet .. "'"
                 end
@@ -952,6 +997,7 @@ local ABILITY_READY_TTL = 1.0
 
         self.gearSwapState = self.gearSwapState or {}
         self.gearSwapState.postCombatSet   = (postSet and postSet ~= "") and postSet or nil
+        self.gearSwapState.postCombatBoss  = (postSet and postSet ~= "") and canonicalName or nil
         self.gearSwapState.lastBossTarget  = nil
         self.gearSwapState.engagedInCombat = nil
         self.activeEncounterName = nil
@@ -1017,6 +1063,10 @@ local ABILITY_READY_TTL = 1.0
             end
         end
         if not cfg then return end
+
+        -- (a set an earlier boss left armed is not this boss's: see AN
+        -- AFTER-KILL SET BELONGS TO ITS BOSS)
+        if isBoss then self:DropForeignPostCombatSet(encounterName, "engage") end
 
         if not InCombatLockdown() then
             local fe          = cfg.forceEquip
@@ -1087,6 +1137,7 @@ local ABILITY_READY_TTL = 1.0
             or self.gearSwapState.postCombatSet == "" then
                 if hasPost then
                     self.gearSwapState.postCombatSet = postSet
+                    self.gearSwapState.postCombatBoss = encounterName
                 end
                 self.gearSwapState.lastEquippedSet = gearSet or postSet
                 self:DebugPrint("In-combat boss target: seeded gear state for "

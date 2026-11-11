@@ -365,6 +365,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
             self.gearSwapState.lastBossTarget = targetName
             self.gearSwapState.lastEquippedSet = gearSetName
             self.gearSwapState.postCombatSet = gearswapConfig.postCombatSet
+            self.gearSwapState.postCombatBoss = (gearswapConfig.postCombatSet and gearswapConfig.postCombatSet ~= "") and encounterName or nil
             return true
         end
 
@@ -374,6 +375,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
             self.gearSwapState.lastBossTarget = targetName
             self.gearSwapState.lastEquippedSet = gearSetName
             self.gearSwapState.postCombatSet = gearswapConfig.postCombatSet
+            self.gearSwapState.postCombatBoss = (gearswapConfig.postCombatSet and gearswapConfig.postCombatSet ~= "") and encounterName or nil
             return true
         end
         return false

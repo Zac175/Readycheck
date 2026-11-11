@@ -688,8 +688,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         -- In the /rc window (5.0): the /zui input - a warm near-black at
         -- 0.35, a white 0.10 edge, the accent edge while typing
         local S = _uif.S
-        local set = RC.UI:InSettings(parent)
-        container._rcSet = set or nil
+        -- (2026-11-10) ONE FIELD LOOK: this paint on an edit box anywhere
+        local set = true
+        container._rcSet = RC.UI:InSettings(parent) or nil
         local function PaintEdge(focus)
             if focus then
                 local a = set and RC.UI:SAccent() or GetAccentGold()

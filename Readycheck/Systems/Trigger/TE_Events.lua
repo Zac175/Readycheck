@@ -651,6 +651,10 @@ end
             local gsCfg = bossCfg and bossCfg.abilities and bossCfg.abilities.gearswap
             local gearSet = gsCfg and (gsCfg.gearSet or gsCfg.itemRackSet)
             local postSet = gsCfg and gsCfg.postCombatSet
+            -- (a set an earlier boss left armed is not this boss's, whether
+            -- or not this one has its own: TE_GearSwap, AN AFTER-KILL SET
+            -- BELONGS TO ITS BOSS)
+            if RC.DropForeignPostCombatSet then RC:DropForeignPostCombatSet(bossName, "ENCOUNTER_START") end
             -- Seed the swap state from config so a post-combat set still fires
             -- when the player never targeted the boss - ENCOUNTER_START can
             -- arrive before any targeting, and on Heigan or Gothik often does.
@@ -663,6 +667,7 @@ end
                         RC.gearSwapState.lastEquippedSet = postSet
                     end
                     RC.gearSwapState.postCombatSet = postSet
+                    RC.gearSwapState.postCombatBoss = bossName
                     local gsLabel = (gearSet and gearSet ~= "") and gearSet or "(no combat set)"
                     RC:DebugPrint("ENCOUNTER_START: seeded gear swap state '" .. gsLabel .. "' -> '" .. postSet .. "' for " .. bossName, "gear")
                 end

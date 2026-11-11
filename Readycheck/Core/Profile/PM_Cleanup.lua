@@ -367,8 +367,20 @@ RC._pms = RC._pms or {}
         -- Bump this and add a new "if profileVersion < N then ... end" block
         -- below for each one-time migration; each block sets
         -- profile.migrationVersion = CURRENT_MIGRATION_VERSION when it runs.
-        local CURRENT_MIGRATION_VERSION = 19
+        local CURRENT_MIGRATION_VERSION = 20
         local profileVersion = profile.migrationVersion or 0
+
+        -- The lighter windows (5.0.4): an old shipped surface shade saved
+        -- on this character goes, so today's shows (DB_Raids:
+        -- RC:DropLegacyColors says which). Picked colours are kept.
+        if profileVersion < 20 then
+            local n = RC.DropLegacyColors and RC:DropLegacyColors(profile.customColors) or 0
+            profile.migrationVersion = CURRENT_MIGRATION_VERSION
+            if n > 0 then
+                cleaned = cleaned + 1
+                RC:DebugPrint("Migration v20: " .. n .. " old window colour(s) cleared", "profile")
+            end
+        end
 
         -- Readycheck's sounds, font and bar texture are now its own: the
         -- sounds were remade and renamed, the font is Red Hat Display and

@@ -472,6 +472,7 @@ local _tes = RC._tes
         end
         if postSet and postSet ~= "" then
             RC.gearSwapState.postCombatSet = postSet
+            RC.gearSwapState.postCombatBoss = encounterName
         end
 
         if UnitAffectingCombat("player") then

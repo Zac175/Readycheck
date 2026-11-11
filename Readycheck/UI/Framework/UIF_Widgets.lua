@@ -395,6 +395,15 @@ local S = _uif.S
             btn:SetScript("OnClick", onClick)
         end
 
+        -- (2026-11-10) ONE CLOSE BOX: the /rc window's (UIF_Dialogs
+        -- SkinCloseBox: the close icon, white 0.53 and full under the
+        -- mouse) on every window and row, not only the 5.0 pop-ups. A
+        -- close colour picked on the Appearance page keeps the drawn X in
+        -- that colour.
+        local cc = RC.db and RC.db.customColors and RC.db.customColors.buttons
+        local picked = cc and (cc.xNormal or (cc.xHover and not RC:IsStaleColor("buttons", "xHover", cc.xHover)))
+        if self.SkinCloseBox and not picked then self:SkinCloseBox(btn) end
+
         return btn
     end
 
@@ -862,7 +871,11 @@ local S = _uif.S
 
         button:EnableMouse(true)
 
-        if RC.UI:InSettings(parent) then RC.UI:StyleSettingsButton(button) end
+        -- (2026-11-10, Zac: "so many buttons ... not updated to match the
+        -- new buttons") ONE BUTTON LOOK: every button, wherever it is built
+        -- (a pop-up, the consumables window, a bar's panel), is the /rc
+        -- window's raised plate. It was only the ones on the /rc pages.
+        RC.UI:StyleSettingsButton(button)
 
         return button
     end
@@ -1301,7 +1314,9 @@ local S = _uif.S
 
         tab:SetScript("OnEnter", function(self) PaintTab(self, true) end)
         tab:SetScript("OnLeave", function(self) PaintTab(self, false) end)
-        if RC.UI:InSettings(parent) then
+        -- (2026-11-10, Zac: "literally every menu popup etc needs to
+        -- match") ONE TAB LOOK: the /rc window's tab on a tab anywhere
+        do
             tab._rcSet = true
             tab.highlight:SetAlpha(0)
         end
@@ -2324,7 +2339,9 @@ local S = _uif.S
         -- edge, both at 0.8 while unticked and not under the mouse; ticked,
         -- the edge goes to the accent at 0.15. The label is white, 0.8
         -- while unticked (1.0 under the mouse). The tick stays the mark.
-        if self._rcSet then
+        -- (2026-11-10, Zac: "literally every menu popup etc needs to match")
+        -- on a checkbox anywhere now (_rcLook), at its own size
+        if self._rcSet or self._rcLook then
             local on = self:GetChecked() and true or false
             local k = (on or hot) and 1 or S.CB_REST
             self.bg:SetVertexColor(RC.UI:SCol("checkboxBackground", k))
@@ -2369,6 +2386,7 @@ local S = _uif.S
         checkbox:SetSize(size, size)
         checkbox:SetPoint("LEFT")
         checkbox._rcSet = set or nil
+        checkbox._rcLook = true
 
         checkbox.bg = checkbox:CreateTexture(nil, "BACKGROUND")
         checkbox.bg:SetAllPoints()
@@ -2417,7 +2435,7 @@ local S = _uif.S
         checkbox.Text:SetText(text)
         local txtNorm = GetButtonTextNormal()
         checkbox.Text:SetTextColor(txtNorm.r, txtNorm.g, txtNorm.b, 1)
-        if set then
+        do
             PaintCheckbox(checkbox, false)
             -- a page that colours the label itself (a warning, a dimmed
             -- row) keeps its colour

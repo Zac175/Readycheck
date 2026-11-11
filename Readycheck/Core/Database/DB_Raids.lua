@@ -2008,8 +2008,10 @@ RC.encounterAddPhases = {
         },
 
         statsBar = {
-            -- the panel grey (ui.elementBackground / headerBackground)
-            background = {r = 0.12, g = 0.12, b = 0.12, a = 0.95, label = RCL["Background"]},
+            -- (2026-11-10, Zac: "character stats bar is a different
+            -- color") the window colour every window wears (it was the
+            -- old panel grey, 0.12)
+            background = {r = 0.110, g = 0.110, b = 0.110, a = 0.95, label = RCL["Background"]},
             labelText = {r = 0.6, g = 0.6, b = 0.6, a = 1, label = RCL["Labels"]},
             separator = {r = 0.3, g = 0.3, b = 0.3, a = 0.5, label = RCL["Separators"]},
         },
@@ -2105,9 +2107,88 @@ RC.encounterAddPhases = {
         },
     }
 
+    -- OLD SHIPPED COLOURS A PROFILE STILL CARRIES (2026-11-10, Zac: "the
+    -- consumables checker in readycheck still just pitch black"). The
+    -- lighter windows changed defaultColors, and a colour saved on a
+    -- character wins over defaultColors - so a character that carries an
+    -- old surface shade stayed near-black. Listed here: what each surface
+    -- shipped as before. A saved colour goes (so today's shows) when it is
+    -- still exactly that old value; and, for the window furniture only
+    -- (FURNITURE), when it is a plain grey darker than today's - the old
+    -- look in whichever generation it was saved. Anything tinted, lighter,
+    -- or on a frame that sits on screen (bars, trackers) is a pick and stays.
+    RC.LEGACY_COLORS = {
+        ui = { windowBackground = {0.08, 0.08, 0.08}, elementBackground = {0.12, 0.12, 0.12},
+            cardBackground = {0.10, 0.10, 0.10}, headerBackground = {0.12, 0.12, 0.12} },
+        buttons = { normalBackground = {0.12, 0.12, 0.12}, hoverBackground = {0.18, 0.18, 0.18},
+            pressedBackground = {0.06, 0.06, 0.06}, disabledBackground = {0.08, 0.08, 0.08},
+            configuredBackground = {0.10, 0.18, 0.12}, configuredHover = {0.13, 0.23, 0.15},
+            -- (the red an older version wrote for the close box under the
+            -- mouse; without a stored one the close box is the white one)
+            xHover = {1.00, 0.30, 0.30} },
+        sidebar = { background = {0.07, 0.07, 0.07}, buttonNormal = {0.12, 0.12, 0.12},
+            buttonHover = {0.18, 0.18, 0.18}, buttonSelected = {0.10, 0.18, 0.12} },
+        checkbox = { background = {0.10, 0.10, 0.10} },
+        dropdown = { background = {0.12, 0.12, 0.12}, itemHover = {0.20, 0.18, 0.12} },
+        raids = { bossEnabled = {0.10, 0.18, 0.12}, bossDisabled = {0.15, 0.15, 0.15},
+            trashBackground = {0.12, 0.12, 0.15} },
+        uiMover = { panelBackground = {0.08, 0.08, 0.08}, headerBackground = {0.12, 0.12, 0.12},
+            buttonBackground = {0.12, 0.12, 0.12}, buttonBackgroundHover = {0.18, 0.18, 0.18},
+            checkboxBackground = {0.07, 0.07, 0.07}, saveButtonBg = {0.12, 0.16, 0.12},
+            saveButtonBgHover = {0.15, 0.20, 0.15} },
+        weaponBar = { frameBackground = {0.08, 0.08, 0.10} },
+        consumablesBar = { frameBackground = {0.08, 0.08, 0.08} },
+        potionsBar = { frameBackground = {0.08, 0.06, 0.08} },
+        gearManager = { frameBackground = {0.08, 0.08, 0.08} },
+        ttkDisplay = { background = {0.08, 0.08, 0.08} },
+        battleShoutReminder = { background = {0.08, 0.08, 0.08} },
+        statsBar = { background = {0.12, 0.12, 0.12} },
+    }
+    local FURNITURE = { ui = true, buttons = true, sidebar = true, checkbox = true, dropdown = true, uiMover = true }
+    -- Is this saved colour the old look rather than a pick? A colour set
+    -- with RC:SetColor from here on carries pick = true and is never stale.
+    -- (A copied or imported profile can put old colours back after the
+    -- one-off clean, so RC:GetColor asks this at every read as well.)
+    local function Stale(cat, key, c)
+        local keys = RC.LEGACY_COLORS[cat]
+        local old = keys and keys[key]
+        if not old or type(c) ~= "table" or c.pick or type(c.r) ~= "number" then return false end
+        local g, b = c.g or 0, c.b or 0
+        if math.abs(c.r - old[1]) < 0.006 and math.abs(g - old[2]) < 0.006 and math.abs(b - old[3]) < 0.006 then
+            return true
+        end
+        if not FURNITURE[cat] then return false end
+        local now = RC.defaultColors[cat] and RC.defaultColors[cat][key]
+        local plain = math.max(c.r, g, b) - math.min(c.r, g, b) <= 0.02
+        local oldPlain = math.max(old[1], old[2], old[3]) - math.min(old[1], old[2], old[3]) <= 0.02
+        return (now and plain and oldPlain and c.r < now.r - 0.005) and true or false
+    end
+    function RC:IsStaleColor(cat, key, c) return Stale(cat, key, c) end
+    -- cc: a customColors table. Returns how many saved colours went.
+    function RC:DropLegacyColors(cc)
+        if type(cc) ~= "table" then return 0 end
+        local n = 0
+        for cat, keys in pairs(RC.LEGACY_COLORS) do
+            local t = type(cc[cat]) == "table" and cc[cat]
+            if t then
+                for key in pairs(keys) do
+                    if Stale(cat, key, t[key]) then
+                        t[key] = nil
+                        n = n + 1
+                    end
+                end
+                if next(t) == nil then cc[cat] = nil end
+            end
+        end
+        return n
+    end
+
     function RC:GetColor(category, colorKey)
-        if self.db and self.db.customColors and self.db.customColors[category] and self.db.customColors[category][colorKey] then
-            return self.db.customColors[category][colorKey]
+        local cc = self.db and self.db.customColors and self.db.customColors[category]
+        local c = cc and cc[colorKey]
+        -- (a saved colour that is only an old shipped shade is passed over)
+        if c and not Stale(category, colorKey, c) then
+            return c
         end
         if self.defaultColors and self.defaultColors[category] and self.defaultColors[category][colorKey] then
             -- Returned directly (no per-lookup clone): callers only read
@@ -2125,7 +2206,8 @@ RC.encounterAddPhases = {
         if not self.db.customColors[category] then
             self.db.customColors[category] = {}
         end
-        self.db.customColors[category][colorKey] = {r = r, g = g, b = b, a = a or 1}
+        -- pick = true: chosen by the player, never taken for an old shipped shade
+        self.db.customColors[category][colorKey] = {r = r, g = g, b = b, a = a or 1, pick = true}
         self:SaveConfigurationToProfile()
         if self.consumablesChecker then
             self.consumablesChecker._colorsDirty = true
