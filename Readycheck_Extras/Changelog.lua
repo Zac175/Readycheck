@@ -7,6 +7,21 @@
 --   } }
 -- Changelog items are plain English only - no implementation details, no
 -- internal system or file names. Do not comment individual entries below.
+--
+-- AN ITEM FOR SOME GAME VERSIONS ONLY is a table instead of a string:
+--   { "the line", feature = "world_tools" }       shown where that feature runs
+--   { "the line", feature = { "a", "b" } }        shown where all of them run
+--   { "the line", only = "tbc" }                  shown on that game version
+--   { "the line", only = { "tbc", "forever" } }   shown on any of those
+-- feature ids are Core_Flavor's (RC.FEATURE_FLAVORS, the table that takes
+-- a feature's pages away where it does not run); game versions are
+-- "era", "tbc" and "forever". A plain string shows everywhere. Tag a line
+-- only when it is plainly about one thing. A version may also carry
+-- titles = { tbc = "...", forever = "..." } for where its title names
+-- something that game version does not have.
+-- RC.Changelog.versions is what this game version sees (the other game
+-- versions' lines taken out, empty sections and versions dropped);
+-- RC.Changelog.allVersions is the whole history as written.
 ------------------------------------------------------------------------
 local function InitializeChangelog()
     local RC = _G.Readycheck
@@ -53,33 +68,47 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.7",
+            date = "2026-11-12",
+            title = "A changelog for the game version you play",
+            sections = {
+                {
+                    type = "changed",
+                    items = {
+                        "What's New and the Changelog page list only the changes for the game version you are playing.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.6",
             date = "2026-11-12",
             title = "Standing route reminders, and timers that work with Nova again",
+            titles = { tbc = "Standing route reminders", forever = "A solid resize corner" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "Raid routes: standing reminders. A line such as \"hold your potion\" stays on the tracker from one step until a later one. Add it from a step's Add action menu.",
-                        "Route tracker, bar style: when your gear is swapped, a tick and the set's name show beside the step.",
-                        "Route tracker, bar style: for a few seconds after a swap the bar shows everything you are wearing, with the pieces that changed lit. Both have a switch on the route's Settings tab.",
-                        "Buff Timer Network: the Status card says which timer format is in use and warns when other players are on a newer one.",
+                        { "Raid routes: standing reminders. A line such as \"hold your potion\" stays on the tracker from one step until a later one. Add it from a step's Add action menu.", feature = "raid_route" },
+                        { "Route tracker, bar style: when your gear is swapped, a tick and the set's name show beside the step.", feature = "raid_route" },
+                        { "Route tracker, bar style: for a few seconds after a swap the bar shows everything you are wearing, with the pieces that changed lit. Both have a switch on the route's Settings tab.", feature = "raid_route" },
+                        { "Buff Timer Network: the Status card says which timer format is in use and warns when other players are on a newer one.", feature = "world_tools" },
                     },
                 },
                 {
                     type = "changed",
                     items = {
-                        "Buff Timer Network: timers are shared in the format the current Nova World Buffs uses, so they pass between the two addons again. Older Readycheck versions need this update to keep receiving.",
+                        { "Buff Timer Network: timers are shared in the format the current Nova World Buffs uses, so they pass between the two addons again. Older Readycheck versions need this update to keep receiving.", feature = "world_tools" },
                         "Every window's resize corner is one solid corner that lights up under the mouse and while you drag it.",
-                        "Route tracker, bar style: the bar is one row shorter. The old gear swap line under it is gone.",
+                        { "Route tracker, bar style: the bar is one row shorter. The old gear swap line under it is gone.", feature = "raid_route" },
                     },
                 },
                 {
                     type = "fixed",
                     items = {
-                        "Songflower and other world buff timers were missing with a current Nova World Buffs installed.",
-                        "Route settings: the Auto width button no longer sits on the scale slider.",
-                        "Route tracker: \"show the next step\" works as soon as it is ticked.",
+                        { "Songflower and other world buff timers were missing with a current Nova World Buffs installed.", feature = "world_tools" },
+                        { "Route settings: the Auto width button no longer sits on the scale slider.", feature = "raid_route" },
+                        { "Route tracker: \"show the next step\" works as soon as it is ticked.", feature = "raid_route" },
                     },
                 },
             },
@@ -88,6 +117,7 @@ local function InitializeChangelog()
             version = "5.0.5",
             date = "2026-11-11",
             title = "One look for every control, and after-kill gear sets",
+            titles = { forever = "One look for every control" },
             sections = {
                 {
                     type = "changed",
@@ -101,7 +131,7 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "A gear set meant for after one boss no longer goes on after a later boss that has none set.",
+                        { "A gear set meant for after one boss no longer goes on after a later boss that has none set.", feature = "boss_gear_kill" },
                     },
                 },
             },
@@ -114,7 +144,7 @@ local function InitializeChangelog()
                 {
                     type = "added",
                     items = {
-                        "TBC: the Battle Shout reminder can watch Commanding Shout instead. Pick the shout you keep up on its page.",
+                        { "TBC: the Battle Shout reminder can watch Commanding Shout instead. Pick the shout you keep up on its page.", only = "tbc" },
                     },
                 },
                 {
@@ -128,7 +158,7 @@ local function InitializeChangelog()
                         "The Gear Manager's tabs match the rest of the window.",
                         "The \"What's New\" window's buttons match ZacUI's.",
                         "Options that do nothing on a game version are hidden on that version.",
-                        "Spec detection lists your talents on TBC and reads the new talent tree on WoW Forever.",
+                        { "Spec detection lists your talents on TBC and reads the new talent tree on WoW Forever.", only = { "tbc", "forever" } },
                         "The consumables checker, the bars and the trackers are a lighter grey instead of near-black.",
                         "On a new character more frames start in spots where they don't overlap. Characters you already have are not moved.",
                         "The settings search remembers what it has read, so it no longer stalls the first time you search each session.",
@@ -203,13 +233,13 @@ local function InitializeChangelog()
                         "A new settings window: bigger, with a sidebar, the page title pinned at the top, banded rows, round sliders and a thin scrollbar. Drag it from anywhere, fold it down to its name, and change its scale from the bottom bar.",
                         "Search every setting from the box at the top of the sidebar, with each result showing where it lives.",
                         "Raid consume reminders: in a raid, the important consumables you are not using show in the reminders bar.",
-                        "More features now work on TBC Anniversary and WoW Forever instead of switching off.",
+                        { "More features now work on TBC Anniversary and WoW Forever instead of switching off.", only = { "tbc", "forever" } },
                     },
                 },
                 {
                     type = "changed",
                     items = {
-                        "On WoW Forever, the Battle Shout tracker counts the whole raid, since the shout reaches everyone nearby there.",
+                        { "On WoW Forever, the Battle Shout tracker counts the whole raid, since the shout reaches everyone nearby there.", only = "forever" },
                         "A reworked first-time setup.",
                     },
                 },
@@ -232,8 +262,8 @@ local function InitializeChangelog()
                         "Readycheck now runs on TBC Anniversary and WoW Forever as well as Classic Era.",
                         "Features that only make sense in Classic Era switch themselves off on TBC and Forever, and their pages say why. This covers world buffs, Chronoboon, Classic raid boss setups and raid routes.",
                         "Type /rc flavor to see which features are on for your game version.",
-                        "Consumables follow your game version. TBC and Forever get their own items, potions, stones, oils and poisons on the bars, in the checker and in the reminders.",
-                        "In TBC, a battle elixir and a guardian elixir no longer count as clashing. A flask covers both.",
+                        { "Consumables follow your game version. TBC and Forever get their own items, potions, stones, oils and poisons on the bars, in the checker and in the reminders.", only = { "tbc", "forever" } },
+                        { "In TBC, a battle elixir and a guardian elixir no longer count as clashing. A flask covers both.", only = "tbc" },
                         "Almost every text can now be moved and reworded: bar button texts and timers, the reminder popup, the raid buff and boss debuff trackers, the TTK display, the stats bar, the route tracker, the repair reminder, nameplate auras, the consumables checker, gear buttons and the World Buffs board.",
                         "Most bars and windows have fade, opacity, shadow, glow, layer and scale settings.",
                         "The reminder popup can grow in any direction and has its own look for each state.",
@@ -249,8 +279,8 @@ local function InitializeChangelog()
                         "Checkboxes and tabs have a cleaner look with a gold tick.",
                         "Previews take up less room.",
                         "Settings pages use less memory.",
-                        "In TBC, poisons no longer warn about low charges, since they last an hour.",
-                        "A finished raid route shows the last gear swap, then folds the tracker bar away.",
+                        { "In TBC, poisons no longer warn about low charges, since they last an hour.", only = "tbc" },
+                        { "A finished raid route shows the last gear swap, then folds the tracker bar away.", feature = "raid_route" },
                     },
                 },
                 {
@@ -261,7 +291,7 @@ local function InitializeChangelog()
                         "Some previews were blank.",
                         "Previews could flicker while a page resized.",
                         "\"Can't measure restricted regions\" errors from nameplate auras and animations.",
-                        "Boss buttons on the raid page could overlap.",
+                        { "Boss buttons on the raid page could overlap.", feature = "raid_configs" },
                     },
                 },
             },
@@ -276,8 +306,8 @@ local function InitializeChangelog()
                     items = {
                         "Less lag in raids. Looting, zoning and procs are much lighter on your game.",
                         "Consumable voice warnings now play at your Show before expiry time. Short buffs are called out as soon as you use them.",
-                        "Raid configs now show a boss as set up when it only has gear swaps.",
-                        "Item lists in raid configs and routes only show what's in your bags, plus one Target Dummy.",
+                        { "Raid configs now show a boss as set up when it only has gear swaps.", feature = "raid_configs" },
+                        { "Item lists in raid configs and routes only show what's in your bags, plus one Target Dummy.", feature = "raid_configs" },
                         "The next-trinket icon on the gear buttons is smaller, and the button text shows on top of it.",
                         "Trinket swaps show right away on both the trinket bar and the gear buttons.",
                     }
@@ -294,8 +324,8 @@ local function InitializeChangelog()
                         "Voice warnings for short buffs played too late.",
                         "Countdown numbers could get stuck on consumables bar buttons.",
                         "Weapons in your bags could be missing from the weapons bar after logging in.",
-                        "After-kill and on-target consumable reminders didn't work if you carried a different version of the item.",
-                        "Raid config: the shared Four Horsemen setup could stop working, route gear sets sometimes weren't put on, and the raid page could edit the wrong profile or go blank.",
+                        { "After-kill and on-target consumable reminders didn't work if you carried a different version of the item.", feature = "raid_configs" },
+                        { "Raid config: the shared Four Horsemen setup could stop working, route gear sets sometimes weren't put on, and the raid page could edit the wrong profile or go blank.", feature = "raid_configs" },
                         "Changing the font could make some text the wrong size.",
                     }
                 },
@@ -305,13 +335,14 @@ local function InitializeChangelog()
             version = "4.8.3",
             date = "2026-10-23",
             title = "Thaddius timer, new route tracker, rogue poisons",
+            titles = { tbc = "A new route tracker, and rogue poisons", forever = "Rogue poisons" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "Polarity Mode: a timer starts when Thaddius dies and counts down to your Death Wish, then to Sapphiron. Turn it on or off on the Polarity Mode Sources tab.",
-                        "A new route tracker: a small panel or a one-row bar, with each mob's kill count and what happens when the step is done.",
-                        "Kill times remember the class you played. Predictions can use only your class's kills, or include kills from related raid setups.",
+                        { "Polarity Mode: a timer starts when Thaddius dies and counts down to your Death Wish, then to Sapphiron. Turn it on or off on the Polarity Mode Sources tab.", feature = "polarity" },
+                        { "A new route tracker: a small panel or a one-row bar, with each mob's kill count and what happens when the step is done.", feature = "raid_route" },
+                        { "Kill times remember the class you played. Predictions can use only your class's kills, or include kills from related raid setups.", feature = "ttk" },
                         "Rogue poisons on the weapons and consumables bars, with a separate poison for each hand and a warning when the time or the charges run low.",
                         "Class items for every class in the consumables checker.",
                         "More looks for the reminder icons: border style, glow size and colours, under Reminders > Position > Icon Display.",
@@ -328,12 +359,12 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "Polarity Mode picks up DBM and BigWigs pull timers again.",
-                        "Syncing raid profiles with a raid mate no longer turns your routes off.",
+                        { "Polarity Mode picks up DBM and BigWigs pull timers again.", feature = "polarity" },
+                        { "Syncing raid profiles with a raid mate no longer turns your routes off.", feature = "raid_route" },
                         "An error in combat when a consumable buff ran out, which also stopped the consumables bar updating after the fight.",
                         "Some weapon oils and poisons showed the wrong name.",
                         "Bars with their background turned off can be moved right up to the edge of the screen.",
-                        "Searching the settings for a raid boss works again.",
+                        { "Searching the settings for a raid boss works again.", feature = "raid_configs" },
                     }
                 },
             }
@@ -342,12 +373,13 @@ local function InitializeChangelog()
             version = "4.8.2",
             date = "2026-10-15",
             title = "Hide gear from menus, buff push-off history, quieter alerts",
+            titles = { tbc = "Hide gear from menus, quieter alerts", forever = "Hide gear from menus, quieter alerts" },
             sections = {
                 {
                     type = "added",
                     items = {
                         "Hide items and gear sets from the gear button hover menus: Ctrl+Right-click them. Hold Shift over the menu to see them again.",
-                        "Buff cap: the last 40 buffs that got pushed off, what pushed them and where, on the stats bar settings page.",
+                        { "Buff cap: the last 40 buffs that got pushed off, what pushed them and where, on the stats bar settings page.", feature = "buff_pushoff" },
                         "The consumables and potion bars can now fit up to 40 buttons in a row.",
                     }
                 },
@@ -356,7 +388,7 @@ local function InitializeChangelog()
                     items = {
                         "The repair reminder stays out of the way in combat and shows after the fight.",
                         "Short potions now warn just before they run out, not a minute early.",
-                        "World buff \"cooldown ready\" and \"dropped elsewhere\" alerts are silent again. You can still pick a sound for them.",
+                        { "World buff \"cooldown ready\" and \"dropped elsewhere\" alerts are silent again. You can still pick a sound for them.", feature = "world_tools" },
                         "The minimap icon flips over when you mouse over it, like the icon on the windows.",
                     }
                 },
@@ -366,7 +398,7 @@ local function InitializeChangelog()
                         "Voice alerts no longer say \"Potion\" while your potions are on cooldown.",
                         "Items you hid from the bars no longer get voice alerts.",
                         "Trinket reminders no longer repeat over and over for trinkets you can't use.",
-                        "Routes: a kill step no longer gets skipped when the same mob is in two steps in a row.",
+                        { "Routes: a kill step no longer gets skipped when the same mob is in two steps in a row.", feature = "raid_route" },
                         "The main hand and off hand stone buttons show the right weapon after a swap.",
                     }
                 },
@@ -376,13 +408,14 @@ local function InitializeChangelog()
             version = "4.8.1",
             date = "2026-10-11",
             title = "Routes from Warcraft Logs, must-have items, buff cap counter",
+            titles = { tbc = "Routes from Warcraft Logs, and must-have items", forever = "Must-have items" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "Build a raid route from a Warcraft Logs report on the website: Routes > From Logs.",
+                        { "Build a raid route from a Warcraft Logs report on the website: Routes > From Logs.", feature = "raid_route" },
                         "Copy my character: one string that takes your gear and consumables to the website.",
-                        "Buff cap counter on the stats bar, with a warning when a buff gets pushed off.",
+                        { "Buff cap counter on the stats bar, with a warning when a buff gets pushed off.", feature = "buff_pushoff" },
                         "Must-have items: big icons in the middle of your screen if you enter a raid without one.",
                         "Default list: LIP, Elixir of Poison Resistance, target dummy. Edit it in Consumables Checker.",
                     }
@@ -391,7 +424,7 @@ local function InitializeChangelog()
                     type = "changed",
                     items = {
                         "The weapon skill warning only shows when you zone into a raid.",
-                        "The in-game raid map and route builder are gone; the website does both better.",
+                        { "The in-game raid map and route builder are gone; the website does both better.", feature = "raid_route" },
                     }
                 },
                 {
@@ -407,20 +440,21 @@ local function InitializeChangelog()
             version = "4.8.0",
             date = "2026-10-05",
             title = "Buff and debuff trackers, hotswap queue, smoother swaps",
+            titles = { forever = "Raid buff tracker, hotswap queue, smoother swaps" },
             sections = {
                 {
                     type = "added",
                     items = {
                         "Raid Buff Tracker: shows how long your raid buffs have left and warns you before they run out.",
-                        "Boss Debuff Tracker: shows the raid's debuffs on the boss and warns you when one is about to drop.",
+                        { "Boss Debuff Tracker: shows the raid's debuffs on the boss and warns you when one is about to drop.", feature = "boss_debuff_tracker" },
                         "Both trackers can whisper whoever cast a buff or debuff when it runs out. Off by default.",
                         "Hotswap macros now work in combat: the gear swap waits and happens when combat ends.",
                         "Gear waiting to be swapped is shown on your gear buttons and character sheet.",
                         "Settings search now finds single options and jumps to them.",
                         "New installs get a short tour of the settings window. Replay it with /rc tutorial.",
-                        "A boss can ask which gear set to wear next when it dies.",
-                        "Warning when your Darkmoon Faire debuff gets pushed off.",
-                        "Move or copy kill history between raid profiles.",
+                        { "A boss can ask which gear set to wear next when it dies.", feature = "boss_gear_prompt" },
+                        { "Warning when your Darkmoon Faire debuff gets pushed off.", feature = "buff_pushoff" },
+                        { "Move or copy kill history between raid profiles.", feature = "ttk" },
                         "Reminder icons have a glow you can set to pulse, stay steady or turn off.",
                     }
                 },
@@ -433,7 +467,7 @@ local function InitializeChangelog()
                         "Cleaner gear swap menu.",
                         "New look for window title bars and the character stats bar.",
                         "Gear set icons show everywhere a set is listed.",
-                        "Kill history is a compact paged list and stays fast with lots of kills.",
+                        { "Kill history is a compact paged list and stays fast with lots of kills.", feature = "ttk" },
                         "The minimap button's menu lists every settings page.",
                         "Save & lock in Edit Mode now locks every bar.",
                     }
@@ -442,11 +476,11 @@ local function InitializeChangelog()
                     type = "fixed",
                     items = {
                         "No more false 'gear swap failed' message after a boss.",
-                        "Battle Shout tracker shows the right attack power.",
-                        "World buff board: Rend and Onyxia timers are right again.",
+                        { "Battle Shout tracker shows the right attack power.", feature = "battle_shout_party" },
+                        { "World buff board: Rend and Onyxia timers are right again.", feature = "world_tools" },
                         "Gold totals across your characters are right again.",
                         "FPS on the stats bar updates again.",
-                        "Routes pasted from Discord or a text file now import.",
+                        { "Routes pasted from Discord or a text file now import.", feature = "raid_route" },
                         "Fixed an error when a trinket swap failed with an empty trinket slot.",
                         "Fixed an 'action blocked' error in combat.",
                     }
@@ -457,13 +491,14 @@ local function InitializeChangelog()
             version = "4.7.9",
             date = "2026-09-28",
             title = "Route fixes, bar visibility and a simpler colour editor",
+            titles = { forever = "Bar visibility and a simpler colour editor" },
             sections = {
                 {
                     type = "fixed",
                     items = {
-                        "Routes no longer skip ahead when you kill mobs that belong to a later step.",
-                        "Editing a route mid-raid keeps you on the step you were on.",
-                        "Routes pick up properly on a fresh run of the same raid.",
+                        { "Routes no longer skip ahead when you kill mobs that belong to a later step.", feature = "raid_route" },
+                        { "Editing a route mid-raid keeps you on the step you were on.", feature = "raid_route" },
+                        { "Routes pick up properly on a fresh run of the same raid.", feature = "raid_route" },
                         "Bars set to show only in raids or only in cities no longer pop back up when you zone or rest.",
                         "The Weapons Bar's 'In Cities' option now works.",
                         "Fire-toasted Bun and Dark Desire are now treated as the same buff, so the bar warns when one would replace the other.",
@@ -501,9 +536,9 @@ local function InitializeChangelog()
                     type = "changed",
                     items = {
                         "Every window, menu and pop-up has been given a cleaner, flatter look that matches across the whole addon.",
-                        "Boss pages now put all the abilities and gear options in one row along the top. Click one and its settings open underneath, full width.",
-                        "Trash pages work the same way now.",
-                        "Ability settings can be copied to every other boss in the raid with one button.",
+                        { "Boss pages now put all the abilities and gear options in one row along the top. Click one and its settings open underneath, full width.", feature = "raid_configs" },
+                        { "Trash pages work the same way now.", feature = "raid_configs" },
+                        { "Ability settings can be copied to every other boss in the raid with one button.", feature = "raid_configs" },
                         "Green now means something is switched on, gold means it is the one you are looking at. They no longer get mixed up together.",
                         "Menus with nothing in them now say so, and tell you where to add something.",
                     }
@@ -540,6 +575,7 @@ local function InitializeChangelog()
             version = "4.7.5",
             date = "2026-08-22",
             title = "Split into smaller addons, buff warnings that travel further, and a fuller equipment reminder",
+            titles = { tbc = "Split into smaller addons, and a fuller equipment reminder", forever = "Split into smaller addons, and a fuller equipment reminder" },
             sections = {
                 {
                     type = "changed",
@@ -552,12 +588,12 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "Warnings that a world buff is about to drop now reach your other characters. Before, the warning only travelled to people in your guild or group, so a character in a different guild never got the countdown. Rend, Onyxia, Nefarian and Zandalar warnings now go out to your linked accounts as well.",
-                        "A buff warning now tells you whether it came from your guild or from your linked accounts.",
+                        { "Warnings that a world buff is about to drop now reach your other characters. Before, the warning only travelled to people in your guild or group, so a character in a different guild never got the countdown. Rend, Onyxia, Nefarian and Zandalar warnings now go out to your linked accounts as well.", feature = "world_tools" },
+                        { "A buff warning now tells you whether it came from your guild or from your linked accounts.", feature = "world_tools" },
                         "The equipment reminder no longer goes stale. Equipping a watched item that is not a weapon - a belt, chest or trinket - now updates the reminder straight away, instead of leaving the old icon up until you next changed weapons.",
-                        "Turning off the buff timer network now works. The tickboxes on that page were saving the wrong thing, so unticking one turned it on. Anything left in a mess gets reset to off when you log in.",
-                        "That switch also works straight away now instead of needing a reload, and the page updates as you click.",
-                        "You can use /wbtnet on, off or toggle from chat. /wbtnet diag tells you why nothing is syncing.",
+                        { "Turning off the buff timer network now works. The tickboxes on that page were saving the wrong thing, so unticking one turned it on. Anything left in a mess gets reset to off when you log in.", feature = "world_tools" },
+                        { "That switch also works straight away now instead of needing a reload, and the page updates as you click.", feature = "world_tools" },
+                        { "You can use /wbtnet on, off or toggle from chat. /wbtnet diag tells you why nothing is syncing.", feature = "world_tools" },
                         "Gold from your other characters no longer disappears from the gold list after a few minutes.",
                         "Characters you hear about second-hand no longer lose their race.",
                         "The new addons switch themselves on when you update, even if your addon manager installed them turned off. Anything you had already turned off by hand stays off.",
@@ -569,19 +605,20 @@ local function InitializeChangelog()
             version = "4.7.4",
             date = "2026-08-16",
             title = "World Tools, Buff Timer Network and a smarter trinket swap",
+            titles = { tbc = "A smarter trinket swap, and macros that write themselves", forever = "A smarter trinket swap, and macros that write themselves" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "New World Tools section. Buff Drops shows timer bars and plays a sound when a world buff is about to drop. Automation can accept summons, click through gossip, and do common turn-ins for you.",
-                        "New Buff Timer Network page. See when Rend, Onyxia, Nefarian and Songflower are coming up on each layer, shared between Readycheck users. No separate addon needed.",
+                        { "New World Tools section. Buff Drops shows timer bars and plays a sound when a world buff is about to drop. Automation can accept summons, click through gossip, and do common turn-ins for you.", feature = "world_tools" },
+                        { "New Buff Timer Network page. See when Rend, Onyxia, Nefarian and Songflower are coming up on each layer, shared between Readycheck users. No separate addon needed.", feature = "world_tools" },
                         "New Target Range tab on the Nameplates page. Add a mob and your nameplate distance changes to what you picked while you target it, then goes back to normal.",
                         "Smart Macros can now write the macro for you. Pick an action, type a name, and it shows you the finished macro. No macro knowledge needed.",
                         "Smart macro rules can check more things: a specific boss or mob, world boss, elite, enemy, friendly, not-undead, or no target. One rule can hold up to five of these. A rule can also need an item in your bags that is ready to use.",
                         "Farm route steps can now do things when you finish them: swap a gear set or trinket, equip an item, or remind you to pot - with a sound, an icon, and an optional delay. Steps can be copied, and the mob picker can filter by wing.",
                         "The sync page now lets you pick single settings, not just whole groups. New Only button sends just one thing. New preset buttons send or receive everything or nothing. The page tells you in plain words what this character sends.",
                         "Nameplate settings, the world buff board, your docked gear buttons, the sync transfer bar's position, and the Buff Timer Network settings can now sync between accounts.",
-                        "Smart macros can now be set to only run in Onyxia's Lair, Zul'Gurub or Ruins of Ahn'Qiraj, and every raid's trash is now sorted into wings.",
+                        { "Smart macros can now be set to only run in Onyxia's Lair, Zul'Gurub or Ruins of Ahn'Qiraj, and every raid's trash is now sorted into wings.", only = "era" },
                         "/rc mesh now lists what you send and receive by name. /rc mesh undo puts your old send choices back.",
                         "If part of the addon is turned off in the AddOns list, you now get a login message saying what is missing and how to turn it back on.",
                     }
@@ -609,16 +646,16 @@ local function InitializeChangelog()
                         "Moving things is now pixel perfect. Dragging snaps to real screen pixels, and each arrow press in the mover moves exactly one pixel, at any UI scale.",
                         "The Berserking troll racial now tracks for warriors and rogues. Each class has its own version of the spell, and only the caster classes' version was being watched.",
                         "Gear buttons you line up by hand no longer drift out of alignment after a reload.",
-                        "While remote editing someone's raid config, creating, deleting, renaming, merging, importing or exporting a profile now works on their config instead of failing with 'profile does not exist'.",
+                        { "While remote editing someone's raid config, creating, deleting, renaming, merging, importing or exporting a profile now works on their config instead of failing with 'profile does not exist'.", feature = "raid_configs" },
                         "In /rc moveui, the box around a group of docked buttons now sits over the buttons instead of off to one side, and dropping it puts them exactly where you left the box.",
                         "Snowballs are now tracked in the consumables checker under Utilities & Tools, with a recommended count of 5.",
-                        "Trinket reminders, utility items, post-death consumables, defensive cooldowns and bulk trash edits now change the config of the character you are remote editing. They were quietly editing your own settings instead, then reporting success.",
-                        "The route page's boss gear set picker now edits the config you have open when remote editing, instead of moving the gear set out of their route and into your own boss setup.",
-                        "Opening a trash page while remote editing no longer stamps your own race and class onto your profile.",
-                        "Editing someone's raid config remotely now keeps syncing. Only your first change was being sent - everything after it was silently dropped for several minutes as a duplicate, so sliders, checkboxes and timers looked like they stopped working.",
-                        "Deleting, renaming or merging a profile while remote editing now actually reaches the other character. Only the profile they had open was ever sent, so removed profiles used to live on forever on their end.",
-                        "Switching raid profile from the zone-in popup or the boss notes page always switches your own profile, even with a remote edit window open.",
-                        "Renaming someone else's raid profile no longer renames your own boss notes.",
+                        { "Trinket reminders, utility items, post-death consumables, defensive cooldowns and bulk trash edits now change the config of the character you are remote editing. They were quietly editing your own settings instead, then reporting success.", feature = "raid_configs" },
+                        { "The route page's boss gear set picker now edits the config you have open when remote editing, instead of moving the gear set out of their route and into your own boss setup.", feature = "raid_configs" },
+                        { "Opening a trash page while remote editing no longer stamps your own race and class onto your profile.", feature = "raid_configs" },
+                        { "Editing someone's raid config remotely now keeps syncing. Only your first change was being sent - everything after it was silently dropped for several minutes as a duplicate, so sliders, checkboxes and timers looked like they stopped working.", feature = "raid_configs" },
+                        { "Deleting, renaming or merging a profile while remote editing now actually reaches the other character. Only the profile they had open was ever sent, so removed profiles used to live on forever on their end.", feature = "raid_configs" },
+                        { "Switching raid profile from the zone-in popup or the boss notes page always switches your own profile, even with a remote edit window open.", feature = "raid_configs" },
+                        { "Renaming someone else's raid profile no longer renames your own boss notes.", feature = "raid_configs" },
                         "Settings that arrive from another character now take effect straight away. They were being saved but nothing on screen moved until you reloaded, which looked exactly like sync not working.",
                         "Chat reliably tells you what arrived when a sync lands - one line per sender, listing the categories. Automatic syncs never announced themselves before, only manual pushes did.",
                         "Changing a setting your character isn't set to send now tells you so once, instead of silently doing nothing.",
@@ -649,11 +686,11 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "Trinkets equipped by a boss gear swap can no longer be swapped off by the trinket auto-swap while the boss is alive - including trinkets that come from the full gear set, not just the per-slot overrides.",
+                        { "Trinkets equipped by a boss gear swap can no longer be swapped off by the trinket auto-swap while the boss is alive - including trinkets that come from the full gear set, not just the per-slot overrides.", feature = "raid_configs" },
                         "The missing-consumables warning on raid entry now only lists items you have none of, instead of also naming things you are merely low on.",
                         "The raid-entry warning no longer claims weapon stones are missing when the stones are sitting in your bags.",
-                        "Polarity Mode now counts from the moment the boss is actually engaged, so the potion and dummy reminders land at the same instant every single pull. The potion reminder now sits at 5 seconds out of the box.",
-                        "Using a Blasted Lands buff or a Zanza potion now hides all the others as conflicting on the consumables bar, in both directions.",
+                        { "Polarity Mode now counts from the moment the boss is actually engaged, so the potion and dummy reminders land at the same instant every single pull. The potion reminder now sits at 5 seconds out of the box.", feature = "polarity" },
+                        { "Using a Blasted Lands buff or a Zanza potion now hides all the others as conflicting on the consumables bar, in both directions.", only = "era" },
                         "Right-clicking an item in the consumables checker once again opens the recommended-amount editor, so you no longer have to dig through the settings page.",
                     }
                 },
@@ -693,11 +730,12 @@ local function InitializeChangelog()
             version = "4.7.0",
             date = "2026-07-31",
             title = "Raid pages and weapon buttons",
+            titles = { forever = "Weapon buttons" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "Boss and trash pages redesigned: pick an ability or mob on the left, set it up on the right.",
+                        { "Boss and trash pages redesigned: pick an ability or mob on the left, set it up on the right.", feature = "raid_configs" },
                         "Anything already set up shows a green marker.",
                         "The consumables bar now has Main Hand, Off Hand and Bag Weapon buttons - the full weapon set without needing the Weapons Bar.",
                         "Right-click a weapon button to pick which stone or oil to use. The menu opens toward the middle of the screen.",
@@ -708,12 +746,12 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "Route tracker no longer skips ahead when mobs with the same name live in more than one wing.",
+                        { "Route tracker no longer skips ahead when mobs with the same name live in more than one wing.", feature = "raid_route" },
                         "Right-clicking a weapon button no longer applies the stone.",
                         "Weapon buttons now work for every class and for staves - healers get their mana oil.",
                         "A used consumable can no longer stay invisible on the bar.",
                         "Fixed an error when zoning into a raid with the missing-consumables warning on.",
-                        "Clicking trash mobs no longer closes the wrong section.",
+                        { "Clicking trash mobs no longer closes the wrong section.", feature = "raid_configs" },
                         "The settings window is faster and no longer slows down the game over long sessions.",
                     }
                 },
@@ -736,7 +774,7 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "Route can't skip ahead when extra trash dies.",
+                        { "Route can't skip ahead when extra trash dies.", feature = "raid_route" },
                         "Queued trinkets look the same everywhere.",
                         "Queue badge shows on the slot being replaced.",
                         "One queued icon on dock trinkets, not two.",
@@ -746,7 +784,7 @@ local function InitializeChangelog()
                         "Dockable buttons move with the UI mover.",
                         "Trinket settings page error fixed.",
                         "Custom trinket order stays put.",
-                        "Boss death trinkets can't get overwritten by the auto swapper.",
+                        { "Boss death trinkets can't get overwritten by the auto swapper.", feature = "raid_configs" },
                         "Shift-click cancels queued trinkets on dock buttons.",
                     }
                 },
@@ -769,10 +807,10 @@ local function InitializeChangelog()
                 {
                     type = "added",
                     items = {
-                        "Ability reminders for every class - each class gets its own list of raid abilities to set up per boss. You only see what your character actually knows.",
+                        { "Ability reminders for every class - each class gets its own list of raid abilities to set up per boss. You only see what your character actually knows.", feature = "raid_configs" },
                         "Racials for everyone - Stoneform, Escape Artist, Will of the Forsaken, War Stomp, and more.",
                         "Type /rc abilities to see your class list.",
-                        "Drag route steps to reorder them.",
+                        { "Drag route steps to reorder them.", feature = "raid_route" },
                         "Gear Set button border: green = wearing it, gold = own it, red = missing pieces.",
                         "Dockable buttons can be moved in move mode.",
                     }
@@ -781,11 +819,11 @@ local function InitializeChangelog()
                     type = "fixed",
                     items = {
                         "Stats bar shows up at login again and can't get stuck off screen.",
-                        "Boss kill-time display works on its own, and long boss names fit.",
-                        "Sapphiron bar matches the pull countdown.",
-                        "World Buffs board: no more vanishing toons, same list on every client, logouts show within seconds. /rc wb purge clears old junk.",
+                        { "Boss kill-time display works on its own, and long boss names fit.", feature = "ttk" },
+                        { "Sapphiron bar matches the pull countdown.", feature = "polarity" },
+                        { "World Buffs board: no more vanishing toons, same list on every client, logouts show within seconds. /rc wb purge clears old junk.", feature = "world_tools" },
                         "Weapon bar clicks work again.",
-                        "Deselecting a boss no longer swaps your gear back.",
+                        { "Deselecting a boss no longer swaps your gear back.", feature = "raid_configs" },
                         "Troll Berserking shows for all classes.",
                         "Dropdowns open on top like they should.",
                         "Fixed some login errors.",
@@ -804,26 +842,27 @@ local function InitializeChangelog()
             version = "4.6.7",
             date = "2026-07-25",
             title = "The voice update, rock-solid sync and speedrun routes",
+            titles = { forever = "The voice update and rock-solid sync" },
             sections = {
                 {
                     type = "added",
                     items = {
                         "Natural speech is the voice of everything now - loud, clear, in the voice you pick, working out of the box with no extra downloads. The recorded voice pack is an optional extra for anyone who prefers it.",
                         "Ready calls are short category words: Trinket ready, Item ready, Potion ready - and Stone, Oil and Potion on the bars. Potion strictly means the real shared-cooldown potions. Every bar item row now has a Say box next to its TTS toggle - type your own spoken name there and it wins over everything.",
-                        "Boss and trash notes can be read aloud, with a Speak button on every note editor to preview from anywhere.",
-                        "The route catches up when the raid gets ahead of it, and its ready call covers every on-use item it equips - not just trinkets.",
+                        { "Boss and trash notes can be read aloud, with a Speak button on every note editor to preview from anywhere.", feature = "boss_notes" },
+                        { "The route catches up when the raid gets ahead of it, and its ready call covers every on-use item it equips - not just trinkets.", feature = "raid_route" },
                         "Shift+left-click cancels queued swaps: a slot button for that slot only, the Gear Set button for the whole queued set. When a full set is queued, shift-clicking a slot now removes just that slot from the coming swap (click again to restore it) - and clicking a slot with nothing queued is silent instead of chatty.",
-                        "Targeting a boss whose setup uses a full gear set plus slot overrides now equips each slot exactly once: the set skips the overridden slots instead of equipping its own weapon or offhand first and re-swapping it moments later.",
+                        { "Targeting a boss whose setup uses a full gear set plus slot overrides now equips each slot exactly once: the set skips the overridden slots instead of equipping its own weapon or offhand first and re-swapping it moments later.", feature = "boss_gear_target" },
                         "If TrinketMenu runs alongside, the Trinket Manager page says so instead of the two addons silently fighting over your slots.",
                     }
                 },
                 {
                     type = "fixed",
                     items = {
-                        "Speedrun-proof kill detection: chain-pulled packs, simultaneous deaths and look-alike mobs from other wings all count correctly, and the route can no longer skip a run of steps by mistake.",
-                        "Chronoboon reading is exact - every stored buff shows its own remaining time, Sayge's Dark Fortune included - and world buff timers can no longer drift when the game changes.",
-                        "Names no longer vanish from the World Buffs window, and other characters' rows stay put while they are offline.",
-                        "Re-booning updates the window immediately: grabbing fresh buffs into the chronoboon no longer shows the previous boon's contents until you hover it.",
+                        { "Speedrun-proof kill detection: chain-pulled packs, simultaneous deaths and look-alike mobs from other wings all count correctly, and the route can no longer skip a run of steps by mistake.", feature = "raid_route" },
+                        { "Chronoboon reading is exact - every stored buff shows its own remaining time, Sayge's Dark Fortune included - and world buff timers can no longer drift when the game changes.", feature = "chronoboon" },
+                        { "Names no longer vanish from the World Buffs window, and other characters' rows stay put while they are offline.", feature = "world_tools" },
+                        { "Re-booning updates the window immediately: grabbing fresh buffs into the chronoboon no longer shows the previous boon's contents until you hover it.", feature = "chronoboon" },
                         "Mesh sync is finally quiet: characters verify first and send only what the other is missing. The endless re-syncing on every reload is gone at its root, and several accounts can log in together cleanly.",
                         "Speech never repeats itself, never reads raid icons aloud, and never goes silent - lines without a recording speak naturally at full volume.",
                         "Berserking reminders clear on cast for every class.",
@@ -892,7 +931,7 @@ local function InitializeChangelog()
                         "Two characters on the same account no longer overwrite each other's gear sets just because the sets share a name.",
                         "Button settings, name text and the lock now apply on your other characters right after syncing instead of fighting the old values.",
                         "Route changes sync right away instead of waiting for the next login, and a few settings that never synced at all now do - route tracker settings, stats bar picks, enchant picks and the Raid Planner.",
-                        "A character no longer shows up twice on the world buff board.",
+                        { "A character no longer shows up twice on the world buff board.", feature = "world_tools" },
                         "Broken or missing fonts no longer turn text invisible after the patch - they fall back to the standard font and tell you.",
                         "Closing the frame mover with Escape no longer leaves the drag handles stuck until a reload.",
                         "The weapons bar stone list no longer errors and shows every stone and oil.",
@@ -905,16 +944,17 @@ local function InitializeChangelog()
             version = "4.6.4",
             date = "2026-07-14",
             title = "Route tracker, sync stability & smarter equips",
+            titles = { forever = "Sync stability & smarter equips" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "A boss can switch your trinket auto-swap config when it dies - set it on the boss's Gear tab under After Boss Dies.",
-                        "The route tracker has prev/next step arrows with a visibility slider and position picker, and can be unlocked and dragged anywhere.",
-                        "The tracker can preview upcoming steps, with a depth slider.",
+                        { "A boss can switch your trinket auto-swap config when it dies - set it on the boss's Gear tab under After Boss Dies.", feature = "raid_configs" },
+                        { "The route tracker has prev/next step arrows with a visibility slider and position picker, and can be unlocked and dragged anywhere.", feature = "raid_route" },
+                        { "The tracker can preview upcoming steps, with a depth slider.", feature = "raid_route" },
                         "Duplicate items with different enchants are distinct and pinnable - in the route slot picker (small green line under the name) and on the Speed Item Swaps page. Every equip grabs the pinned copy.",
                         "New voice calls, each with a switch: Potion ready when the shared cooldown ends, and Use it when a route-equipped trinket comes off cooldown.",
-                        "Raid config weapon swaps can move a weapon worn in your other hand.",
+                        { "Raid config weapon swaps can move a weapon worn in your other hand.", feature = "raid_configs" },
                     }
                 },
                 {
@@ -922,10 +962,10 @@ local function InitializeChangelog()
                     items = {
                         "Clicking a spell no longer throws Interface action failed. The addon was writing over Blizzard globals; it no longer writes any.",
                         "Running several characters at once no longer disconnects you - sync stays under the rate limit and heartbeats jump ahead of bulk data.",
-                        "The tracker reads shorter: names compress, a next step on the same boss shows only its verb, the kill count always shows, and gear swaps no longer take over the display.",
+                        { "The tracker reads shorter: names compress, a next step on the same boss shows only its verb, the kill count always shows, and gear swaps no longer take over the display.", feature = "raid_route" },
                         "Reminders skip items already on cooldown, potions respect the shared lockout, and any potion - right or wrong - advances a potion step.",
                         "Reloading no longer re-equips step gear over what you put on by hand, and speed item swap-back survives reloads.",
-                        "Sim, Test Actions and manual advance apply raid-config gear exactly like real events: set first, then overrides win their slots, fast and verified.",
+                        { "Sim, Test Actions and manual advance apply raid-config gear exactly like real events: set first, then overrides win their slots, fast and verified.", feature = "raid_configs" },
                         "The engi reminder picker is populated again and the Target Dummy variants are one combined entry.",
                     }
                 },
@@ -935,20 +975,21 @@ local function InitializeChangelog()
             version = "4.6.3",
             date = "2026-07-13",
             title = "Raid Route",
+            titles = { forever = "Fixes" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "New Raid Route feature: build a kill-order plan for a raid - trash packs to count and bosses as checkpoints - and the addon follows along as you clear, swapping gear and trinkets and showing reminders exactly when each step completes. Open a raid in the sidebar and click the new Route tab. Off by default; turn it on per character from that page.",
-                        "A route builder map for Naxxramas: click bosses and trash packs in your kill order to lay out the whole run, and reorder or trim it right there.",
-                        "While a route is running, a small movable tracker follows along: the current step at the top, its action icons and reminders inside the frame, and an optional dim line showing the next step at the bottom. The frame hugs its content (long text wraps, nothing is ever clipped), a Basic mode strips it down to icons and only the text that matters, the background can be made fully transparent, and scale is the one size control. When a step equips gear, a brief 'Equipping' flash bridges it to the next step - and if the step completed in combat, that flash waits for the swap at the end of combat.",
-                        "Each step fires everything it carries - gear swaps, trinkets, reminders, spoken alerts - at the moment its own trigger completes: the kill count filling for trash, or the chosen pull/kill event for bosses. Swaps queue safely to the end of combat when you're fighting. Reminders picked from your bags - potions, sappers, dynamite and other consumables - disappear the moment you actually use the item; a step carrying usable items holds until you've used ALL of them (or the next step's requirements complete), and spoken alerts read one compact line per step, always at the step's own completion, cutting off cleanly when the route moves on.",
-                        "Steps can count several different mobs at once, equip a full gear set, individual trinkets, or any mix of equipment slots, and your progress survives reloads and disconnects. Boss pulls automatically put the plan back on track after wipes or skipped packs.",
-                        "The world buff board tracks the Darkmoon Faire fortune lockout per character: it counts down only while that character is logged in, pauses on logout, clears after 8 straight hours logged out in a major city, and clears early if a full debuff bar pushes it off.",
-                        "Fire Festival buffs appear on the world buff board only while someone shown actually has them, and a '60s only' switch (on by default) keeps low-level alts off the board.",
+                        { "New Raid Route feature: build a kill-order plan for a raid - trash packs to count and bosses as checkpoints - and the addon follows along as you clear, swapping gear and trinkets and showing reminders exactly when each step completes. Open a raid in the sidebar and click the new Route tab. Off by default; turn it on per character from that page.", feature = "raid_route" },
+                        { "A route builder map for Naxxramas: click bosses and trash packs in your kill order to lay out the whole run, and reorder or trim it right there.", only = "era" },
+                        { "While a route is running, a small movable tracker follows along: the current step at the top, its action icons and reminders inside the frame, and an optional dim line showing the next step at the bottom. The frame hugs its content (long text wraps, nothing is ever clipped), a Basic mode strips it down to icons and only the text that matters, the background can be made fully transparent, and scale is the one size control. When a step equips gear, a brief 'Equipping' flash bridges it to the next step - and if the step completed in combat, that flash waits for the swap at the end of combat.", feature = "raid_route" },
+                        { "Each step fires everything it carries - gear swaps, trinkets, reminders, spoken alerts - at the moment its own trigger completes: the kill count filling for trash, or the chosen pull/kill event for bosses. Swaps queue safely to the end of combat when you're fighting. Reminders picked from your bags - potions, sappers, dynamite and other consumables - disappear the moment you actually use the item; a step carrying usable items holds until you've used ALL of them (or the next step's requirements complete), and spoken alerts read one compact line per step, always at the step's own completion, cutting off cleanly when the route moves on.", feature = "raid_route" },
+                        { "Steps can count several different mobs at once, equip a full gear set, individual trinkets, or any mix of equipment slots, and your progress survives reloads and disconnects. Boss pulls automatically put the plan back on track after wipes or skipped packs.", feature = "raid_route" },
+                        { "The world buff board tracks the Darkmoon Faire fortune lockout per character: it counts down only while that character is logged in, pauses on logout, clears after 8 straight hours logged out in a major city, and clears early if a full debuff bar pushes it off.", feature = "world_tools" },
+                        { "Fire Festival buffs appear on the world buff board only while someone shown actually has them, and a '60s only' switch (on by default) keeps low-level alts off the board.", feature = "world_tools" },
                         "The consumables bar's blank-when-used-in-combat behaviour is now a toggle (on by default), and the route tracker's gold accent stripe can be turned off.",
-                        "Routes can be shared three ways now: an Export/Import string on the Route page, a Mesh Share button that pushes the route to every online mesh member instantly, and full remote editing - fetch a raider's config and build their route for them, live.",
-                        "Trash notes rebuilt from scratch: add each note yourself, pick exactly which trash mobs it watches (whole packs or single mobs, in any mix), write the text, then choose its trigger - fire once after a set number of kills and show for a set duration, or show whenever one of its mobs is your target. Targeting one of a note's mobs displays it silently; the note SPEAKS when its kill requirement is met. Existing blanket, pack and per-mob trash notes carry over automatically. Boss notes use the same add-a-boss flow now instead of listing every boss with an empty editor.",
+                        { "Routes can be shared three ways now: an Export/Import string on the Route page, a Mesh Share button that pushes the route to every online mesh member instantly, and full remote editing - fetch a raider's config and build their route for them, live.", feature = "raid_route" },
+                        { "Trash notes rebuilt from scratch: add each note yourself, pick exactly which trash mobs it watches (whole packs or single mobs, in any mix), write the text, then choose its trigger - fire once after a set number of kills and show for a set duration, or show whenever one of its mobs is your target. Targeting one of a note's mobs displays it silently; the note SPEAKS when its kill requirement is met. Existing blanket, pack and per-mob trash notes carry over automatically. Boss notes use the same add-a-boss flow now instead of listing every boss with an empty editor.", feature = "boss_notes" },
                     }
                 },
                 {
@@ -959,27 +1000,27 @@ local function InitializeChangelog()
                         "Dropdown menus no longer stay stuck open when the panel refreshes behind them.",
                         "A gear set saved with empty slots now strips everything in a single click instead of one item per press.",
                         "Hotswap is out-of-combat only, as it always effectively was: pressing it in combat now just prints your combat message instead of pretending to queue.",
-                        "Characters on the same game account finally share world buff, songflower and fortune data reliably: logging out no longer wiped the session's recorded buffs, so your alts show what they really have.",
-                        "Sapphiron opener timers no longer start when you Bloodrage before the pull - entering combat by yourself doesn't count anymore; the countdown anchors to Sapphiron actually engaging.",
-                        "FIXED THE RAID-CONFIG EATER: opening remote edit ran an old cleanup that deleted a raid's entire local config whenever it referenced a gear set name this character doesn't have - and gear sets are per-character, so configs synced from your other toons tripped it constantly. The deletion then synced account-wide. The cleanup is gone, raid deletions no longer propagate over mesh at all, and profile loads keep an automatic safety backup.",
-                        "Raid configs can no longer LOOK deleted: when the active profile pointer names a profile that no longer exists (rename or sync drift), the addon switches to your richest existing profile and says so, instead of silently creating a blank one over intact data.",
-                        "World Buffs presence is now unified with Mesh Sync: any message a character sends over the mesh counts as its board freshness, so unchanged characters send ZERO world-buff traffic between real changes.",
-                        "Darkmoon Faire buff cooldown: when NovaWorldBuffs is installed, its per-character DMF tracking is used directly.",
-                        "World Buffs mesh traffic cut hard with many characters online: unchanged 30-second heartbeats shrink to a tiny presence ping (full state goes out on change or every 5 minutes), only ONE toon gossips the offline roster per login event instead of all of them at once, and the background roster re-broadcast drops from every 90 seconds to a 10-minute safety net. Same board, same offline visibility, a fraction of the data.",
-                        "World Buffs updates arrive faster with many characters online: your own fresh buff changes now jump the shared mesh send queue instead of waiting behind roster relays and config syncs, and the login-time relay burst is spread out so it can't clog things.",
-                        "World Buffs board: duplicate character rows are merged automatically on every login (case drift and bare-name/realm-name twins fold together, richest record wins) - no more cache wipes, so the board also stops starting empty and slowly refilling after updates.",
+                        { "Characters on the same game account finally share world buff, songflower and fortune data reliably: logging out no longer wiped the session's recorded buffs, so your alts show what they really have.", feature = "world_tools" },
+                        { "Sapphiron opener timers no longer start when you Bloodrage before the pull - entering combat by yourself doesn't count anymore; the countdown anchors to Sapphiron actually engaging.", feature = "polarity" },
+                        { "FIXED THE RAID-CONFIG EATER: opening remote edit ran an old cleanup that deleted a raid's entire local config whenever it referenced a gear set name this character doesn't have - and gear sets are per-character, so configs synced from your other toons tripped it constantly. The deletion then synced account-wide. The cleanup is gone, raid deletions no longer propagate over mesh at all, and profile loads keep an automatic safety backup.", feature = "raid_configs" },
+                        { "Raid configs can no longer LOOK deleted: when the active profile pointer names a profile that no longer exists (rename or sync drift), the addon switches to your richest existing profile and says so, instead of silently creating a blank one over intact data.", feature = "raid_configs" },
+                        { "World Buffs presence is now unified with Mesh Sync: any message a character sends over the mesh counts as its board freshness, so unchanged characters send ZERO world-buff traffic between real changes.", feature = "world_tools" },
+                        { "Darkmoon Faire buff cooldown: when NovaWorldBuffs is installed, its per-character DMF tracking is used directly.", feature = "world_tools" },
+                        { "World Buffs mesh traffic cut hard with many characters online: unchanged 30-second heartbeats shrink to a tiny presence ping (full state goes out on change or every 5 minutes), only ONE toon gossips the offline roster per login event instead of all of them at once, and the background roster re-broadcast drops from every 90 seconds to a 10-minute safety net. Same board, same offline visibility, a fraction of the data.", feature = "world_tools" },
+                        { "World Buffs updates arrive faster with many characters online: your own fresh buff changes now jump the shared mesh send queue instead of waiting behind roster relays and config syncs, and the login-time relay burst is spread out so it can't clog things.", feature = "world_tools" },
+                        { "World Buffs board: duplicate character rows are merged automatically on every login (case drift and bare-name/realm-name twins fold together, richest record wins) - no more cache wipes, so the board also stops starting empty and slowly refilling after updates.", feature = "world_tools" },
                         "Text reminders show a note icon instead of the red question mark, and a held step whose gear swap has landed moves on automatically - out of combat about a second after the swap, in combat right after the regen-edge worker equips it. Steps with a use-item still wait for the use.",
                         "Quick character swaps sync reliably now: logging out of one character and straight into another used to beat the login-sync timers, so data only flowed one way. The push fires fast enough to win that race in both directions.",
-                        "Notes filed under renamed profiles are recovered AUTOMATICALLY on login - no command needed. They're copied into your current profiles wherever those have no note of their own.",
-                        "Renaming a raid profile now carries every boss and trash note with it - renames used to orphan notes under the old profile name, which read as deletion.",
-                        "Fixed the real cause of vanishing notes: syncing between your characters was REPLACING the whole notes store, wiping any per-profile notes the sending character didn't have. Sync now merges notes additively - nothing local is ever deleted - so logging each character once restores the account to the union of everyone's notes. A one-time cleanup also removes the wrong Default-profile copies an earlier repair spread around, and rescues AQ20 notes stranded by the old migration.",
-                        "Route tracker text is never cut off: lines WRAP within the tracker's width instead of truncating with '...'. Width comes from its slider (plus scale); height follows the wrapped content and the frame grows DOWNWARD only - the top edge stays pinned where you placed it. The height slider is gone because height takes care of itself.",
-                        "A route ENDING on a boss step now finishes properly: the checkpoint path used to skip the whole finish - no 'Route complete' line, no spoken alert, tracker just vanished. Both completion paths finish identically now.",
-                        "Boss checkpoint steps now get the same 2-second 'Done' hold that kill steps get - completing a boss step (pulled or killed, simmed or real) shows what just finished on the tracker's main line with the next gate underneath, instead of flipping instantly.",
-                        "New /rc notesdump command prints every stored boss and trash note key so note issues are diagnosable on the spot.",
-                        "Route reminders live entirely inside the tracker now - one frame, one entry in /rc moveui. The separate reminder plaque under it is gone; test fires render in the same frame too.",
-                        "The Remote Raid Config page matches normal raid editing: pick the toon, then click a raid - each raid is a one-click row showing its fetch or local-copy status inline.",
-                        "Naxxramas gargoyles are named correctly: Plagued Gargoyle in the Spider and Military wings, Stoneskin Gargoyle in the Plague wing. If a saved route step or trash note referenced the wrong one for its wing, re-pick the mob in the editor.",
+                        { "Notes filed under renamed profiles are recovered AUTOMATICALLY on login - no command needed. They're copied into your current profiles wherever those have no note of their own.", feature = "boss_notes" },
+                        { "Renaming a raid profile now carries every boss and trash note with it - renames used to orphan notes under the old profile name, which read as deletion.", feature = "boss_notes" },
+                        { "Fixed the real cause of vanishing notes: syncing between your characters was REPLACING the whole notes store, wiping any per-profile notes the sending character didn't have. Sync now merges notes additively - nothing local is ever deleted - so logging each character once restores the account to the union of everyone's notes. A one-time cleanup also removes the wrong Default-profile copies an earlier repair spread around, and rescues AQ20 notes stranded by the old migration.", feature = "boss_notes" },
+                        { "Route tracker text is never cut off: lines WRAP within the tracker's width instead of truncating with '...'. Width comes from its slider (plus scale); height follows the wrapped content and the frame grows DOWNWARD only - the top edge stays pinned where you placed it. The height slider is gone because height takes care of itself.", feature = "raid_route" },
+                        { "A route ENDING on a boss step now finishes properly: the checkpoint path used to skip the whole finish - no 'Route complete' line, no spoken alert, tracker just vanished. Both completion paths finish identically now.", feature = "raid_route" },
+                        { "Boss checkpoint steps now get the same 2-second 'Done' hold that kill steps get - completing a boss step (pulled or killed, simmed or real) shows what just finished on the tracker's main line with the next gate underneath, instead of flipping instantly.", feature = "raid_route" },
+                        { "New /rc notesdump command prints every stored boss and trash note key so note issues are diagnosable on the spot.", feature = "boss_notes" },
+                        { "Route reminders live entirely inside the tracker now - one frame, one entry in /rc moveui. The separate reminder plaque under it is gone; test fires render in the same frame too.", feature = "raid_route" },
+                        { "The Remote Raid Config page matches normal raid editing: pick the toon, then click a raid - each raid is a one-click row showing its fetch or local-copy status inline.", feature = "raid_configs" },
+                        { "Naxxramas gargoyles are named correctly: Plagued Gargoyle in the Spider and Military wings, Stoneskin Gargoyle in the Plague wing. If a saved route step or trash note referenced the wrong one for its wing, re-pick the mob in the editor.", only = "era" },
                         "Switching between characters on one account now triggers a full sync in both directions every time, and the world buff roster arrives together with it.",
                     }
                 },
@@ -993,22 +1034,22 @@ local function InitializeChangelog()
                 {
                     type = "added",
                     items = {
-                        "You can now add many kill times at once. Next to the add-kill box there's a new Bulk button that opens a window where you can paste a whole list of times - like 1:32 105 2:03 - separated by spaces, commas or new lines. It shows how many kills it found and their average before you commit, and one click records them all.",
-                        "When adding kills by hand - one at a time or in bulk - you can now mark them as having the Darkmoon Faire damage buff so they count toward the right averages. The add-kill row has a small orb you can light up, and the bulk window has a matching checkbox.",
-                        "Editing a recorded kill now lets you correct whether the Darkmoon Faire buff was active for that kill.",
-                        "The kill data browser now labels its Darkmoon Faire column, so the small orb next to a kill clearly means the buff was up for it.",
+                        { "You can now add many kill times at once. Next to the add-kill box there's a new Bulk button that opens a window where you can paste a whole list of times - like 1:32 105 2:03 - separated by spaces, commas or new lines. It shows how many kills it found and their average before you commit, and one click records them all.", feature = "ttk" },
+                        { "When adding kills by hand - one at a time or in bulk - you can now mark them as having the Darkmoon Faire damage buff so they count toward the right averages. The add-kill row has a small orb you can light up, and the bulk window has a matching checkbox.", feature = "ttk" },
+                        { "Editing a recorded kill now lets you correct whether the Darkmoon Faire buff was active for that kill.", feature = "ttk" },
+                        { "The kill data browser now labels its Darkmoon Faire column, so the small orb next to a kill clearly means the buff was up for it.", feature = "ttk" },
                     }
                 },
                 {
                     type = "changed",
                     items = {
-                        "Kill time predictions now respect the Darkmoon Faire buff everywhere. The on-screen kill timer, pace comparisons, reminders that fire based on remaining fight time, and boss simulations all prefer averages from kills with the same buff state you have now, falling back to all kills when there isn't enough matching data.",
+                        { "Kill time predictions now respect the Darkmoon Faire buff everywhere. The on-screen kill timer, pace comparisons, reminders that fire based on remaining fight time, and boss simulations all prefer averages from kills with the same buff state you have now, falling back to all kills when there isn't enough matching data.", feature = "ttk" },
                     }
                 },
                 {
                     type = "fixed",
                     items = {
-                        "Old kill records that could no longer be matched to a raid and boss are now removed automatically instead of piling up. The 'Unrecognized Data' section is gone.",
+                        { "Old kill records that could no longer be matched to a raid and boss are now removed automatically instead of piling up. The 'Unrecognized Data' section is gone.", feature = "ttk" },
                     }
                 },
             }
@@ -1142,11 +1183,12 @@ local function InitializeChangelog()
             version = "4.5.7",
             date = "2026-06-12",
             title = "Cross-faction world buffs",
+            titles = { tbc = "Minor bug fixes", forever = "Minor bug fixes" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "Cross-faction world buffs - your Alliance and Horde characters can now share world buff status with each other over Battle.net. Turn it on under Connections, add your other account or a Battle.net friend as a cross-faction peer, and their buffs (and yours) show up together in the World Buff Tracker, even across factions and while offline",
+                        { "Cross-faction world buffs - your Alliance and Horde characters can now share world buff status with each other over Battle.net. Turn it on under Connections, add your other account or a Battle.net friend as a cross-faction peer, and their buffs (and yours) show up together in the World Buff Tracker, even across factions and while offline", feature = "world_tools" },
                     }
                 },
                 {
@@ -1161,11 +1203,12 @@ local function InitializeChangelog()
             version = "4.5.6",
             date = "2026-06-05",
             title = "World Buff Tracker & gear override picker",
+            titles = { tbc = "Gear override picker", forever = "Gear override picker" },
             sections = {
                 {
                     type = "added",
                     items = {
-                        "World Buff Tracker - open /wb to see which world buffs you and your other characters currently have, including buffs frozen in a Chronoboon. It shows the time left on each, tracks where Songflowers were last picked, and reports your Chronoboon and Hearthstone cooldowns. Buff data is shared over the Mesh Network, so even characters that are offline still show their last-known buffs",
+                        { "World Buff Tracker - open /wb to see which world buffs you and your other characters currently have, including buffs frozen in a Chronoboon. It shows the time left on each, tracks where Songflowers were last picked, and reports your Chronoboon and Hearthstone cooldowns. Buff data is shared over the Mesh Network, so even characters that are offline still show their last-known buffs", feature = "world_tools" },
                         "The per-slot gear override picker now lists each copy of an item you are carrying, so duplicates like multiple Goblin Rocket Boots all show up instead of collapsing into a single icon",
                     }
                 },
@@ -1185,7 +1228,7 @@ local function InitializeChangelog()
                 {
                     type = "added",
                     items = {
-                        "Nameplate Debuffs - see key debuffs and procs right on enemy nameplates: armor reduction (Sunder Armor, Expose Armor, Faerie Fire), Overpower availability, Execute range, and more. Fully customizable groups, icon sizes, positions, colors and timers. Turn it on and tune it under Nameplate Debuffs in the sidebar",
+                        { "Nameplate Debuffs - see key debuffs and procs right on enemy nameplates: armor reduction (Sunder Armor, Expose Armor, Faerie Fire), Overpower availability, Execute range, and more. Fully customizable groups, icon sizes, positions, colors and timers. Turn it on and tune it under Nameplate Debuffs in the sidebar", feature = "nameplate_debuffs" },
                         "Smart Macros can now be limited to a specific raid - and to a specific raid profile within it - with the 'Active in' option. Give several Smart Macros the same in-game macro name, each scoped to a different raid or profile, and that one macro will do different things depending on where you are",
                         "A Smart Macro with an empty body now clears (blanks) the in-game macro when its rule fires - handy for switching a macro off while targeting something",
                         "Dropdown lists can now be filtered by typing - start typing while a dropdown is open to narrow it instead of scrolling, for example when picking a boss or a trigger type",
@@ -1194,7 +1237,7 @@ local function InitializeChangelog()
                 {
                     type = "fixed",
                     items = {
-                        "On-target and post-boss-death consumable reminders now appear correctly",
+                        { "On-target and post-boss-death consumable reminders now appear correctly", feature = "raid_configs" },
                         "Consumable reminders no longer show up when the consumable is not in your bags",
                         "Consumable reminders no longer disappear before you have a chance to use the consumable",
                     }
@@ -1210,10 +1253,10 @@ local function InitializeChangelog()
                     type = "added",
                     items = {
                         "Smart Macros - create a macro that rewrites itself based on what you are targeting. Set rules for creature type or mob name and the macro updates automatically. Found in the sidebar",
-                        "Blood Fury (Orc) and Berserking (Troll) are now available as reminder abilities on every boss and trash tab, with full support for all trigger types (target HP%, TTK, combat start, buff remaining, etc.) - only visible to the matching race",
-                        "Post-Boss Consumables - configure any consumable (Zanza potions, elixirs, food, buffs, etc.) to remind you to use it either after a boss dies or when you first target the boss. Found in the Utility section of each boss tab. Pick items from a category browser so the list stays manageable",
+                        { "Blood Fury (Orc) and Berserking (Troll) are now available as reminder abilities on every boss and trash tab, with full support for all trigger types (target HP%, TTK, combat start, buff remaining, etc.) - only visible to the matching race", feature = "raid_configs" },
+                        { "Post-Boss Consumables - configure any consumable (Zanza potions, elixirs, food, buffs, etc.) to remind you to use it either after a boss dies or when you first target the boss. Found in the Utility section of each boss tab. Pick items from a category browser so the list stays manageable", feature = "raid_configs" },
                         "Food buffs and bandages are now tracked on the consumable bar - toggle them individually in the Items tab. They are also available on the potion bar but hidden by default",
-                        "Remote raid config editing - open any Mesh Network member in the Raids sidebar and click Edit Config to fetch their full raid setup, edit it directly (boss abilities, gear swaps, timers, notes, everything), then push your changes back to them. Works even if they are offline",
+                        { "Remote raid config editing - open any Mesh Network member in the Raids sidebar and click Edit Config to fetch their full raid setup, edit it directly (boss abilities, gear swaps, timers, notes, everything), then push your changes back to them. Works even if they are offline", feature = "raid_configs" },
                     }
                 },
             }
@@ -1234,7 +1277,7 @@ local function InitializeChangelog()
                     type = "fixed",
                     items = {
                         "Mesh Network now shows separate sync options for Battle Shout reminder settings and the Battle Shout party tracker, so you can enable each independently",
-                        "Post-boss gear set no longer fails to swap when adds are still alive when the boss dies(hopefully)",
+                        { "Post-boss gear set no longer fails to swap when adds are still alive when the boss dies(hopefully)", feature = "boss_gear_kill" },
                     }
                 },
             }
@@ -1262,7 +1305,7 @@ local function InitializeChangelog()
                     type = "added",
                     items = {
                         "Mesh Network - sync your Readycheck settings across multiple accounts or characters automatically. Set up a shared channel name and password and your raid configs, boss notes, gear sets, ML Predictions data, consumables, and more stay in sync in real time",
-                        "Boss Exclusions in ML Predictions - uncheck any boss to stop recording fight data for it. Per-raid tabs for MC, BWL, AQ40, and Naxx so you are not scrolling through a wall of checkboxes",
+                        { "Boss Exclusions in ML Predictions - uncheck any boss to stop recording fight data for it. Per-raid tabs for MC, BWL, AQ40, and Naxx so you are not scrolling through a wall of checkboxes", feature = "ttk" },
                     }
                 },
             }
@@ -1276,30 +1319,85 @@ local function InitializeChangelog()
                     type = "fixed",
                     items = {
                         "Fixed some buttons and colors not working right in the settings",
-                        "Fixed Fungal Bloom gear swaps not working correctly",
+                        { "Fixed Fungal Bloom gear swaps not working correctly", only = "era" },
                         "Trinket auto-swapper no longer swaps off a ready trinket immediately after login or reload",
                     }
                 },
                 {
                     type = "added",
                     items = {
-                        "Raid profile selector now visible at the top of every boss tab (Abilities, Gear, History)",
-                        "ML Predictions data tab now shows kills from all profiles combined",
-                        "Kills in ML Predictions can now be clicked to edit the time and profile",
+                        { "Raid profile selector now visible at the top of every boss tab (Abilities, Gear, History)", feature = "raid_configs" },
+                        { "ML Predictions data tab now shows kills from all profiles combined", feature = "ttk" },
+                        { "Kills in ML Predictions can now be clicked to edit the time and profile", feature = "ttk" },
                     }
                 },
                 {
                     type = "changed",
                     items = {
-                        "Kill history scrollbar only appears when there are more kills than fit on screen",
+                        { "Kill history scrollbar only appears when there are more kills than fit on screen", feature = "ttk" },
                     }
                 },
             }
         },
     }
 
+    -- WHAT THIS GAME VERSION SEES (2026-11-12, Zac: "can the changelog
+    -- only show relevant things for that version of the game"). The list
+    -- every reader walks (the popup, the What's New page) is the history
+    -- with the other game versions' lines taken out. Worked out once: the
+    -- game version is fixed for the session by the time this runs.
+    RC.Changelog.allVersions = RC.Changelog.versions
+    function RC.Changelog.Relevant(item, flavor)
+        if type(item) ~= "table" then return true end
+        local f = item.feature
+        if RC.FeatureOn then
+            if type(f) == "string" then
+                if not RC:FeatureOn(f) then return false end
+            elseif type(f) == "table" then
+                for _, id in ipairs(f) do
+                    if not RC:FeatureOn(id) then return false end
+                end
+            end
+        end
+        local only = item.only
+        if type(only) == "string" then
+            return only == flavor
+        elseif type(only) == "table" then
+            for _, fl in ipairs(only) do
+                if fl == flavor then return true end
+            end
+            return false
+        end
+        return true
+    end
+    function RC.Changelog:BuildShown()
+        local flavor = (RC.Flavor and RC:Flavor()) or "era"
+        local out = {}
+        for _, v in ipairs(self.allVersions) do
+            local secs = {}
+            for _, sec in ipairs(v.sections or {}) do
+                local items = {}
+                for _, item in ipairs(sec.items or {}) do
+                    if self.Relevant(item, flavor) then
+                        items[#items + 1] = type(item) == "table" and item[1] or item
+                    end
+                end
+                if #items > 0 then secs[#secs + 1] = { type = sec.type, items = items } end
+            end
+            if #secs > 0 then
+                out[#out + 1] = { version = v.version, date = v.date,
+                    title = (type(v.titles) == "table" and v.titles[flavor]) or v.title, sections = secs }
+            end
+        end
+        self.versions = out
+        return out
+    end
+    RC.Changelog:BuildShown()
+
+    -- (the version running: from the history as written - a version with
+    -- nothing for this game version is still the current one)
     function RC.Changelog:GetCurrentVersion()
-        return self.versions[1] and self.versions[1].version or "Unknown"
+        return self.allVersions[1] and self.allVersions[1].version or "Unknown"
     end
 
     function RC.Changelog:ShouldShowPopup()
@@ -1310,8 +1408,14 @@ local function InitializeChangelog()
 
         local seenVersion = ReadycheckDB.account.lastSeenVersion
         local currentVersion = self:GetCurrentVersion()
-
-        return seenVersion ~= currentVersion
+        if seenVersion == currentVersion then return false end
+        -- an update with nothing in it for this game version: seen, quietly
+        local top = self.versions[1]
+        if not (top and top.version == currentVersion) then
+            ReadycheckDB.account.lastSeenVersion = currentVersion
+            return false
+        end
+        return true
     end
 
     function RC.Changelog:MarkAsSeen()
