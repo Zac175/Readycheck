@@ -133,6 +133,113 @@ local _rrs = RC._rrs
         return best, n
     end
 
+    -- STANDING REMINDERS (2026-11-11, Zac: "reminders for the duration of
+    -- route steps ... like a reminder to not potion before a certain
+    -- pull"). A step's actions.holds are lines the tracker keeps up for as
+    -- long as the route is ON that step, or from that step through a later
+    -- one. Nothing about them is stored at runtime: what is up is worked
+    -- out from the active step every time, so a reload, a step back or a
+    -- restored run all show the right lines.
+    --   h = { text, icon, tts, warn, span, untilFp }
+    -- span     how many steps past its own the line runs (nil / 0: this
+    --          step only)
+    -- untilFp  that last step's fingerprint, so steps added or removed in
+    --          between move the end with the step it was set to; span is
+    --          the answer when no later step has that fingerprint any more
+    RR.HOLD_MAX = 3               -- matches HOLD_ROWS in RR_Tracker
+    local holdEnd = setmetatable({}, { __mode = "k" })
+    function RR:HoldEndIndex(steps, j, h)
+        local n = type(steps) == "table" and #steps or 0
+        local span = math.floor(tonumber(type(h) == "table" and h.span) or 0)
+        if span <= 0 or n == 0 then return j end
+        local want = math.min(n, j + span)
+        local fp = h.untilFp
+        if type(fp) ~= "string" then return want end
+        local c = holdEnd[h]
+        if c and c.n == n and c.j == j and c.fp == fp and c.want == want
+           and StepFingerprint(steps[c.e]) == fp then
+            return c.e
+        end
+        local best, bestD
+        for k = j + 1, n do
+            if StepFingerprint(steps[k]) == fp then
+                local d = math.abs(k - want)
+                if not best or d < bestD then best, bestD = k, d end
+            end
+        end
+        local e = best or want
+        holdEnd[h] = { n = n, j = j, fp = fp, want = want, e = e }
+        return e
+    end
+
+    -- the editor's "until" picker: e is the index of the last step the
+    -- line stays up for (its own step, or a later one)
+    function RR:SetHoldEnd(steps, j, h, e)
+        if type(h) ~= "table" then return end
+        e = tonumber(e)
+        if not e or e <= j or type(steps) ~= "table" or not steps[e] then
+            h.span, h.untilFp = nil, nil
+        else
+            h.span, h.untilFp = e - j, StepFingerprint(steps[e])
+        end
+        holdEnd[h] = nil
+    end
+
+    -- the lines that are up right now, oldest step first
+    function RR:ActiveHolds()
+        local out = {}
+        local settings = self:GetSettings()
+        if not (settings and settings.enabled) or self.finished then return out end
+        local steps = self:GetSteps()
+        local act = self.active
+        if type(steps) ~= "table" or not act or not steps[act] then return out end
+        for j = 1, act do
+            local st = steps[j]
+            local hs = type(st) == "table" and st.enabled ~= false
+                and type(st.actions) == "table" and st.actions.holds
+            if type(hs) == "table" then
+                for _, h in ipairs(hs) do
+                    if type(h) == "table" and h.text and h.text ~= "" and #out < RR.HOLD_MAX then
+                        local e = self:HoldEndIndex(steps, j, h)
+                        -- (its last step has fired and only waits on an
+                        -- item being used: "Use Mighty Rage Potion" is up,
+                        -- "Hold potion" is over)
+                        if act <= e and not (act == e and self._awaitUse) then
+                            out[#out + 1] = h
+                        end
+                    end
+                end
+            end
+        end
+        return out
+    end
+
+    -- which steps of a list a standing reminder covers, for the route
+    -- page's rail: [index] = { warn = any of them is a warning, and the
+    -- lines' texts as the array part }
+    function RR:HoldCoverage(steps)
+        local cover = {}
+        if type(steps) ~= "table" then return cover end
+        for j, st in ipairs(steps) do
+            local hs = type(st) == "table" and st.enabled ~= false
+                and type(st.actions) == "table" and st.actions.holds
+            if type(hs) == "table" then
+                for _, h in ipairs(hs) do
+                    if type(h) == "table" and h.text and h.text ~= "" then
+                        local e = self:HoldEndIndex(steps, j, h)
+                        for k = j, e do
+                            local c = cover[k] or {}
+                            cover[k] = c
+                            if h.warn then c.warn = true end
+                            if k == j or not c[1] then c[#c + 1] = h.text end
+                        end
+                    end
+                end
+            end
+        end
+        return cover
+    end
+
     -- runtime state that stores a step INDEX rather than the step: carried
     -- to the new index when the active step moves because the list was
     -- edited; the index-keyed tallies are dropped (their indices shifted).
@@ -499,6 +606,7 @@ local _rrs = RC._rrs
             or (a.trinket1 and a.trinket1 ~= 0) or (a.trinket2 and a.trinket2 ~= 0)
             or (a.slots and next(a.slots))
             or (a.reminders and #a.reminders > 0)
+            or (a.holds and #a.holds > 0)
             or (a.reminderText and a.reminderText ~= "")) and true or false
     end
     local function MobKey(st)
@@ -2568,6 +2676,48 @@ local _rrs = RC._rrs
             return true, math.floor(st + du - GetTime() + 0.5)
         end
         return false
+    end
+
+    -- The standing reminders that are up, kept on self.activeHolds for
+    -- the tracker; one that has just come up is spoken once (its TTS box).
+    -- Spoken a beat later and only if it is still up: a step that waited
+    -- on an item drops that wait an instant before the route moves on,
+    -- and for that instant its "until this pull" line looks up again.
+    -- quiet: mark what is up as already said - the route page calls this
+    -- after an edit, so typing a line does not read it out.
+    local HOLD_SPEAK_DELAY = 0.2
+    local function SpeakNewHolds(self)
+        local said = self._holdSaid or {}
+        self._holdSaid = said
+        for _, h in ipairs(self:ActiveHolds()) do
+            local key = h.text
+            if not said[key] then
+                said[key] = true
+                if h.tts ~= false and RC.SpeakTTS then
+                    ReminderPing()
+                    RC:SpeakTTS(key, true, "route")
+                end
+            end
+        end
+    end
+    function RR:SyncHolds(quiet)
+        local list = self:ActiveHolds()
+        self.activeHolds = list
+        local was, now, fresh = self._holdSaid or {}, {}, false
+        for _, h in ipairs(list) do
+            local key = h.text
+            if was[key] or quiet then now[key] = true
+            elseif not now[key] then fresh = true end
+        end
+        self._holdSaid = now
+        if fresh and not self._holdSpeakPending then
+            self._holdSpeakPending = true
+            C_Timer.After(HOLD_SPEAK_DELAY, function()
+                self._holdSpeakPending = nil
+                SpeakNewHolds(self)
+            end)
+        end
+        return list
     end
 
     -- older saved reminders stored the literal text "Use <itemId>" before

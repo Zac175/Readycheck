@@ -452,6 +452,16 @@ local _srr = RC._srr
             na.slots = {}
             for k, v in pairs(a.slots) do na.slots[k] = v end
         end
+        -- standing reminders: the copy keeps each one's length
+        if a.holds then
+            na.holds = {}
+            for _, h in ipairs(a.holds) do
+                na.holds[#na.holds + 1] = {
+                    text = h.text, icon = h.icon, tts = h.tts, warn = h.warn,
+                    span = h.span, untilFp = h.untilFp,
+                }
+            end
+        end
         return n
     end
 

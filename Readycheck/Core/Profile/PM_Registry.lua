@@ -411,6 +411,7 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["raidRoute.enabled"]            = RCL["Route reminders enabled"],
     ["raidRoute.trackerEnabled"]     = RCL["Route tracker window"],
     ["raidRoute.trackerShowContext"] = RCL["Tracker shows surrounding steps"],
+    ["raidRoute.trackerChatDock"]    = RCL["Tracker docked in the chat box"],
     ["raidRoute.trackerCustomSize"]  = RCL["Tracker window size"],
     ["raidRoute.reminderPos"]        = RCL["Route reminder position"],
     ["raidRoute.uiTab"]              = RCL["Last route tab"],

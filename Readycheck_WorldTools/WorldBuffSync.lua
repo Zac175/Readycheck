@@ -2014,7 +2014,8 @@ local function InitializeWorldBuffSync()
         end
         scanFlowers(fd)
         if type(fd.layers) == "table" then
-            for _, lyr in pairs(fd.layers) do
+            -- (either shape: Nova World Buffs 3.48+ nests its layers by world)
+            for _, lyr in pairs(RC.WorldBuffTimers.FlatLayers(fd.layers)) do
                 if type(lyr) == "table" then scanFlowers(lyr) end
             end
         end
@@ -2065,7 +2066,8 @@ local function InitializeWorldBuffSync()
         end
         local usedLayer = false
         if type(fd.layers) == "table" then
-            for _, lyr in pairs(fd.layers) do
+            -- (either shape: Nova World Buffs 3.48+ nests its layers by world)
+            for _, lyr in pairs(RC.WorldBuffTimers.FlatLayers(fd.layers)) do
                 if type(lyr) == "table" and tonumber(lyr.onyTimer) then
                     consider(lyr.onyTimer); usedLayer = true
                 end
@@ -2123,7 +2125,8 @@ local function InitializeWorldBuffSync()
         end
         scan(fd)
         if type(fd.layers) == "table" then
-            for _, lyr in pairs(fd.layers) do
+            -- (either shape: Nova World Buffs 3.48+ nests its layers by world)
+            for _, lyr in pairs(RC.WorldBuffTimers.FlatLayers(fd.layers)) do
                 if type(lyr) == "table" then scan(lyr) end
             end
         end

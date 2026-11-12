@@ -51,7 +51,17 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
     end
     local function RouteFeed(rr, mode, fresh)
         if mode ~= "swap" then rr._swapFeed = nil return end
+        -- (gear: the sample character's slots for the gear row; shirt and
+        -- tabard empty, as on most)
+        local I = "Interface\\Icons\\"
         rr._swapFeed = { label = RCL["Gear set: "] .. "Frost Resist", at = GetTime(), step = rr.active, fresh = fresh,
+            freshGear = fresh,
+            gear = { [1] = I .. "INV_Helmet_08", [2] = I .. "INV_Jewelry_Necklace_07", [3] = I .. "INV_Shoulder_23",
+                     [15] = I .. "INV_Misc_Cape_19", [5] = I .. "INV_Chest_Plate16", [9] = I .. "INV_Bracer_19",
+                     [10] = I .. "INV_Gauntlets_26", [6] = I .. "INV_Belt_13", [7] = I .. "INV_Pants_04",
+                     [8] = I .. "INV_Boots_02", [11] = I .. "INV_Jewelry_Ring_15", [12] = I .. "INV_Jewelry_Ring_03",
+                     [13] = I .. "INV_Trinket_Naxxramas04", [14] = I .. "INV_Jewelry_Trinket_01",
+                     [16] = I .. "INV_Sword_04", [17] = I .. "INV_Shield_06", [18] = I .. "INV_Weapon_Bow_07" },
             items = { { slot = 1, icon = "Interface\\Icons\\INV_Helmet_08", oldIcon = "Interface\\Icons\\INV_Helmet_03" },
                       { slot = 5, icon = "Interface\\Icons\\INV_Chest_Plate16", oldIcon = "Interface\\Icons\\INV_Chest_Chain_05" } } }
     end
@@ -141,6 +151,12 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
         local function Save()
             RC:SaveConfigurationToProfile()
             RR:UpdateArming()
+        end
+        -- a standing reminder edited here is not read out as if it had
+        -- just come up in the raid
+        local function SaveHold()
+            if not isRemoteRoute and RR.SyncHolds then RR:SyncHolds(true) end
+            Save()
         end
 
         local editIdx = nil
@@ -304,14 +320,58 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
             end)
         cy = cy - 24
 
-        local bandSwapsCb = self.UI:CreateSettingCheckbox(setCard, cy, "Bar style: show gear swaps on a line under the bar",
+        local bandSwapsCb = self.UI:CreateSettingCheckbox(setCard, cy, "Bar style: confirm gear swaps beside the title (a tick and the set's name)",
             settings.trackerBandSwaps ~= false, function(cb)
                 settings.trackerBandSwaps = cb:GetChecked() and true or false
                 Save()
                 RR:RefreshTracker()
             end)
         cy = cy - 24
-        self.UI:BindDependents(bandCb, { bandSwapsCb })
+        -- ...and what you are wearing, for the seconds the swap is fresh
+        local bandGearCb = self.UI:CreateSettingCheckbox(setCard, cy, "Bar style: show your gear for a few seconds when a swap lands (what changed is lit)",
+            settings.trackerBandGear ~= false, function(cb)
+                settings.trackerBandGear = cb:GetChecked() and true or false
+                Save()
+                RR:RefreshTracker()
+            end)
+        cy = cy - 24
+        -- (the inner switch first: the gear row sits a step further in)
+        self.UI:BindDependents(bandSwapsCb, { bandGearCb })
+        self.UI:BindDependents(bandCb, { bandSwapsCb, bandGearCb })
+
+        -- docked along the top of ZacUI's chat box (only offered where
+        -- ZacUI's raid chat exists; see RR:ChatDockArea)
+        if _G.ZacUIRaidChat and RR.ChatDockArea then
+            local dockCb = self.UI:CreateSettingCheckbox(setCard, cy, "Tracker: dock along the top of the chat box (ZacUI raid chat)",
+                settings.trackerChatDock == true, function(cb)
+                    settings.trackerChatDock = cb:GetChecked() and true or false
+                    Save()
+                    RR:RefreshTracker()
+                    Rerender()
+                end)
+            dockCb:HookScript("OnEnter", function(b)
+                GameTooltip:SetOwner(b, "ANCHOR_TOP")
+                GameTooltip:SetText(RCL["With ZacUI's raid chat on (the raid frames in the chat box), the tracker becomes the bar across the top of that box and the raid frames start under it. Its own position, width, scale, style and background are kept and come back when this is unticked."], nil, nil, nil, nil, true)
+                GameTooltip:Show()
+            end)
+            dockCb:HookScript("OnLeave", function() GameTooltip:Hide() end)
+            cy = cy - 24
+            if settings.trackerChatDock == true then
+                local dn = self:CreateFontString(setCard, "OVERLAY", nil, 10)
+                dn:SetPoint("TOPLEFT", setCard, "TOPLEFT", 40, cy)
+                dn:SetPoint("RIGHT", setCard, "RIGHT", -14, 0)
+                dn:SetJustifyH("LEFT")
+                dn:SetWordWrap(true)
+                if RR:ChatDockArea() then
+                    dn:SetText(RCL["Docked: bar style, no box, left aligned, 100%, as wide as the chat box. The options for those wait until it is undocked."])
+                    dn:SetTextColor(T_GREEN[1], T_GREEN[2], T_GREEN[3])
+                else
+                    dn:SetText(RCL["Waiting for ZacUI's raid chat: switch on \"raid frames in the chat box\" on ZacUI's Chat page."])
+                    dn:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
+                end
+                cy = cy - math.max(16, math.ceil(dn:GetStringHeight() or 12) + 6)
+            end
+        end
 
         self.UI:CreateSettingCheckbox(setCard, cy, "Basic tracker: only show this step's actions (no kill counts)",
             settings.trackerBasic == true, function(cb)
@@ -346,8 +406,12 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
             slider.saveTimer = C_Timer.NewTimer(0.5, function() Save() end)
         end)
         if settings.trackerW then
+            -- (2026-11-12, Zac: "auto width button is overlapping") it sat
+            -- at a fixed 300 in, on top of the slider's right end and its
+            -- value box (the slider runs from 110 to 390). It goes after
+            -- the slider, level with its track.
             local autoW = self.UI:CreateStyledButton(setCard, RCL["Auto width"], 80, 20)
-            autoW:SetPoint("TOPLEFT", setCard, "TOPLEFT", 300, cy + 2)
+            autoW:SetPoint("LEFT", scaleSlider, "RIGHT", 14, 0)
             autoW:SetScript("OnClick", function()
                 settings.trackerW = nil
                 Save()
@@ -556,7 +620,7 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                     RR:RefreshTracker()
                     if routeP then routeP.Replay() end
                 end)
-            ay = K.Desc(anCard, ay, RCL["Plays on the line under the bar each time Readycheck puts a piece on. Appearance > Motion can turn it off or speed it up."])
+            ay = K.Desc(anCard, ay, RCL["Plays on the confirmation beside the title each time a gear swap lands. Appearance > Motion can turn it off or speed it up."])
             anCard:SetContentHeight(-ay)
             yPos = yPos - anCard:GetHeight() - 10
         end
@@ -774,6 +838,8 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
         end
         dragState.indicator = stepsCard._dragIndicator
         local stepRows = {}
+        -- which steps a standing reminder is up for (the rail beside them)
+        local holdCover = RR.HoldCoverage and RR:HoldCoverage(steps) or {}
 
         for i = 1, #steps do
             local step = steps[i]
@@ -829,6 +895,19 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
 
             stepRows[i] = row
             row.stepIndex = i
+
+            -- a standing reminder is up during this step: a rail in the
+            -- gutter, joined across the gap to the next covered step
+            local cov = holdCover[i]
+            if cov then
+                local rail = row:CreateTexture(nil, "ARTWORK")
+                rail:SetWidth(2)
+                rail:SetPoint("TOPLEFT", row, "TOPLEFT", -6, holdCover[i - 1] and 2 or 0)
+                rail:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", -6, holdCover[i + 1] and -2 or 0)
+                rail:SetTexture(RC.UI.FLAT)
+                local rc = cov.warn and RC:GetColor("text", "orange") or RC:GetColor("ui", "accentGold")
+                rail:SetVertexColor(rc.r, rc.g, rc.b, 1)
+            end
 
             do
                 local grip = CreateFrame("Frame", nil, row)
@@ -1163,6 +1242,12 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                 if step.desc and step.desc ~= "" then
                     GameTooltip:AddLine(step.desc, 0.7, 0.7, 0.7, true)
                 end
+                if cov then
+                    local oc = cov.warn and RC:GetColor("text", "orange") or RC:GetColor("ui", "accentGold")
+                    for _, txt in ipairs(cov) do
+                        GameTooltip:AddLine(RCL["Stays up: "] .. txt, oc.r, oc.g, oc.b, true)
+                    end
+                end
                 GameTooltip:AddLine(isEditing and RCL["Click header to close"] or RCL["Click to open"], 0.5, 0.5, 0.5)
                 GameTooltip:Show()
             end)
@@ -1468,6 +1553,7 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                 local remFilter = Revealed("rem")
                 local hasRem   = (a.reminders ~= nil and #a.reminders > 0)
                               or (remFilter ~= nil)
+                local hasHold  = (a.holds ~= nil and #a.holds > 0)
 
                 local addItems = {}
                 if not hasGear  then addItems[#addItems + 1] = { text = RCL["Gear set"],  value = "gear" } end
@@ -1477,11 +1563,27 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                 addItems[#addItems + 1] = { text = RCL["Reminder: potion"], value = "rem_potion" }
                 addItems[#addItems + 1] = { text = RCL["Reminder: engineering"], value = "rem_engi" }
                 addItems[#addItems + 1] = { text = RCL["Reminder: custom text"], value = "rem_all" }
+                addItems[#addItems + 1] = { text = RCL["Standing reminder: hold potion"], value = "hold_potion" }
+                addItems[#addItems + 1] = { text = RCL["Standing reminder: custom text"], value = "hold_text" }
                 if #addItems > 0 then
                     FieldLabel("Add action:")
                     local addDD = self.UI:CreateScrollableDropdown(row, 220, RCL["Add action..."], 8)
                     addDD:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey + 4)
                     addDD:SetItems(addItems, function(value)
+                        if value == "hold_potion" or value == "hold_text" then
+                            a.holds = a.holds or {}
+                            if value == "hold_potion" then
+                                a.holds[#a.holds + 1] = { text = RCL["Hold potion"], warn = true, tts = true,
+                                    icon = "Interface\\Icons\\INV_Potion_54" }
+                            else
+                                a.holds[#a.holds + 1] = { text = "", tts = true,
+                                    icon = "Interface\\Icons\\INV_Misc_Note_01" }
+                            end
+                            frame._routeFlash = revealKey .. "hold"
+                            SaveHold()
+                            Rerender()
+                            return
+                        end
                         local filter = value:match("^rem_(%a+)$")
                         if filter then
                             frame._routeReveal[revealKey .. "rem"] = filter
@@ -1825,6 +1927,140 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                     remNote:SetText(RCL["Item reminders clear when used"])
                     remNote:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
                     ey = ey - 18
+                end
+
+                -- STANDING REMINDERS: lines the tracker keeps up from the
+                -- moment this step is the one you are on until the step
+                -- picked under each is done (RR:ActiveHolds)
+                if hasHold then
+                    SectionLabel("Stays up:", "hold", function()
+                        a.holds = nil
+                        if not isRemoteRoute and RR.SyncHolds then RR:SyncHolds(true) end
+                    end)
+                    local holds = a.holds
+                    local firstRow = true
+                    for hi = 1, #holds do
+                        local h = holds[hi]
+                        if not firstRow then FieldLabel("") end
+                        firstRow = false
+
+                        local iconBtn = CreateFrame("Button", nil, row)
+                        iconBtn:SetSize(20, 20)
+                        iconBtn:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey + 1)
+                        local ibTex = iconBtn:CreateTexture(nil, "ARTWORK")
+                        ibTex:SetAllPoints()
+                        ibTex:SetTexture(h.icon or ICON_QUESTION)
+                        ibTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                        local ibBorder = self.UI:CreateSimpleBorder(iconBtn)
+                        self.UI:UpdateBorderColor(ibBorder, _bBlack)
+                        iconBtn:SetScript("OnEnter", function()
+                            self.UI:UpdateBorderColor(ibBorder, _acGold)
+                            GameTooltip:SetOwner(iconBtn, "ANCHOR_TOP")
+                            GameTooltip:SetText(RCL["Reminder icon"], 1, 1, 1)
+                            GameTooltip:Show()
+                        end)
+                        iconBtn:SetScript("OnLeave", function()
+                            self.UI:UpdateBorderColor(ibBorder, _bBlack)
+                            GameTooltip:Hide()
+                        end)
+                        iconBtn:SetScript("OnClick", function()
+                            local GM = RC.GearManager
+                            if GM and GM.ShowIconPickerGrid then
+                                GM:ShowIconPickerGrid(function(icon)
+                                    h.icon = icon
+                                    SaveHold()
+                                    Rerender()
+                                end, h.icon, iconBtn)
+                            end
+                        end)
+
+                        local holdEB = MakeEditBox(row, 140, h.text or "", false,
+                            function(txt, viaEnter)
+                                if txt ~= (h.text or "") then
+                                    h.text = txt
+                                    SaveHold()
+                                    -- (only on Enter, like the reminders'
+                                    -- box: redrawing as the box loses focus
+                                    -- would eat the click that took it)
+                                    if viaEnter then Rerender() end
+                                end
+                            end)
+                        holdEB:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 26, ey + 2)
+
+                        local ttsCB = self.UI:CreateCheckbox(row, "TTS", h.tts ~= false)
+                        ttsCB:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 174, ey + 2)
+                        ttsCB:SetScript("OnClick", function(cb)
+                            h.tts = cb:GetChecked() and true or false
+                            SaveHold()
+                        end)
+
+                        local warnCB = self.UI:CreateCheckbox(row, RCL["Warn"], h.warn == true)
+                        warnCB:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 224, ey + 2)
+                        warnCB:SetScript("OnClick", function(cb)
+                            h.warn = cb:GetChecked() and true or nil
+                            SaveHold()
+                            Rerender()
+                        end)
+                        warnCB:HookScript("OnEnter", function()
+                            GameTooltip:SetOwner(warnCB, "ANCHOR_TOP")
+                            GameTooltip:SetText(RCL["A warning: the line is drawn in orange on the tracker."], 1, 1, 1, 1, true)
+                            GameTooltip:Show()
+                        end)
+                        warnCB:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
+                        local hx = self.UI:CreateXCloseButton(row, 12, function()
+                            table.remove(holds, hi)
+                            if #holds == 0 then a.holds = nil end
+                            SaveHold()
+                            Rerender()
+                        end)
+                        hx:SetPoint("TOPRIGHT", row, "TOPRIGHT", -8, ey + 1)
+                        ey = ey - 26
+
+                        -- how long it stays up
+                        local uLbl = self:CreateFontString(row, "OVERLAY", nil, 9)
+                        uLbl:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey - 3)
+                        uLbl:SetText(RCL["until"])
+                        uLbl:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
+                        local endIdx = RR:HoldEndIndex(steps, i, h)
+                        local function EndLabel(k)
+                            if k <= i then return RCL["this step is done"] end
+                            return k .. ". " .. StepSummary(steps[k])
+                        end
+                        local untilDD = self.UI:CreateScrollableDropdown(row, 226, EndLabel(endIdx), 10)
+                        untilDD:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 30, ey + 4)
+                        local untilItems = { { text = EndLabel(i), value = i } }
+                        for k = i + 1, math.min(#steps, i + 60) do
+                            local sk = steps[k]
+                            -- (a step that is off, or an on-wipe step, is
+                            -- never the one the route is on)
+                            if type(sk) == "table" and sk.enabled ~= false
+                               and not (sk.type == "encounter" and sk.when == "wipe") then
+                                untilItems[#untilItems + 1] = { text = EndLabel(k), value = k }
+                            end
+                        end
+                        untilDD:SetItems(untilItems, function(value)
+                            RR:SetHoldEnd(steps, i, h, value)
+                            SaveHold()
+                            Rerender()
+                        end)
+                        untilDD:SetSelectedValue(endIdx, EndLabel(endIdx))
+                        ey = ey - 30
+                    end
+
+                    local addHoldBtn = self.UI:CreateStyledButton(row, RCL["+ Line"], 50, 20)
+                    addHoldBtn:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey + 2)
+                    addHoldBtn:SetScript("OnClick", function()
+                        holds[#holds + 1] = { text = "", tts = true,
+                            icon = "Interface\\Icons\\INV_Misc_Note_01" }
+                        SaveHold()
+                        Rerender()
+                    end)
+                    local holdNote = self:CreateFontString(row, "OVERLAY", nil, 9)
+                    holdNote:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 58, ey - 3)
+                    holdNote:SetText(RCL["On the tracker while you are on these steps"])
+                    holdNote:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
+                    ey = ey - 30
                 end
 
                 local testBtn = self.UI:CreateStyledButton(row, RCL["Test Actions"], 90, 22)

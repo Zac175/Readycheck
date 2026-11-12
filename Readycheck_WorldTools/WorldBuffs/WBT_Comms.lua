@@ -1,19 +1,32 @@
 ------------------------------------------------------------------------
 -- Readycheck - World Buff Timers Comms
--- Wire-compatible with Nova World Buffs' guild timer network (protocol
--- 3.39), so Readycheck and NWB users in one guild share a single pool of
--- timers. Independent implementation of NWB's message format; the design
--- is Venomisto's and is credited in CREDITS.md.
---   transport: AceComm framing on the network prefix - single part
+-- Wire-compatible with Nova World Buffs' guild timer network, so
+-- Readycheck and NWB users in one guild share a single pool of timers.
+-- Independent implementation of NWB's message format; the design is
+-- Venomisto's and is credited in CREDITS.md.
+--
+-- TWO WIRES, both read; the newer one sent whenever the client can
+-- (WBT.HasNewCodec - see WBT_Core for the history):
+--   NEW (Nova World Buffs 3.43+ encoding, 3.48+ data; WBT.WIRE_VERSION)
+--     payload: Encode(C_EncodingUtil.CompressString(SerializeCBOR(msg), 0, 2))
+--       Encode = LibDeflate's addon-channel alphabet, or
+--       C_EncodingUtil.EncodeBase64 on YELL/SAY.
+--     data = SerializeCBOR(table) for the data cmds; flowers "1".."0",
+--       layers[<world>][<layer id>] (the world is 1 on Classic Era),
+--       layerMap values as short zone numbers.
+--   OLD (3.39; what Readycheck 5.0.5 and earlier speak)
+--     payload: Encode(LibDeflate:CompressDeflate(LibSerialize(msg), level 9))
+--       Encode = addon-channel alphabet, or the chat-channel one on YELL/SAY.
+--     data = LibSerialize(table); flowers "f1".."f10", layers[<layer id>],
+--       layerMap values as map ids.
+--   transport (both): AceComm framing on the network prefix - single part
 --     <=255 bytes raw (\004-escaped if it starts with \001-\009), else
 --     254-byte chunks prefixed \001/\002/\003.
---   payload: Encode(CompressDeflate(LibSerialize(msgString), level 9));
---     chat-channel encoding on YELL/SAY, addon-channel otherwise.
---   msgString: "<cmd> <protoVer> <level>[-<layerNum>] <timeHash> <data>"
+--   msgString (both): "<cmd> <protoVer> <level>[-<layerNum>] <timeHash> <data>"
 --     timeHash = epochToHash of truncated server time; receivers
 --     recompute it and gate layer/flower merges on a match.
---     data = LibSerialize(table with shortened keys) for data cmds,
---     plain text args for instant cmds (yell/drop/npcKilled/flower/handIn).
+--     data = the serialized table (short keys) for data cmds, plain text
+--     args for instant cmds (yell/drop/npcKilled/flower/handIn).
 --
 -- Command vocabulary (cmd, then plain-text args after the header):
 --   data / settings   serialized store merge: drop timestamps, per-layer
@@ -129,6 +142,71 @@ local shortKeys = {
 local shortKeysReversed = {}
 for k, v in pairs(shortKeys) do shortKeysReversed[v] = k end
 
+-- WHAT NOVA WORLD BUFFS 3.48 CHANGED IN THE DATA (2026-11-11, read off a
+-- 3.50 install; Zac: "i like never have songflower timers anymore").
+-- The map above is the 3.39 one. From 3.48 a sender:
+--   * writes the songflowers as "1" .. "9" and "0" (flower10), where they
+--     were "f1" .. "f10". (The picked-a-flower message itself only prints
+--     a chat line; the timer travels in the data.)
+--   * swapped two keys: "N" is spawn and "af" is hellfireRep.
+--   * nests the per-layer records by world: layers[<world>][<layer id>]
+--     (flattened on arrival, WBT.FlatLayers; the world is 1 on Classic Era).
+--   * sends each layer's zone map with short zone numbers (ZONE_SHORT).
+--   * ignores timer data from anything older than 3.48.
+-- Incoming data is read with the map of the version that sent it (the
+-- songflower spellings never collide, so both are taken from anyone);
+-- outgoing data is written the 3.48 way whenever the new wire is spoken.
+local NEW_WIRE_FROM = 3.48
+local ERA_WORLD = 1                    -- Nova World Buffs' storage id for Azeroth on Classic Era
+local shortKeysOldRx, shortKeysNewRx = {}, {}
+for k, v in pairs(shortKeys) do shortKeysOldRx[k] = v shortKeysNewRx[k] = v end
+for i = 1, 10 do
+    local short = tostring(i % 10)          -- "1" .. "9", then "0" for the tenth
+    shortKeysOldRx[short] = "flower" .. i
+    shortKeysNewRx[short] = "flower" .. i
+end
+shortKeysNewRx["N"], shortKeysNewRx["af"] = "spawn", "hellfireRep"
+-- writing the 3.48 way: the reverse of the 3.48 map
+local shortKeysNewTx = {}
+for k, v in pairs(shortKeys) do shortKeysNewTx[v] = k end
+for i = 1, 10 do shortKeysNewTx["flower" .. i] = tostring(i % 10) end
+shortKeysNewTx["spawn"], shortKeysNewTx["hellfireRep"] = "N", "af"
+local function isNewWire(remoteVersion)
+    local v = tonumber(remoteVersion)
+    return v ~= nil and v >= NEW_WIRE_FROM
+end
+Comms.IsNewWire = isNewWire
+
+-- A layer's zone map is { [zone uid] = map id }. On the new wire the map
+-- ids of the Classic zones travel as 1 .. 46 (Durotar 1411 = 1 ... The
+-- Barrens 1413 = 3, then Alterac Mountains 1416 = 4 ... Undercity 1458 =
+-- 46; 1414 and 1415 are the continents and are not zones). Anything else
+-- travels as itself, and nothing real is below 100, so a small number is
+-- always a short one.
+local ZONE_SHORT, ZONE_LONG = {}, {}
+for short = 1, 46 do
+    local mapID = (short <= 3) and (1410 + short) or (1412 + short)
+    ZONE_SHORT[mapID], ZONE_LONG[short] = short, mapID
+end
+local function encodeLayerMap(layerMap)
+    local out = {}
+    for zoneID, mapID in pairs(layerMap) do out[zoneID] = ZONE_SHORT[mapID] or mapID end
+    return out
+end
+-- (returns nil for a map that does not decode: one bad entry means the
+-- whole map is not to be trusted)
+local function decodeLayerMap(layerMap)
+    local out = {}
+    for zoneID, mapID in pairs(layerMap) do
+        if type(mapID) ~= "number" then return nil end
+        if mapID < 100 then mapID = ZONE_LONG[mapID] end
+        if not mapID then return nil end
+        out[zoneID] = mapID
+    end
+    return out
+end
+Comms.EncodeLayerMap, Comms.DecodeLayerMap = encodeLayerMap, decodeLayerMap
+
 -- Base-36 freshness token. timeToken drops the last 3 digits of
 -- (serverTime + 1998), so the value only changes once every 1000s and the
 -- 1998 offset moves where that boundary falls. validToken accepts the
@@ -199,6 +277,7 @@ local function validToken(d)
     return got == now or got == now - 1
 end
 Comms.ValidToken = validToken
+Comms.TimeToken = timeToken
 
 -- Network data sanitizer (runs on both send and receive): zeroes keys
 -- sharing an identical timestamp and runs of flowerN picks exactly 1s
@@ -275,16 +354,22 @@ local hashKeys = {
     dragon1=true, dragon2=true, dragon3=true, dragon4=true,
 }
 
-local function convertKeys(tbl, shorten, distribution)
+-- newWire: reading - the sender speaks 3.48 or later; writing - we do
+local function convertKeys(tbl, shorten, distribution, newWire)
     if type(tbl) ~= "table" then
         WBT:Debug("no convertKeys table")
         return
     end
-    local keys = shorten and shortKeysReversed or shortKeys
+    local keys
+    if shorten then
+        keys = newWire and shortKeysNewTx or shortKeysReversed
+    else
+        keys = newWire and shortKeysNewRx or shortKeysOldRx
+    end
     local data = {}
     for k, v in pairs(tbl) do
         if type(v) == "table" then
-            v = convertKeys(v, shorten, distribution)
+            v = convertKeys(v, shorten, distribution, newWire)
         end
         if distribution == "YELL" and not shorten and hashKeys[keys[k]] then
             -- Old clients hashed yell timestamps; accept both forms.
@@ -404,6 +489,98 @@ local function isInArena()
     return instanceType == "arena"
 end
 
+------------------------------------------------------------------------
+-- The two encodings (see the header). Everything that leaves goes out in
+-- the one Comms.NewWire() names; everything that arrives is tried as the
+-- older one first and the newer one second - the order Nova World Buffs
+-- itself uses - and the caller is told which it was.
+------------------------------------------------------------------------
+function Comms.NewWire()
+    return WBT.HasNewCodec()
+end
+-- message string -> text ready for the addon channel (nil on failure)
+local function packEnvelope(msgString, distribution)
+    local ls, ld = GetCodecLibs()
+    if not ld then return end
+    if Comms.NewWire() then
+        local E = C_EncodingUtil
+        local ok, packed = pcall(function()
+            return E.CompressString(E.SerializeCBOR(msgString), 0, 2)     -- deflate, smallest
+        end)
+        if not ok or type(packed) ~= "string" then return end
+        if distribution == "YELL" or distribution == "SAY" then
+            local ok2, text = pcall(E.EncodeBase64, packed, 0)
+            return ok2 and text or nil
+        end
+        return ld:EncodeForWoWAddonChannel(packed)
+    end
+    if not ls then return end
+    local compressed = ld:CompressDeflate(ls:Serialize(msgString), { level = 9 })
+    if distribution == "YELL" or distribution == "SAY" then
+        return ld:EncodeForWoWChatChannel(compressed)
+    end
+    return ld:EncodeForWoWAddonChannel(compressed)
+end
+-- text off the addon channel -> message string, and true when it was the
+-- newer encoding (nil when neither opens it)
+local function unpackEnvelope(msg, distribution)
+    local ls, ld = GetCodecLibs()
+    if not ld then return end
+    local chat = distribution == "YELL" or distribution == "SAY"
+    if ls then
+        local decoded = chat and ld:DecodeForWoWChatChannel(msg) or (not chat and ld:DecodeForWoWAddonChannel(msg)) or nil
+        local decompressed = decoded and ld:DecompressDeflate(decoded)
+        if decompressed then
+            local ok, text = ls:Deserialize(decompressed)
+            if ok and type(text) == "string" then return text, false end
+        end
+    end
+    if not WBT.HasNewCodec() then return end
+    local E = C_EncodingUtil
+    local decoded
+    if chat then
+        local ok, d = pcall(E.DecodeBase64, msg, 0)
+        decoded = ok and d or nil
+    else
+        decoded = ld:DecodeForWoWAddonChannel(msg)
+    end
+    if type(decoded) ~= "string" then return end
+    local ok, decompressed = pcall(E.DecompressString, decoded, 0)
+    if not ok or type(decompressed) ~= "string" then return end
+    local ok2, text = pcall(E.DeserializeCBOR, decompressed)
+    if not ok2 or type(text) ~= "string" then return end
+    return text, true
+end
+-- the table inside a data message -> its text, in the wire being spoken
+local function packInner(tbl)
+    if Comms.NewWire() then
+        local ok, text = pcall(C_EncodingUtil.SerializeCBOR, tbl)
+        return (ok and type(text) == "string") and text or nil
+    end
+    local ls = GetCodecLibs()
+    return ls and ls:Serialize(tbl) or nil
+end
+-- ...and back. newFirst: the envelope was the newer encoding, so the
+-- inside almost certainly is too; either way both are tried.
+local function unpackInner(text, newFirst)
+    if type(text) ~= "string" then return end
+    local ls = GetCodecLibs()
+    local function Old()
+        if not ls then return end
+        local ok, data = ls:Deserialize(text)
+        if ok and type(data) == "table" then return data end
+    end
+    local function New()
+        if not WBT.HasNewCodec() then return end
+        local ok, data = pcall(C_EncodingUtil.DeserializeCBOR, text)
+        if ok and type(data) == "table" then return data end
+    end
+    if newFirst then return New() or Old() end
+    return Old() or New()
+end
+Comms.PackEnvelope, Comms.UnpackEnvelope = packEnvelope, unpackEnvelope
+Comms.PackInner, Comms.UnpackInner = packInner, unpackInner
+
 function Comms:SendComm(distribution, msgString, target, prio)
     if not WBT:CanSend() then return end
     local ls, ld = GetCodecLibs()
@@ -419,14 +596,8 @@ function Comms:SendComm(distribution, msgString, target, prio)
     if distribution ~= "WHISPER" and distribution ~= "CHANNEL" then
         target = nil
     end
-    local serialized = ls:Serialize(msgString)
-    local compressed = ld:CompressDeflate(serialized, { level = 9 })
-    local data
-    if distribution == "YELL" or distribution == "SAY" then
-        data = ld:EncodeForWoWChatChannel(compressed)
-    else
-        data = ld:EncodeForWoWAddonChannel(compressed)
-    end
+    local data = packEnvelope(msgString, distribution)
+    if not data then return end
     sendFramed(data, distribution, target, prio)
 end
 
@@ -472,7 +643,7 @@ function Comms:CreateSettings(distribution)
             guildNpcWalking = false,
         }
     end
-    return convertKeys(data, true, distribution) or {}
+    return convertKeys(data, true, distribution, Comms.NewWire()) or {}
 end
 
 -- Only rend drops ("r") and rend quest hand-ins ("q") are shared, capped at
@@ -608,6 +779,14 @@ function Comms:CreateDataLayered(distribution, noLayerMap, noLogs, forceLayerMap
             data.layers[layer].spawn = v.spawn
         end
     end
+    -- The new wire: zone maps in short numbers, and the layers one level
+    -- down, under the world they belong to (always Azeroth here).
+    if Comms.NewWire() and data.layers then
+        for _, out in pairs(data.layers) do
+            if out.layerMap then out.layerMap = encodeLayerMap(out.layerMap) end
+        end
+        data.layers = { [ERA_WORLD] = data.layers }
+    end
     if distribution == "GUILD" and not forceLayerMap then
         local settings = self:CreateSettings(distribution)
         local me = UnitName("player") .. "-" .. (GetNormalizedRealmName() or "")
@@ -617,7 +796,7 @@ function Comms:CreateDataLayered(distribution, noLayerMap, noLogs, forceLayerMap
         local timerLog = self:CreateTimerLogData(distribution)
         if timerLog then data.timerLog = timerLog end
     end
-    return convertKeys(data, true, distribution) or {}
+    return convertKeys(data, true, distribution, Comms.NewWire()) or {}
 end
 
 function Comms:CreateData(distribution, noLogs)
@@ -668,7 +847,7 @@ function Comms:CreateData(distribution, noLogs)
         local timerLog = self:CreateTimerLogData(distribution)
         if timerLog then data.timerLog = timerLog end
     end
-    return convertKeys(data, true, distribution) or {}
+    return convertKeys(data, true, distribution, Comms.NewWire()) or {}
 end
 
 ------------------------------------------------------------------------
@@ -703,7 +882,8 @@ function Comms:SendData(distribution, target, prio, noLayerMap, noLogs, forceLay
         data = self:CreateData(distribution, noLogs)
     end
     if data and next(data) ~= nil then
-        local serialized = ls:Serialize(data)
+        local serialized = packInner(data)
+        if not serialized then return end
         local l = statusL(distribution)
         self._lastDataSent = GetServerTime()
         if distribution == "YELL" then self._lastYellDataAt = GetServerTime() end
@@ -719,7 +899,8 @@ function Comms:SendSettings(distribution, target, prio)
     if (UnitInBattleground("player") or isInArena()) and distribution ~= "GUILD" then return end
     local data = self:CreateSettings(distribution)
     if data and next(data) ~= nil then
-        local serialized = ls:Serialize(data)
+        local serialized = packInner(data)
+        if not serialized then return end
         local l = statusL(distribution)
         self._lastDataSent = GetServerTime()
         self:SendComm(distribution, "settings " .. versionHeader() .. l .. " " .. timeToken() .. " " .. serialized, target, prio)
@@ -741,9 +922,10 @@ function Comms:SendTimerLogData(distribution, entries)
     end
     local logData = self:CreateTimerLogData(distribution, entries)
     if not logData then return end
-    local data = convertKeys({ timerLog = logData }, true, distribution)
+    local data = convertKeys({ timerLog = logData }, true, distribution, Comms.NewWire())
     if data and next(data) ~= nil then
-        local serialized = ls:Serialize(data)
+        local serialized = packInner(data)
+        if not serialized then return end
         self._lastDataSent = GetServerTime()
         self:SendComm(distribution, "data " .. versionHeader() .. " " .. timeToken() .. " " .. serialized)
     end
@@ -760,7 +942,8 @@ function Comms:RequestData(distribution, target, prio)
     else
         data = self:CreateData(distribution)
     end
-    data = ls:Serialize(data or {})
+    data = packInner(data or {})
+    if not data then return end
     self._lastDataSent = GetServerTime()
     self:SendComm(distribution, "requestData " .. versionHeader() .. " " .. timeToken() .. " " .. data, target, prio)
 end
@@ -852,19 +1035,173 @@ function Comms:GetGuildDataStatus()
 end
 
 ------------------------------------------------------------------------
+-- DRIFT: noticing the day Nova World Buffs changes its wire again
+-- (2026-11-12, Zac: "how can we prevent that from happening in the
+-- future if nova updates?")
+--
+-- Twice now (3.43's encoding, 3.48's layout) the other addon changed
+-- what it sends and Readycheck went quiet without a sound: every message
+-- it could not open was dropped, which looks exactly like "nobody has a
+-- timer". Nothing can make an old Readycheck read a format that does not
+-- exist yet, but it can stop being silent about it. For the session:
+--   newer    the highest sender version above the one this file was
+--            checked against (WBT.WIRE_VERSION)
+--   unread   messages on the timer prefix that neither encoding opened
+--            (a new encoding hides the sender's version with everything
+--            else, so these are counted on their own: a handful in one
+--            session is the 3.43 kind of change), and data whose inside
+--            neither reader could parse
+--   unknown  short keys from a newer sender that this file has no name
+--            for (a key added or moved - the 3.48 change was two moved
+--            keys and ten renamed ones)
+--   empty    data from a newer sender that held layers this file could
+--            find no layer records in (a reshaped store - the other half
+--            of the 3.48 change)
+-- Comms.Drift:Status() turns that into the lines the Status card shows;
+-- the first time a newer sender's data fails to read, one line is
+-- printed as well. Nothing is stored: a count from last week says
+-- nothing about today.
+------------------------------------------------------------------------
+Comms.Drift = Comms.Drift or {}
+local Drift = Comms.Drift
+Drift.unread, Drift.unknown, Drift.empty = 0, 0, 0
+Drift.newer, Drift.unreadNewer, Drift.told = nil, 0, nil
+Drift.MSG_WARN, Drift.MSG_TELL = 5, 12      -- unopened messages: say so on the card / in chat
+
+local function testedVersion() return tonumber(WBT.WIRE_VERSION) or 0 end
+local function isNewer(remoteVersion)
+    local v = tonumber(remoteVersion)
+    return v ~= nil and v > testedVersion()
+end
+
+function Drift:Reset()
+    self.unread, self.unknown, self.empty = 0, 0, 0
+    self.newer, self.unreadNewer, self.told = nil, 0, nil
+end
+
+-- a header was read: remember the newest version above ours
+function Drift:Saw(remoteVersion)
+    if isNewer(remoteVersion) and (not self.newer or tonumber(remoteVersion) > tonumber(self.newer)) then
+        self.newer = tostring(remoteVersion)
+        WBT:Debug("newer timer addon version seen: " .. self.newer .. " (this wire: " .. tostring(WBT.WIRE_VERSION) .. ")")
+    end
+end
+
+local function tell(self)
+    if self.told then return end
+    self.told = true
+    RC:Print("World Buff Timers: " .. (self.newer and ("Nova World Buffs " .. self.newer) or "another timer addon")
+        .. " is sending timers in a form this Readycheck cannot fully read. Timers from those players may be missing "
+        .. "until Readycheck is updated.")
+end
+
+-- something on the prefix could not be opened (what = "message" | "data")
+function Drift:Unread(what, sender, remoteVersion)
+    self.unread = self.unread + 1
+    if what == "data" and isNewer(remoteVersion) then
+        self.unreadNewer = self.unreadNewer + 1
+        self:Saw(remoteVersion)
+        tell(self)
+    elseif what == "message" and self.unread >= self.MSG_TELL then
+        tell(self)
+    end
+    WBT:Debug("unreadable " .. tostring(what) .. " from " .. tostring(sender)
+        .. (remoteVersion and (" (v" .. tostring(remoteVersion) .. ")") or ""))
+end
+
+-- data was read: from a newer sender, does it look like what we know?
+function Drift:Read(data, sender, remoteVersion)
+    if not isNewer(remoteVersion) or type(data) ~= "table" then return end
+    local odd = 0
+    local function scan(t, depth)
+        for k, v in pairs(t) do
+            -- a short string key still short after conversion, holding a
+            -- number, is a key this file has no long name for
+            if type(k) == "string" and #k <= 2 and type(v) == "number" and not WBT.validKeys[k] then
+                odd = odd + 1
+            end
+            if type(v) == "table" and depth < 3 and k ~= "layerMap" and k ~= "timerLog" then scan(v, depth + 1) end
+        end
+    end
+    scan(data, 0)
+    local empty = false
+    if type(data.layers) == "table" and next(data.layers) ~= nil then
+        local flat = WBT.FlatLayers(data.layers)
+        local found = false
+        for _, rec in pairs(flat) do
+            if type(rec) == "table" then
+                for k in pairs(rec) do
+                    if type(k) == "string" and WBT.validKeys[k] then found = true break end
+                end
+            end
+            if found then break end
+        end
+        empty = not found
+    end
+    if odd > 0 then self.unknown = self.unknown + odd end
+    if empty then self.empty = self.empty + 1 end
+    if odd > 0 or empty then
+        WBT:Debug("data from " .. tostring(sender) .. " (v" .. tostring(remoteVersion) .. ") does not look like "
+            .. tostring(WBT.WIRE_VERSION) .. ": " .. odd .. " unknown key(s)" .. (empty and ", no layer records found" or ""))
+        tell(self)
+    end
+end
+
+-- the Status card's lines: { text, level } with level "ok" | "warn"
+function Drift:Status()
+    local lines = {}
+    if Comms.NewWire() then
+        lines[#lines + 1] = { "Timer format: Nova World Buffs " .. tostring(WBT.WIRE_VERSION) .. " (older Readycheck is read too).", "ok" }
+    else
+        lines[#lines + 1] = { "Timer format: the older " .. tostring(WBT.LEGACY_VERSION)
+            .. " (this client lacks the newer encoder); current Nova World Buffs users will not take timers from here.", "warn" }
+    end
+    local trouble = self.unreadNewer + self.unknown + self.empty
+    if self.newer and trouble > 0 then
+        lines[#lines + 1] = { "Nova World Buffs " .. self.newer .. " seen: " .. trouble
+            .. " thing(s) it sent could not be read. Its format has changed - update Readycheck.", "warn" }
+    elseif self.newer then
+        lines[#lines + 1] = { "Nova World Buffs " .. self.newer .. " seen (newer than " .. tostring(WBT.WIRE_VERSION)
+            .. "); everything it sent so far read fine.", "ok" }
+    end
+    if self.unread >= self.MSG_WARN and not (self.newer and trouble > 0) then
+        lines[#lines + 1] = { self.unread .. " timer messages could not be opened this session: "
+            .. "another addon's encoding may have changed. Check for a Readycheck update.", "warn" }
+    elseif self.unread > 0 and not (self.newer and trouble > 0) then
+        lines[#lines + 1] = { self.unread .. " message(s) this session could not be opened.", "ok" }
+    end
+    return lines
+end
+
+------------------------------------------------------------------------
 -- Inbound merge
 ------------------------------------------------------------------------
-function Comms:ReceivedData(dataReceived, sender, distribution, elapsed)
-    local ls = GetCodecLibs()
-    if not ls then return end
+-- newEnvelope: the message came in the newer encoding (so its data is
+-- almost certainly CBOR; both readers are tried either way)
+function Comms:ReceivedData(dataReceived, sender, distribution, elapsed, remoteVersion, newEnvelope)
     local d = WBT:Data()
     if not d then return end
-    local ok, data = ls:Deserialize(dataReceived)
-    if not ok then return end
-    data = convertKeys(data, nil, distribution)
+    local data = unpackInner(dataReceived, newEnvelope)
+    if not data then
+        Comms.Drift:Unread("data", sender, remoteVersion)
+        return
+    end
+    data = convertKeys(data, nil, distribution, isNewWire(remoteVersion))
     if not data then
         WBT:Debug("bad hash result from " .. tostring(sender))
         return
+    end
+    Comms.Drift:Read(data, sender, remoteVersion)
+    -- layers[<world>][<layer id>] (3.48+) read as layers[<layer id>]
+    if type(data.layers) == "table" then data.layers = WBT.FlatLayers(data.layers) end
+    -- zone maps sent in short numbers (3.48+) read as map ids; one that
+    -- does not decode is left out rather than guessed at
+    if type(data.layers) == "table" then
+        for _, vv in pairs(data.layers) do
+            if type(vv) == "table" and vv.layerMap ~= nil then
+                vv.layerMap = type(vv.layerMap) == "table" and decodeLayerMap(vv.layerMap) or nil
+            end
+        end
     end
     -- Settings rows come off this same decode; OnCommReceived used to
     -- deserialize and expand the whole payload a second time for them.
@@ -915,12 +1252,20 @@ function Comms:ReceivedData(dataReceived, sender, distribution, elapsed)
         -- sighting or carries nothing but zeroes; layerCap is small and a
         -- junk entry pushes a real layer out.
         for layer, vv in pairsByKeys(data.layers) do
-            local skipLayer = type(vv) ~= "table" or not vv.lastSeenNPC
-                or GetServerTime() - vv.lastSeenNPC > WBT.layerExpire
-                or ((not vv.rendTimer or vv.rendTimer == 0) and (not vv.onyTimer or vv.onyTimer == 0)
-                    and (not vv.nefTimer or vv.nefTimer == 0) and (not vv.onyNpcDied or vv.onyNpcDied == 0)
-                    and (not vv.nefNpcDied or vv.nefNpcDied == 0) and (not vv.lastSeenNPC or vv.lastSeenNPC == 0))
-                or d.layersDisabled[layer]
+            -- (2026-11-12) ...which is a rule about MAKING a layer. One we
+            -- already hold takes what arrives for it: someone who has been
+            -- picking songflowers in Felwood for three hours has seen no
+            -- city NPC in that time, sends no sighting with the layer, and
+            -- their songflower timers for a layer we both know were being
+            -- thrown away with it.
+            local skipLayer = type(vv) ~= "table" or d.layersDisabled[layer]
+            if not skipLayer and not d.layers[layer] then
+                skipLayer = not vv.lastSeenNPC
+                    or GetServerTime() - vv.lastSeenNPC > WBT.layerExpire
+                    or ((not vv.rendTimer or vv.rendTimer == 0) and (not vv.onyTimer or vv.onyTimer == 0)
+                        and (not vv.nefTimer or vv.nefTimer == 0) and (not vv.onyNpcDied or vv.onyNpcDied == 0)
+                        and (not vv.nefNpcDied or vv.nefNpcDied == 0) and (not vv.lastSeenNPC or vv.lastSeenNPC == 0))
+            end
             if not skipLayer and type(vv) == "table" and next(vv) then
                 -- Identical timestamps on two layers = corrupt; strip them.
                 for localLayer, localV in pairs(d.layers) do
@@ -1153,11 +1498,8 @@ function Comms:ExtractSettings(dataReceived, sender, distribution, converted)
     local data = converted
     if type(data) ~= "table" then
         if not dataReceived then return end
-        local ls = GetCodecLibs()
-        if not ls then return end
-        local ok
-        ok, data = ls:Deserialize(dataReceived)
-        if not ok then return end
+        data = unpackInner(dataReceived)
+        if not data then return end
         data = convertKeys(data, nil, distribution)
         if not data then return end
     end
@@ -1279,17 +1621,11 @@ function Comms:OnCommReceived(commPrefix, msg, distribution, sender)
         sender = sender .. "-" .. (GetNormalizedRealmName() or "")
     end
 
-    local decoded
-    if distribution == "YELL" or distribution == "SAY" then
-        decoded = ld:DecodeForWoWChatChannel(msg)
-    else
-        decoded = ld:DecodeForWoWAddonChannel(msg)
+    local deserialized, newEnvelope = unpackEnvelope(msg, distribution)
+    if not deserialized then
+        Comms.Drift:Unread("message", sender)
+        return
     end
-    if not decoded then return end
-    local decompressed = ld:DecompressDeflate(decoded)
-    if not decompressed then return end
-    local ok, deserialized = ls:Deserialize(decompressed)
-    if not ok or type(deserialized) ~= "string" then return end
 
     local args = explode(" ", deserialized, 4)
     local cmd = args[1]
@@ -1344,9 +1680,9 @@ function Comms:OnCommReceived(commPrefix, msg, distribution, sender)
     end
 
     if cmd == "data" or cmd == "settings" then
-        self:ReceivedData(data, sender, distribution, elapsed)
+        self:ReceivedData(data, sender, distribution, elapsed, remoteVersion, newEnvelope)
     elseif cmd == "requestData" and distribution == "GUILD" then
-        self:ReceivedData(data, sender, distribution, elapsed)
+        self:ReceivedData(data, sender, distribution, elapsed, remoteVersion, newEnvelope)
         if self:ReplyAllowed(sender) then
             if not self:GetGuildDataStatus() then
                 self:SendSettings("GUILD")
@@ -1355,7 +1691,7 @@ function Comms:OnCommReceived(commPrefix, msg, distribution, sender)
             end
         end
     elseif cmd == "requestSettings" and distribution == "GUILD" then
-        self:ReceivedData(data, sender, distribution, elapsed)
+        self:ReceivedData(data, sender, distribution, elapsed, remoteVersion, newEnvelope)
         if self:ReplyAllowed(sender) then
             self:SendSettings("GUILD")
         end
@@ -1369,6 +1705,7 @@ function Comms:OnCommReceived(commPrefix, msg, distribution, sender)
     if tonumber(remoteVersion) and tonumber(remoteVersion) > tonumber(WBT.newestSeenVersion or 0) then
         WBT.newestSeenVersion = remoteVersion
     end
+    Comms.Drift:Saw(remoteVersion, sender)
 end
 
 -- Reassembly is keyed by prefix+distribution+sender, so two senders can

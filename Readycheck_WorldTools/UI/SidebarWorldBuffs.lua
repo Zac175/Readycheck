@@ -1845,7 +1845,7 @@ local function InitializeSidebarWorldBuffs()
                  scroll = scroll, content = scrollChild, scrollBar = scrollBar, footer = footer }
     end
 
-    -- Same six-dot handle every other Readycheck window uses, including
+    -- Same resize corner every other Readycheck window uses, including
     -- the resize bounds (the board and its sample).
     local function AttachMiniGrip(f)
         return RC.UI:AttachResizeGrip(f, {

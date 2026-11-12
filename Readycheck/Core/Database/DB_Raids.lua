@@ -1552,6 +1552,9 @@ RC.encounterAddPhases = {
             enabled = false,
             trackerEnabled = true,
             trackerShowContext = false,
+            -- the tracker as the bar along the top of ZacUI's chat box
+            -- (only does anything with ZacUI's raid chat on)
+            trackerChatDock = false,
         },
         gearUseRevert = true,
         speedSwapTargets = {},

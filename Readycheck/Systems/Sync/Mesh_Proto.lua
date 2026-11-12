@@ -4146,7 +4146,8 @@ local _mss = RC._mss
                     -- this character's business: a raid member whose routes
                     -- are off must never switch yours off by syncing.
                     local PERSONAL = { runtime = true, enabled = true, offByDefaultDone = true,
-                        trackerPos = true, trackerUnlocked = true, trackerW = true, trackerBand = true, trackerBandSwaps = true, uiTab = true }
+                        trackerPos = true, trackerUnlocked = true, trackerW = true, trackerBand = true, trackerBandSwaps = true, trackerBandGear = true,
+                        trackerChatDock = true, uiTab = true }
                     local dst = RC.db[key]
                     for k2, v2 in pairs(payload[key]) do
                         if not PERSONAL[k2] then dst[k2] = RC.DeepCopy(v2) end

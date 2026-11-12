@@ -1118,7 +1118,7 @@ local function InitializeRaidProfiles()
         RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = title, close = closeBtn,
             buttons = { laterBtn }, primary = useBtn, scan = false })
 
-        -- The same six-dot handle every other Readycheck window uses; only
+        -- The same resize corner every other Readycheck window uses; only
         -- the "remember the size" half of the mouse-up is the picker's.
         local resizeGrip = RC.UI:AttachResizeGrip(frame, {
             minW = 260, minH = 150, maxW = 700, maxH = 700,

@@ -1424,35 +1424,21 @@ local BACK_PANELS = {
         resizeGrip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
         resizeGrip:SetFrameLevel(frame:GetFrameLevel() + 120)
 
-        resizeGrip.dots = {}
-        local dotPositions = {
-            {2, 2}, {6, 2}, {10, 2},
-            {6, 6}, {10, 6},
-            {10, 10}
-        }
-        for i, pos in ipairs(dotPositions) do
-            local dot = resizeGrip:CreateTexture(nil, "ARTWORK")
-            dot:SetSize(2, 2)
-            dot:SetPoint("BOTTOMLEFT", resizeGrip, "BOTTOMLEFT", pos[1], pos[2])
-            dot:SetColorTexture(SC("text", 0.25))
-            resizeGrip.dots[i] = dot
-        end
-
-        resizeGrip:SetScript("OnEnter", function()
-            local A = RC.UI:SAccent()
-            for _, dot in ipairs(resizeGrip.dots) do
-                dot:SetColorTexture(A.r, A.g, A.b, 1)
-            end
-        end)
-
-        resizeGrip:SetScript("OnLeave", function()
-            for _, dot in ipairs(resizeGrip.dots) do
-                dot:SetColorTexture(SC("text", 0.25))
-            end
-        end)
+        -- (the solid corner every Readycheck window has - RC.UI:GripArt -
+        -- in this window's own colours; lit while it is held)
+        RC.UI:GripArt(resizeGrip, {
+            rest = function() return SC("text", 0.25) end,
+            hot = function()
+                local A = RC.UI:SAccent()
+                return A.r, A.g, A.b, 1
+            end,
+        })
+        resizeGrip:SetScript("OnEnter", function(self) RC.UI:GripLit(self, true) end)
+        resizeGrip:SetScript("OnLeave", function(self) RC.UI:GripLit(self, false) end)
 
         resizeGrip:SetScript("OnMouseDown", function(self, button)
             if button == "LeftButton" and not frame._rcFolded then
+                RC.UI:GripHold(self)
                 frame:StartSizing("BOTTOMRIGHT")
             end
         end)

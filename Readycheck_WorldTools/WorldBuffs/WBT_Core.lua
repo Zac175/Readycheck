@@ -29,7 +29,33 @@ local math_floor = math.floor
 -- Must match the protocol Nova World Buffs is speaking. This travels in
 -- every message header and both sides gate on it, so bumping it locally
 -- silently drops Readycheck out of the shared pool.
-WBT.PROTOCOL_VERSION = "3.39"
+--
+-- TWO WIRES (2026-11-12, Zac: "both addons need to work together
+-- seemlessly"). Nova World Buffs 3.43 moved its messages to the game's
+-- own encoder (C_EncodingUtil: CBOR, the client's deflate, base64 on
+-- yell/say) and 3.48 reshaped the data inside them; from 3.48 it takes
+-- timer data only from 3.48 and up. Readycheck spoke 3.39 in the older
+-- encoding, so a current Nova World Buffs user could neither read what
+-- Readycheck sent nor be read by it. WBT_Comms now SENDS what the version
+-- named in WIRE_VERSION sends, byte layout and all, and READS both.
+--   WIRE_VERSION    the Nova World Buffs release this file's wire was
+--                   checked against, line by line. Advertised in every
+--                   header while the client has the encoder.
+--   LEGACY_VERSION  what is advertised (and sent) on a client without
+--                   C_EncodingUtil: the 3.39 wire, as before.
+-- Do not raise WIRE_VERSION to "keep up" without reading that release:
+-- a higher number over an older layout puts malformed data into other
+-- people's saved timers. WBT_Comms watches for newer senders and
+-- unreadable messages instead (Comms.Drift) and says so in the Status
+-- card - that is how the next change gets noticed the day it ships.
+WBT.WIRE_VERSION     = "3.50"
+WBT.LEGACY_VERSION   = "3.39"
+function WBT.HasNewCodec()
+    local E = C_EncodingUtil
+    return (E and E.SerializeCBOR and E.DeserializeCBOR and E.CompressString and E.DecompressString
+        and E.EncodeBase64 and E.DecodeBase64) and true or false
+end
+WBT.PROTOCOL_VERSION = WBT.HasNewCodec() and WBT.WIRE_VERSION or WBT.LEGACY_VERSION
 -- Nova World Buffs' addon-message prefix, used deliberately. This is
 -- INTEROP, not appropriation: world buff timers are only useful if every
 -- addon in a guild pools them, and speaking NWB's protocol is what lets
@@ -337,6 +363,60 @@ function WBT:InvalidateCaches()
     dataCache  = nil
 end
 
+-- LAYERS, IN EITHER SHAPE (2026-11-11, Zac: "i like never have songflower
+-- timers anymore" - Nova World Buffs showing them, Readycheck showing "?").
+-- From its version 3.48 Nova World Buffs keeps, and sends, its per-layer
+-- records one level deeper: layers[<world>][<layer id>] = record, where it
+-- used to be layers[<layer id>] = record. Everything here walked one
+-- level, found tables of tables where it expected timestamps, and read
+-- nothing - songflowers above all, which live only in the layer records.
+-- FlatLayers hands back layers[<layer id>] = record whichever shape came
+-- in (the same table when it is already flat): a record is a table with
+-- at least one named field, a world is a table of records.
+local function isLayerRecord(t)
+    for k in pairs(t) do
+        if type(k) == "string" then return true end
+    end
+    return false
+end
+function WBT.FlatLayers(layers)
+    if type(layers) ~= "table" then return nil end
+    local nested = false
+    for _, v in pairs(layers) do
+        if type(v) == "table" and next(v) ~= nil and not isLayerRecord(v) then
+            nested = true
+            break
+        end
+    end
+    if not nested then return layers end
+    local out = {}
+    for id, v in pairs(layers) do
+        if type(v) == "table" then
+            if isLayerRecord(v) then
+                out[id] = v
+            else
+                for layer, rec in pairs(v) do
+                    if type(layer) == "number" and type(rec) == "table" then out[layer] = rec end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- An import made while Nova World Buffs 3.48+ was loaded wrote each of its
+-- worlds into our store as if it were one layer: a "layer" holding nothing
+-- but other layers' records. They carry no timer anything can read and
+-- take a place under the layer cap, so they go (once per login).
+local function dropWorldsStoredAsLayers(d)
+    if type(d.layers) ~= "table" then return end
+    for layer, rec in pairs(d.layers) do
+        if type(rec) == "table" and next(rec) ~= nil and not isLayerRecord(rec) then
+            d.layers[layer] = nil
+        end
+    end
+end
+
 function WBT:Data()
     if dataCache then return dataCache end
     local s = self:Store()
@@ -352,6 +432,7 @@ function WBT:Data()
     d.layersDisabled = d.layersDisabled or {}
     d.layerMapBackups = d.layerMapBackups or {}
     d.timerLog = d.timerLog or {}
+    dropWorldsStoredAsLayers(d)
     dataCache = d
     return d
 end
@@ -544,6 +625,28 @@ function WBT:ValidateZoneID(zoneID, layerID, mapID)
     return true
 end
 
+-- When a creature spawned, read off the last field of its GUID. That
+-- field is ten hex digits; the low 23 bits of the last six count seconds
+-- inside an 8388608-second (2^23) window of server time (the layout the
+-- client documents for creature GUIDs). Every city NPC of a layer came up
+-- when the layer did, so the earliest one seen is the layer's own age -
+-- and Nova World Buffs 3.48+ throws away any layer shared without it.
+-- The arithmetic matches theirs to the second on purpose: the earliest
+-- value wins on both sides, so two clients must compute the same number
+-- from the same NPC.
+function WBT:GuidSpawnTime(GUID)
+    if type(GUID) ~= "string" then return end
+    local _, _, _, _, _, _, spawnUID = strsplit("-", GUID)
+    if type(spawnUID) ~= "string" or #spawnUID < 6 then return end
+    local low = tonumber(string.sub(spawnUID, 5), 16)
+    if not low then return end
+    local now = GetServerTime()
+    local t = (now - now % 8388608) + (low % 8388608)
+    if t > now then t = t - 8388607 end        -- the window has rolled over since it spawned
+    if t <= 0 then return end
+    return t
+end
+
 function WBT:CreateNewLayer(zoneID, GUID, isFromNpc)
     local d = self:Data()
     if not d then return end
@@ -719,6 +822,44 @@ local function mergeNumericNewest(dst, src, key)
     end
 end
 
+-- MIRROR HEALTH (2026-11-12, Zac: "how can we prevent that from happening
+-- in the future if nova updates?"). While Nova World Buffs is loaded this
+-- addon shows what Nova has saved, and Nova 3.48 moved where it saves it:
+-- the copy found nothing, said nothing, and every songflower read "?".
+-- Each copy now notes what it found - was the realm's store where it is
+-- looked for, did it hold layer data, how many layers could be read - and
+-- WBT:MirrorStatus() turns that into the Status card's lines, so a store
+-- that has moved again shows as a warning instead of as empty timers.
+local function holdsNumber(t, depth)
+    for _, v in pairs(t) do
+        if type(v) == "number" and v ~= 0 then return true end
+        if type(v) == "table" and depth > 1 and holdsNumber(v, depth - 1) then return true end
+    end
+    return false
+end
+function WBT:MirrorStatus()
+    local h = self.mirrorHealth
+    local lines = {}
+    if not h then return lines end
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local theirs = getMeta and getMeta("NovaWorldBuffs", "Version") or nil
+    local newer = tonumber(theirs) and tonumber(theirs) > (tonumber(WBT.WIRE_VERSION) or 0)
+    if not h.store then
+        lines[#lines + 1] = { "Nova World Buffs' saved timers were not where Readycheck looks for them"
+            .. (theirs and (" (Nova " .. tostring(theirs) .. ")") or "") .. ". Update Readycheck.", "warn" }
+    elseif h.layerData and h.layers == 0 then
+        lines[#lines + 1] = { "Nova World Buffs" .. (theirs and (" " .. tostring(theirs)) or "")
+            .. " holds layer timers Readycheck could not read: its saved format has changed. Update Readycheck.", "warn" }
+    elseif newer then
+        lines[#lines + 1] = { "Nova World Buffs " .. tostring(theirs) .. " is newer than the " .. tostring(WBT.WIRE_VERSION)
+            .. " Readycheck was checked against; its saved timers still read fine (" .. h.layers .. " layer(s)).", "ok" }
+    else
+        lines[#lines + 1] = { "Reading Nova World Buffs" .. (theirs and (" " .. tostring(theirs)) or "")
+            .. "'s saved timers: " .. h.layers .. " layer(s).", "ok" }
+    end
+    return lines
+end
+
 function WBT:ImportLegacyData(verbose)
     local legacyDb = _G.NWBdatabase
     if type(legacyDb) ~= "table" or type(legacyDb.global) ~= "table" then
@@ -729,9 +870,12 @@ function WBT:ImportLegacyData(verbose)
     local s = self:Store()
     if not d or not s then return false end
     local imported = 0
+    local health = { store = false, layerData = false, layers = 0 }
     for _, factionName in ipairs({ "Horde", "Alliance" }) do
         local fd = legacyDb.global[WBT.realm] and legacyDb.global[WBT.realm][factionName]
         if type(fd) == "table" then
+            health.store = true
+            if type(fd.layers) == "table" and holdsNumber(fd.layers, 5) then health.layerData = true end
             s.global[WBT.realm][factionName] = s.global[WBT.realm][factionName] or {}
             local dst = s.global[WBT.realm][factionName]
             for k in pairs(WBT.validKeys) do
@@ -742,8 +886,9 @@ function WBT:ImportLegacyData(verbose)
             end
             if type(fd.layers) == "table" then
                 dst.layers = dst.layers or {}
-                for layer, lv in pairs(fd.layers) do
+                for layer, lv in pairs(WBT.FlatLayers(fd.layers)) do
                     if type(layer) == "number" and type(lv) == "table" then
+                        health.layers = health.layers + 1
                         dst.layers[layer] = dst.layers[layer] or {}
                         local dl = dst.layers[layer]
                         for k, v in pairs(lv) do
@@ -808,6 +953,13 @@ function WBT:ImportLegacyData(verbose)
     end
     s.imported[WBT.realm .. "-" .. WBT.faction] = GetServerTime()
     dataCache = nil
+    -- (said once a session, the first time a copy comes back wrong)
+    self.mirrorHealth = health
+    if (not health.store or (health.layerData and health.layers == 0)) and not self._mirrorTold then
+        self._mirrorTold = true
+        RC:Print("World Buff Timers: Nova World Buffs' saved timers could not be read - its format has changed. "
+            .. "Timers may be missing until Readycheck is updated.")
+    end
     if verbose then
         RC:Print("World Buff Timers: imported/refreshed " .. imported .. " value(s) from legacy data.")
     end
@@ -842,7 +994,7 @@ local function newestRemaining(d, field, cd)
         if t and t > 0 and (not newest or t > newest) then newest = t end
     end
     if type(d.layers) == "table" then
-        for _, lyr in pairs(d.layers) do
+        for _, lyr in pairs(WBT.FlatLayers(d.layers)) do
             if type(lyr) == "table" then take(lyr[field]) end
         end
     end
@@ -869,7 +1021,7 @@ local function soonestRemaining(d, field, cd)
     end
     local newestLayer = 0
     if type(d.layers) == "table" then
-        for _, lyr in pairs(d.layers) do
+        for _, lyr in pairs(WBT.FlatLayers(d.layers)) do
             local t = type(lyr) == "table" and tonumber(lyr[field]) or nil
             if t and t > newestLayer then newestLayer = t end
             if t and t > 0 and not isStale(t, cd) then
@@ -931,7 +1083,7 @@ function WBT:GetTimers()
     end
     scanFlowers(d)
     if type(d.layers) == "table" then
-        for _, lyr in pairs(d.layers) do
+        for _, lyr in pairs(WBT.FlatLayers(d.layers)) do
             if type(lyr) == "table" then scanFlowers(lyr) end
         end
     end
@@ -955,7 +1107,7 @@ function WBT:GetFlowerTimes()
     end
     scan(d)
     if type(d.layers) == "table" then
-        for _, lyr in pairs(d.layers) do
+        for _, lyr in pairs(WBT.FlatLayers(d.layers)) do
             if type(lyr) == "table" then scan(lyr) end
         end
     end

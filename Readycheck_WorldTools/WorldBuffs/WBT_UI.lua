@@ -45,7 +45,11 @@ local function AddLine(card, cy, text, color)
     local c = color or WHITE()
     fs:SetTextColor(c.r, c.g, c.b)
     fs:SetText(text)
-    return cy - 17
+    -- (a line long enough to wrap takes the room it wraps into: the
+    -- format and mirror notes can run to two lines on a narrow window or
+    -- a large font, and sat on the line below)
+    local h = fs.GetStringHeight and fs:GetStringHeight() or 0
+    return cy - math.max(17, math.ceil(h) + 4)
 end
 
 local function fmtRemaining(rem)
@@ -131,6 +135,17 @@ function RC:ShowSidebarWBTNetwork(frame, preserveScroll)
     for _ in pairs(WBT.networkUsers) do users = users + 1 end
     cy = AddLine(card, cy, "Network users seen this session: " .. users)
     cy = AddLine(card, cy, "Newest client version seen: " .. tostring(WBT.newestSeenVersion))
+    -- which timer format is spoken, and whether anything newer has been
+    -- heard that could not be read (WBT_Comms: Comms.Drift)
+    local health
+    if WBT:IsMirroring() then
+        health = WBT.MirrorStatus and WBT:MirrorStatus()
+    elseif WBT.Comms and WBT.Comms.Drift and WBT.Comms.Drift.Status then
+        health = WBT.Comms.Drift:Status()
+    end
+    for _, line in ipairs(health or {}) do
+        cy = AddLine(card, cy, line[1], line[2] == "warn" and RC:GetColor("text", "orange") or nil)
+    end
     local store = WBT:Store()
     local lastImport = store and store.imported[WBT.realm .. "-" .. WBT.faction]
     if lastImport then

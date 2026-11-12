@@ -279,6 +279,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
     RR.TRACKER_SCALE = 0.85       -- the default scale: a side panel, not a window
     local MOB_ROWS = 6            -- mob rows pooled
     local REM_ROWS = 4            -- matches REMINDER_MAX in RR_UseWatch
+    local HOLD_ROWS = 3           -- standing reminders (RR.HOLD_MAX): the rows after those
     local CTX_ROWS = 4            -- 3 next + 1 prev
 
     local function Shadow(fs)
@@ -313,6 +314,94 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
     local function ShowIcon(ic, tex, on)
         if on then ic:SetTexture(tex) ic:Show() ic.bd:Show()
         else ic:Hide() ic.bd:Hide() end
+    end
+
+    ------------------------------------------------------------------
+    -- DOCKED IN THE CHAT BOX (raidRoute.trackerChatDock, off unless
+    -- ticked; 2026-11-12, Zac: "improvements to my routes in my chat also
+    -- give users the option to enable this"). With ZacUI's raid chat on
+    -- (the raid frames sitting in the chat box: _G.ZacUIRaidChat) the
+    -- tracker becomes the bar along the top of that box: bar style, no
+    -- box of its own, left aligned, at 100%, as wide as the box, pinned
+    -- to its top-left corner - and ZacUI is told how much room the
+    -- tallest step needs, so the raid frames start under it. Until now
+    -- only Zac's own layout addon set this up, by rewriting the tracker's
+    -- saved settings; here NOTHING saved is changed. The tracker draws
+    -- from a view of the settings with those few laid over them, so
+    -- unticking the option (or switching raid chat off) puts it back
+    -- exactly where and how it was.
+    --   RR:ChatDockArea(st)   left, right, top of the box (UIParent
+    --                         units) while docking applies, else nil
+    --   RR:TrackerSettings()  what the tracker draws with: the saved
+    --                         settings, or the docked view of them; then
+    --                         the area when docked
+    --   RR:SyncChatDock(...)  keeps ZacUI's reserved room right
+    ------------------------------------------------------------------
+    function RR:ChatDockArea(st)
+        st = st or self:GetSettings()
+        if not (st and st.trackerChatDock == true) then return nil end
+        local RCh = _G.ZacUIRaidChat
+        if not (RCh and RCh.Enabled and RCh.Area) then return nil end
+        local okE, on = pcall(RCh.Enabled)
+        if not (okE and on) then return nil end
+        local ok, l, r, t = pcall(RCh.Area, false)
+        if not (ok and type(l) == "number" and type(r) == "number" and type(t) == "number") then return nil end
+        if r - l < 180 then return nil end          -- (narrower than the bar can be)
+        return l, r, t
+    end
+    RR.DOCK_OVER = { trackerBand = true, trackerNoBg = true, trackerAlignRight = false, trackerScale = 1,
+                     trackerUnlocked = false }
+    function RR:TrackerSettings()
+        local st = self:GetSettings()
+        if not st then return nil end
+        local l, r, t = self:ChatDockArea(st)
+        if not l then return st end
+        local v = rawget(self, "_dockView")
+        if not v then
+            v = { over = {} }
+            for k, val in pairs(RR.DOCK_OVER) do v.over[k] = val end
+            v.proxy = setmetatable({}, {
+                __index = function(_, k)
+                    local o = v.over[k]
+                    if o ~= nil then return o end
+                    return v.base[k]
+                end,
+                __newindex = function(_, k, val) v.base[k] = val end,
+            })
+            rawset(self, "_dockView", v)
+        end
+        v.base = st
+        v.over.trackerW = math.floor(r - l + 0.5)
+        return v.proxy, l, r, t
+    end
+    -- The room ZacUI keeps clear above the raid frames: the tallest step
+    -- of the routes this character has, measured only when something that
+    -- changes it has (the raid, the number of steps, what the bar shows,
+    -- its width) - and given back when the dock ends, if it was ours.
+    function RR:SyncChatDock(docked, width)
+        local RCh = _G.ZacUIRaidChat
+        if not (RCh and RCh.SetReserveTop) then return end
+        if not docked then
+            if self._dockReserve then
+                self._dockReserve, self._dockSig = nil, nil
+                pcall(RCh.SetReserveTop, 0)
+            end
+            return
+        end
+        local st = self:GetSettings()
+        local steps = self:GetSteps()
+        local sig = table.concat({ tostring(self.raidName), steps and #steps or 0, tostring(st and st.trackerShowContext),
+            tostring(st and st.trackerNextCount), tostring(st and st.trackerBasic), tostring(st and st.trackerBandSwaps),
+            tostring(st and st.trackerBandGear), math.floor(width or 0) }, ":")
+        if sig == self._dockSig then return end
+        self._dockSig = sig
+        C_Timer.After(0, function()
+            if RR._measuring or not RR.MeasureTracker then return end
+            if not RR:ChatDockArea() then return end
+            local tall = RR:MeasureTracker()
+            RR._dockReserve = true
+            pcall(RCh.SetReserveTop, (tall and tall > 0) and (tall + 3) or 0)
+        end)
     end
 
     function RR:EnsureTrackerFrame()
@@ -452,7 +541,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         if RC.UI.TagElement then RC.UI:TagElement(detail, "detail") end
         -- reminders: icon + text
         f.rems = {}
-        for i = 1, REM_ROWS do
+        for i = 1, REM_ROWS + HOLD_ROWS do
             local ic = Icon(f, 16)
             local fs = Shadow(RC:CreateFontString(f, "OVERLAY", nil, 11))
             fs:SetJustifyH("LEFT")
@@ -548,10 +637,14 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         if RC.UI.AttachHudHandle then
             f.handle = RC.UI:AttachHudHandle(f, {
                 inside = true, corner = "TOPRIGHT", insetX = 7, insetY = 6,
-                getLocked = function() local st = RR:GetSettings() return not (st and st.trackerUnlocked == true) end,
+                -- (docked in the chat box it is not a thing to drag or widen)
+                getLocked = function()
+                    local st = RR:GetSettings()
+                    return f._rcDocked or not (st and st.trackerUnlocked == true)
+                end,
                 setLocked = function(locked)
                     local st = RR:GetSettings()
-                    if not st then return end
+                    if not st or f._rcDocked then return end
                     st.trackerUnlocked = not locked
                     if RR.ApplyTrackerLock then RR:ApplyTrackerLock() end
                     RC:SaveConfigurationToProfile()
@@ -560,7 +653,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 getWidth = function() return f:GetWidth() end,
                 setWidth = function(w)
                     local st = RR:GetSettings()
-                    if st then st.trackerW = w end
+                    if st and not f._rcDocked then st.trackerW = w end
                     RR:RefreshTracker()
                 end,
                 onWidthEnd = function() RC:SaveConfigurationToProfile() end,
@@ -574,11 +667,11 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         f:EnableMouse(false)
         RC.Position.MakeMovable(f, function()
             local st = RR:GetSettings()
-            return st and st.trackerUnlocked == true
+            return st and st.trackerUnlocked == true and not f._rcDocked
         end)
         function RR:ApplyTrackerLock()
             local st = self:GetSettings()
-            f:EnableMouse(st ~= nil and st.trackerUnlocked == true)
+            f:EnableMouse(st ~= nil and st.trackerUnlocked == true and not f._rcDocked)
             if f.handle then f.handle.Refresh() end
         end
         RR:ApplyTrackerLock()
@@ -633,6 +726,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         for _, s in ipairs(f.segs or {}) do s:Hide() end
         if f.mobLine then f.mobLine:Hide() end
         if f.swap then f.swap:Hide() end
+        if f.gear then f.gear:Hide() end
     end
 
     ------------------------------------------------------------------
@@ -684,21 +778,46 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
 
 
     ------------------------------------------------------------------
-    -- GEAR SWAPS UNDER THE BAR (bar style, trackerBandSwaps, on unless
-    -- switched off): one line under the bar for the gear Readycheck just
-    -- put on - the set's name, then each piece as old -> new (the old
-    -- one dim and grey, the new one ringed) sliding in as it lands. A few
-    -- seconds after the last piece it settles into one line, "Frost
-    -- Resist equipped · 6 pieces", kept while the step lasts. The line's
-    -- room is always kept in this style, so the bar never changes height.
+    -- GEAR SWAPS ON THE BAR (bar style, trackerBandSwaps, on unless
+    -- switched off): when Readycheck has put gear on, the title row says
+    -- so in one place - a tick and "Frost Resist equipped", straight after
+    -- the step's name and count (the icons of what this step will put on
+    -- next keep the row's far end) - bright as it lands, settling after a
+    -- few seconds, kept while the step lasts.
+    -- (2026-11-12, Zac: "i like the kill tracking progress but it showing
+    -- swaps just doesnt make any sense that needs to be cleaned up a
+    -- lot".) Until then this was a line of its own under the bar: the
+    -- set's name and every piece as a pair of 12px icons, old (grey) then
+    -- new (ringed), for four seconds, then "Frost Resist equipped - 6
+    -- pieces" - and the line's room was kept the whole time, so under the
+    -- bar sat an empty strip for most of a raid. Three readings of one
+    -- event (with "Equipping: ..." before it) and a blank row to hold
+    -- them. Now: one confirmation, no row, and the bar is a row shorter
+    -- (whatever it is docked over gets that room).
     -- Swaps come from the swap notice's collector (RC:OnSwapFeed); waves
-    -- of one step (the set, then the trinkets) merge into one line.
+    -- of one step (the set, then the trinkets) merge into one.
     ------------------------------------------------------------------
     local SWAP_H, SWAP_ICON, SWAP_ACTIVE, SWAP_MERGE = 14, 12, 4, 3
     local CHECK_TEX = "Interface\\AddOns\\Readycheck\\Media\\Checkmark"
+    -- THE GEAR ROW (trackerBandGear, on unless switched off; 2026-11-12,
+    -- Zac: "maybe do something like an actual mock character pane that
+    -- will show the swaps on the pane" - "it needs to fit in my chat. so
+    -- find a way to do that"). For the few seconds a swap is fresh the
+    -- line of mob names gives way to what you are wearing, laid out as the
+    -- character window has it turned on its side - its left column, its
+    -- right column, the weapons - with the slots that just changed lit
+    -- and ringed in gold and the rest dimmed. The kill bar and the count
+    -- stay; the row takes the room the names had (the tallest step is
+    -- measured with it, so a docked bar never grows over what is under it).
+    -- inventory slots in the character window's order
+    local DOLL = { 1, 2, 3, 15, 5, 4, 19, 9,   10, 6, 7, 8, 11, 12, 13, 14,   16, 17, 18 }
+    local DOLL_BREAK = { [9] = true, [17] = true }      -- a wider gap before these
+    local DOLL_MAX, DOLL_MIN = 17, 10                   -- icon size: what fits, between these
+    local DOLL_GAP_MIN, DOLL_GAP_MAX, DOLL_GROUP = 2, 4, 6
+    local GEAR_LINE, GEAR_OUT = 14, 0.25                -- the names' room; the fade as it leaves
 
     function RC:SwapFeedWanted()
-        local s = RR.GetSettings and RR:GetSettings()
+        local s = RR.TrackerSettings and RR:TrackerSettings()
         return (s and s.enabled and s.trackerEnabled ~= false and s.trackerBand == true
             and s.trackerBandSwaps ~= false) and true or false
     end
@@ -735,7 +854,23 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
             RR._swapFeed = cur
         end
         cur.fresh = true
+        -- what is worn now, slot by slot, for the gear row (read here,
+        -- once per swap - never from a refresh)
+        cur.freshGear = true
+        cur.gear = cur.gear or {}
+        if GetInventoryItemTexture then
+            for _, slot in ipairs(DOLL) do
+                cur.gear[slot] = GetInventoryItemTexture("player", slot) or false
+            end
+        end
         local at = cur.at
+        -- the gear row bows out just before the names come back
+        C_Timer.After(SWAP_ACTIVE - GEAR_OUT, function()
+            local f = RR.trackerFrame
+            if RR._swapFeed and RR._swapFeed.at == at and f and f.gear and f.gear:IsShown() then
+                RC.Motion.Play(f.gear, { style = "fade", duration = GEAR_OUT, easing = "easeInOutQuad" }, "out")
+            end
+        end)
         C_Timer.After(SWAP_ACTIVE + 0.05, function()
             if RR._swapFeed and RR._swapFeed.at == at then RR:RefreshTracker() end
         end)
@@ -746,115 +881,167 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         if f.swap then return f.swap end
         local r = CreateFrame("Frame", nil, f)
         r:SetHeight(SWAP_H)
-        r.rule = r:CreateTexture(nil, "ARTWORK")
-        r.rule:SetTexture(RC.UI.FLAT)
-        r.rule:SetHeight(1)
-        r.rule:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 2)
-        r.rule:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2)
         r.tick = r:CreateTexture(nil, "OVERLAY")
         r.tick:SetSize(SWAP_ICON, SWAP_ICON)
         r.tick:SetTexture(CHECK_TEX)
+        r.tick:SetPoint("LEFT", r, "LEFT", 0, 0)
         r.label = Shadow(RC:CreateFontString(r, "OVERLAY", nil, 10))
         r.label:SetWordWrap(false)
-        r.more = Shadow(RC:CreateFontString(r, "OVERLAY", nil, 10))
-        r.more:SetWordWrap(false)
-        r.pairs = {}
+        r.label:SetJustifyH("LEFT")
+        r.label:SetPoint("LEFT", r.tick, "RIGHT", 4, 0)
         r:Hide()
         f.swap = r
         return r
     end
 
-    local function SwapPair(r, i)
-        local p = r.pairs[i]
-        if p then return p end
-        p = { old = Icon(r, SWAP_ICON), new = Icon(r, SWAP_ICON) }
-        p.old:SetDesaturated(true)
-        r.pairs[i] = p
-        return p
-    end
-
-    -- lays the line out at y; returns nothing (its room is kept either way)
-    local function RenderSwapRow(self, f, y, rowW, alignR)
+    -- Fills the confirmation for the swap that belongs on the bar now and
+    -- returns how wide it wants to be (0: nothing to say). Placed by
+    -- PlaceSwapChip once the bar's width is known.
+    local function FillSwapChip(self, f)
         local r = SwapRow(f)
         -- a re-layout mid-slide would fight the slide's rest
         RC.Motion.Stop(r)
-        for _, p in ipairs(r.pairs) do ShowIcon(p.old, nil, false) ShowIcon(p.new, nil, false) end
-        r.tick:Hide() r.more:Hide() r.label:Hide()
+        r:Hide()
         local feed = self._swapFeed
         -- a finished route's last swap (the after-kill gear) belongs to no
         -- step any more: it is the one that landed as the route ran out
         local lastOne = feed and self.finished and self._finAt and feed.at >= self._finAt - 1
-        if not feed or (feed.step ~= self.active and not lastOne) then r:Hide() return end
-        r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, y)
-        r:SetWidth(rowW)
-        local ru = RC:GetColor("ui", "headerAccent")
-        r.rule:SetVertexColor(ru.r, ru.g, ru.b, 0.35)
+        if not feed or (feed.step ~= self.active and not lastOne) then return 0 end
         local ht = RC:GetColor("ui", "headerText")
-        local gr = RC:GetColor("text", "gray")
         local gold = RC:GetColor("ui", "accentGold")
         local active = (GetTime() - feed.at) < SWAP_ACTIVE
-        -- the pieces from the line's start: { element, width, gap before }
-        local seq = {}
-        if active then
-            r.label:SetText(SwapLabel(feed.label))
-            r.label:SetTextColor(ht.r, ht.g, ht.b)
-            r.label:Show()
-            seq[1] = { r.label, r.label:GetStringWidth() or 0, 0 }
-            local used = seq[1][2]
-            local n = #feed.items
-            local fit = math.max(1, math.floor((rowW - used - 40) / (2 * SWAP_ICON + 1 + 6)))
-            local shown = math.min(n, fit, 12)
-            for i = 1, shown do
-                local it, p = feed.items[i], SwapPair(r, i)
-                ShowIcon(p.old, it.oldIcon, true)
-                p.old:SetAlpha(0.45)
-                ShowIcon(p.new, it.icon, true)
-                p.new.bd:SetColorTexture(gold.r, gold.g, gold.b, 1)
-                seq[#seq + 1] = { p.old, SWAP_ICON, i == 1 and 8 or 6 }
-                seq[#seq + 1] = { p.new, SWAP_ICON, 2 }
-            end
-            if n > shown then
-                r.more:SetText("+" .. (n - shown))
-                r.more:SetTextColor(gr.r, gr.g, gr.b)
-                r.more:Show()
-                seq[#seq + 1] = { r.more, r.more:GetStringWidth() or 0, 6 }
-            end
+        local headline = (RC.SwapToast and RC.SwapToast.Headline and RC.SwapToast.Headline(feed.label))
+            or SwapLabel(feed.label)
+        r.tick:SetVertexColor(gold.r, gold.g, gold.b, 1)
+        r.label:SetWidth(0)
+        r.label:SetText(headline)
+        if active then r.label:SetTextColor(gold.r, gold.g, gold.b)
+        else r.label:SetTextColor(ht.r, ht.g, ht.b) end
+        r._textW = r.label:GetStringWidth() or 0
+        r._active = active
+        return SWAP_ICON + 4 + r._textW
+    end
+
+    -- room: what the title row has left for it. The whole thing when it
+    -- fits, the name cut short when it does not, the tick alone when
+    -- there is hardly any, nothing when there is none.
+    local function PlaceSwapChip(self, f, room, after)
+        local r = f.swap
+        if not r then return end
+        if room < SWAP_ICON then r:Hide() return end
+        local textW = math.min(r._textW or 0, room - SWAP_ICON - 4)
+        if textW < 28 then
+            r.label:Hide()
+            textW = 0
         else
-            local headline = (RC.SwapToast and RC.SwapToast.Headline and RC.SwapToast.Headline(feed.label))
-                or SwapLabel(feed.label)
-            local n = #feed.items
-            r.tick:Show()
-            seq[1] = { r.tick, SWAP_ICON, 0 }
-            r.label:SetText(headline .. "  |cff" .. string.format("%02x%02x%02x",
-                math.floor(gr.r * 255 + 0.5), math.floor(gr.g * 255 + 0.5), math.floor(gr.b * 255 + 0.5))
-                .. "· " .. (n == 1 and RCL["1 piece"] or string.format(RCL["%d pieces"], n)) .. "|r")
-            r.label:SetTextColor(ht.r, ht.g, ht.b)
+            r.label:SetWidth(textW)
             r.label:Show()
-            seq[2] = { r.label, r.label:GetStringWidth() or 0, 4 }
         end
-        local total = 0
-        for _, e in ipairs(seq) do total = total + e[3] + e[2] end
-        local x = alignR and math.max(0, rowW - total) or 0
-        for _, e in ipairs(seq) do
-            x = x + e[3]
-            e[1]:ClearAllPoints()
-            e[1]:SetPoint("LEFT", r, "LEFT", x, 0)
-            x = x + e[2]
-        end
-        r:SetAlpha(active and 1 or 0.75)
+        r:SetWidth(SWAP_ICON + (textW > 0 and (4 + textW) or 0))
+        r:ClearAllPoints()
+        r:SetPoint("LEFT", after[1], after[2], after[3], after[4] or 0)
+        r:SetAlpha(r._active and 1 or 0.75)
         r:Show()
-        if feed.fresh then
+        local feed = self._swapFeed
+        if feed and feed.fresh then
             feed.fresh = nil
             RC.Motion.Play(r, RR:SwapLineMotion(), "in")
         end
     end
 
-    -- The swap line's entrance when a piece lands: raidRoute.trackerSwapAnim,
-    -- else what it has always done - a 14px slide in from the text side's
-    -- far end with a fade, 0.25s.
+    local function GearRow(f)
+        if f.gear then return f.gear end
+        local r = CreateFrame("Frame", nil, f)
+        r:SetSize(10, DOLL_MAX)
+        r.icons = {}
+        for i = 1, #DOLL do r.icons[i] = Icon(r, DOLL_MAX) end
+        r:Hide()
+        f.gear = r
+        return r
+    end
+
+    -- Is the gear row up for this pass? While the landed swap is fresh -
+    -- and on every step of a measuring pass, so the room a docked bar is
+    -- given already has the row in it.
+    local function GearRowUp(self, settings, f)
+        if not (settings.trackerBand == true and settings.trackerBandSwaps ~= false
+                and settings.trackerBandGear ~= false) then return false end
+        if self._measuring then return true end
+        local feed = self._swapFeed
+        local lastOne = feed and self.finished and self._finAt and feed.at >= self._finAt - 1
+        if not feed or (feed.step ~= self.active and not lastOne) then return false end
+        return (GetTime() - feed.at) < SWAP_ACTIVE
+    end
+
+    -- Second pass, once the bar's width is known: the icons as big as 19
+    -- of them fit (DOLL_MIN..DOLL_MAX; narrower than that and the row is
+    -- left out - the tick on the title row still says it), from the text
+    -- edge.
+    local function LayGearRow(self, f, w, alignR)
+        local g = f._gear
+        local r = GearRow(f)
+        RC.Motion.Stop(r)
+        r:SetAlpha(1)
+        r:Hide()
+        if not g or self._measuring then return end
+        local inner = w - 2 * PAD
+        local n = #DOLL
+        local size = math.floor((inner - 2 * DOLL_GROUP - (n - 3) * DOLL_GAP_MIN) / n)
+        if size > DOLL_MAX then size = DOLL_MAX end
+        if size < DOLL_MIN then return end
+        local gap = (inner - 2 * DOLL_GROUP - n * size) / (n - 3)
+        if gap > DOLL_GAP_MAX then gap = DOLL_GAP_MAX end
+        local total = n * size + (n - 3) * gap + 2 * DOLL_GROUP
+        local feed = self._swapFeed or {}
+        local changed = {}
+        for _, it in ipairs(feed.items or {}) do
+            if it.slot then changed[it.slot] = it.icon or true end
+        end
+        local gold = RC:GetColor("ui", "accentGold")
+        local bc = RC:GetColor("ui", "borderNormal")
+        local el = RC:GetColor("ui", "elementBackground")
+        local x = 0
+        for i, slot in ipairs(DOLL) do
+            if i > 1 then x = x + (DOLL_BREAK[i] and DOLL_GROUP or gap) end
+            local ic = r.icons[i]
+            local lit = changed[slot]
+            local tex = (type(lit) == "string" and lit) or (feed.gear and feed.gear[slot]) or nil
+            ic:SetSize(size, size)
+            ic:ClearAllPoints()
+            ic:SetPoint("TOPLEFT", r, "TOPLEFT", x, 0)
+            if tex then
+                ShowIcon(ic, tex, true)
+                ic:SetVertexColor(1, 1, 1, 1)
+                ic:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            else
+                -- nothing in the slot: its place, empty
+                ShowIcon(ic, RC.UI.FLAT, true)
+                ic:SetVertexColor(el.r + 0.04, el.g + 0.04, el.b + 0.04, 1)
+            end
+            if ic.SetDesaturated then ic:SetDesaturated((tex and not lit) and true or false) end
+            ic:SetAlpha(lit and 1 or (tex and 0.45 or 0.7))
+            if lit then ic.bd:SetColorTexture(gold.r, gold.g, gold.b, 1)
+            else ic.bd:SetColorTexture(bc.r, bc.g, bc.b, 1) end
+            ic.bd:SetAlpha(lit and 1 or 0.6)
+            ic._lit = lit and true or false
+            x = x + size
+        end
+        r:SetSize(total, size)
+        r:ClearAllPoints()
+        if alignR then r:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, g.y)
+        else r:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, g.y) end
+        r:Show()
+        if feed.freshGear then
+            feed.freshGear = nil
+            RC.Motion.Play(r, { style = "fade", duration = 0.2, easing = "easeOutCubic" }, "in")
+        end
+    end
+
+    -- The confirmation's entrance when a swap lands: raidRoute.trackerSwapAnim,
+    -- else what the swap line always did - a 14px slide in from the text
+    -- side's far end with a fade, 0.25s.
     function RR:SwapLineDefaults()
-        local s = self:GetSettings()
+        local s = self:TrackerSettings()
         local alignR = s and s.trackerAlignRight == true
         return { style = "slide", duration = 0.25, easing = "easeOutQuad", distance = 14,
                  dir = alignR and "left" or "right" }
@@ -867,12 +1054,23 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
     end
 
     function RR:RefreshTracker()
-        local settings = self:GetSettings()
+        -- (the saved settings, or the docked view of them with the chat
+        -- box's left, right and top)
+        local settings, dockL, dockR, dockT = self:TrackerSettings()
         if not settings then return end
+        -- the standing reminders that are up (a measuring pass only looks)
+        local holds = self._measuring and self:ActiveHolds() or self:SyncHolds()
         local alignR = settings.trackerAlignRight == true
-        local ctxCount = (settings.trackerShowContext == true)
-            and tonumber(settings.trackerNextCount) or 0
-        if ctxCount == nil then ctxCount = 1 end
+        -- (2026-11-12) ticked and the count never touched is ONE step, as
+        -- the page's slider shows: the old line read a count that was
+        -- never saved as 0 ("x and nil or 0"), so "show the next step
+        -- below" drew nothing until the slider was moved - on the tracker
+        -- and on the settings preview (Zac: "the preview on this page
+        -- looks weird": the box kept its room and the line was not there).
+        local ctxCount = 0
+        if settings.trackerShowContext == true then
+            ctxCount = tonumber(settings.trackerNextCount) or 1
+        end
         if ctxCount < 0 then ctxCount = 0 elseif ctxCount > 3 then ctxCount = 3 end
         local showCtx = ctxCount > 0
 
@@ -922,7 +1120,12 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         local sc = tonumber(settings.trackerScale) or RR.TRACKER_SCALE
         if sc < 0.6 then sc = 0.6 elseif sc > 1.6 then sc = 1.6 end
         if math.abs((f:GetScale() or 1) - sc) > 0.001 then
-            if RC.Position.SetScaleKeepingPoint then RC.Position.SetScaleKeepingPoint(f, sc, true)
+            -- into or out of the chat dock the saved spot is NOT rescaled:
+            -- it stays in the units of the saved scale, which is what it
+            -- is put back with (a rescale here would be saved against a
+            -- scale setting that never changed, and compound every login)
+            if dockL or f._rcDocked then f:SetScale(sc)
+            elseif RC.Position.SetScaleKeepingPoint then RC.Position.SetScaleKeepingPoint(f, sc, true)
             else f:SetScale(sc) end
         end
         local noBg = settings.trackerNoBg == true
@@ -1015,6 +1218,8 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         f.title:SetWidth(wrapW)
         local y = -(HEAD_H + 1) - 6
         f._band = nil
+        f._gear = nil
+        local gearUp = GearRowUp(self, settings, f)
 
         -- ---- body
         local bodyLines = 0
@@ -1033,7 +1238,12 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 f._band = { y = y, have = have, need = need }
                 y = y - SEG_H - 5
                 bodyLines = bodyLines + 1
-                if #reqs > 1 then
+                if gearUp then
+                    -- what you are wearing, where the names were (2px
+                    -- closer to the kill bar: the icons are taller)
+                    f._gear = { y = y + 2 }
+                    y = y - GEAR_LINE
+                elseif #reqs > 1 then
                     local ml = MobLine(f)
                     PT(ml, PAD, y)
                     ml:SetText(table.concat(parts, "    "))
@@ -1093,12 +1303,23 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 detail = nil
             end
         end
+        -- no kill bar on this step (a boss, the route's end, gear going
+        -- on): the gear row is the body, in the plain line's place - only
+        -- "Use item to continue" keeps its line over it
+        if gearUp and not f._gear then
+            if not self._awaitUse then detail = nil end
+        end
         if detail then
             PT(f.detail, PAD, y)
             f.detail:SetText(detail)
             f.detail:Show()
             Wide(f.detail:GetStringWidth() or 0)
             y = y - 16
+            bodyLines = bodyLines + 1
+        end
+        if gearUp and not f._gear then
+            f._gear = { y = y }
+            y = y - DOLL_MAX - 2
             bodyLines = bodyLines + 1
         end
         -- live reminders
@@ -1119,11 +1340,27 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 bodyLines = bodyLines + 1
             end
         end
-        -- bar style: the line for gear swaps (its room always kept)
-        if band and (step or (self.finished and self._finAt)) and settings.trackerBandSwaps ~= false then
-            RenderSwapRow(self, f, y - 2, wrapW - 2 * PAD, alignR)
-            y = y - SWAP_H - 4
-            bodyLines = bodyLines + 1
+        -- standing reminders: up for as long as their steps run, under
+        -- whatever is asking to be used right now
+        if step and #holds > 0 then
+            local warnC, plainC = RC:GetColor("text", "orange"), RC:GetColor("text", "normal")
+            for i = 1, math.min(#holds, HOLD_ROWS) do
+                local h = holds[i]
+                local r = f.rems[REM_ROWS + i]
+                PT(r.icon, PAD, y)
+                ShowIcon(r.icon, h.icon or "Interface\\Icons\\INV_Misc_Note_01", true)
+                r.fs:ClearAllPoints()
+                if alignR then r.fs:SetPoint("RIGHT", r.icon, "LEFT", -6, 0)
+                else r.fs:SetPoint("LEFT", r.icon, "RIGHT", 6, 0) end
+                r.fs:SetText(h.text)
+                local c = h.warn and warnC or plainC
+                r.fs:SetTextColor(c.r, c.g, c.b)
+                r.fs:SetWidth(wrapW - 2 * PAD - 22)
+                r.fs:Show()
+                Wide(22 + (r.fs:GetStringWidth() or 0))
+                y = y - 19
+                bodyLines = bodyLines + 1
+            end
         end
         if bodyLines == 0 then y = y + 2 end
 
@@ -1166,7 +1403,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 for _, o in ipairs(cfgSlots or {}) do Add(TrackerItemIcon(o.id)) end
             end
         end
-        local bandIconsW = 0
+        local bandIconsW, swapChipW = 0, 0
         if band then
             local x = PAD + HANDLE_W
             for i = n, 1, -1 do
@@ -1183,6 +1420,12 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 f.when:Show()
                 bandIconsW = x - PAD - HANDLE_W + 6 + (f.when:GetStringWidth() or 0)
                 Wide(titleW + 16 + bandIconsW)
+            end
+            -- the landed swap's confirmation, on the same row (placed
+            -- below, once the width is known)
+            if (step or (self.finished and self._finAt)) and settings.trackerBandSwaps ~= false then
+                swapChipW = FillSwapChip(self, f)
+                if swapChipW > 0 then Wide(titleW + 16 + bandIconsW + swapChipW + (bandIconsW > 0 and 12 or 0)) end
             end
             y = y - 2
         elseif n > 0 then
@@ -1281,6 +1524,26 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         local w = fixedW or math.min(MAX_W, math.max(MIN_W, natW))
         f:SetSize(w, -y + PAD - 2)
         f.title:SetWidth(math.max(40, w - 2 * PAD - HANDLE_W - (f.tag:IsShown() and (f.tag:GetWidth() + 10) or 0) - bandIconsW))
+        if swapChipW > 0 then
+            -- what the row has left once the step's name, its count and
+            -- the coming gear's icons have theirs
+            local tagW = f.tag:IsShown() and (f.tag:GetWidth() + 10) or 0
+            local nameW = math.min(f.title:GetStringWidth() or 0, f.title:GetWidth() or 0)
+            local gap = bandIconsW > 0 and 12 or 0
+            local room = w - 2 * PAD - HANDLE_W - nameW - tagW - bandIconsW - gap - 14
+            -- It stands with the step it reports on - straight after the
+            -- name and the count - and NOT beside the coming gear at the
+            -- row's far end: "Frost Resist equipped" next to "when this
+            -- is done" reads as one sentence, and a wrong one.
+            if f.tag:IsShown() then
+                PlaceSwapChip(self, f, room, { f.tag, "RIGHT", 14, 0 })
+            elseif alignR then
+                PlaceSwapChip(self, f, room, { f.head, "LEFT", PAD, 1 })
+            else
+                PlaceSwapChip(self, f, room, { f.title, "LEFT", nameW + 14, 0 })
+            end
+        end
+        LayGearRow(self, f, w, alignR)
         if f._band then
             local bd = f._band
             local inner = w - 2 * PAD
@@ -1333,6 +1596,23 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
             if m.fill:IsShown() then m.fill:SetWidth(math.max(1, (w - 2 * PAD) * (m.fill.frac or 0))) end
         end
         f:Show()
+        -- the live tracker, docked: pinned to the chat box's top-left
+        -- corner (nothing saved); leaving the dock, back to its own spot
+        if f == RR.trackerFrame and self == RR then
+            if dockL then
+                f:ClearAllPoints()
+                f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", dockL, dockT)
+                if not f._rcDocked then
+                    f._rcDocked = true
+                    if self.ApplyTrackerLock then self:ApplyTrackerLock() end
+                end
+            elseif f._rcDocked then
+                f._rcDocked = nil
+                RC.Position.RestoreFrame(f)
+                if self.ApplyTrackerLock then self:ApplyTrackerLock() end
+            end
+            if not self._measuring then self:SyncChatDock(dockL ~= nil, w) end
+        end
     end
 
     ------------------------------------------------------------------
@@ -1439,6 +1719,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         local wasShown, alpha = f:IsShown(), f:GetAlpha()
         settings.enabled, settings.trackerEnabled = true, true
         f:SetAlpha(0)
+        self._measuring = true
         local maxH, maxW = 0, 0
         local k = (f:GetEffectiveScale() or 1) / (UIParent:GetEffectiveScale() or 1)
         for _, name in ipairs(names) do
@@ -1457,6 +1738,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         end
         self.raidName, self.active, self.finished = sRaid, sActive, sFin
         settings.enabled, settings.trackerEnabled = sEn, sTE
+        self._measuring = nil
         f:SetAlpha(alpha)
         self:RefreshTracker()
         if not wasShown and f:IsShown() then f:Hide() end
@@ -1470,9 +1752,10 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         local steps = self:GetSteps()
         local step = steps and steps[self.active]
         if not step or step.type ~= "kills" then return end
-        if self:GetSettings().trackerBasic == true then return end
+        local live = self:TrackerSettings()
+        if live.trackerBasic == true then return end
         -- the bar style lays its segments out from the counts: redo it
-        if self:GetSettings().trackerBand == true then return self:RefreshTracker() end
+        if live.trackerBand == true then return self:RefreshTracker() end
         local _, progText = TrackerGateText(self, step)
         if progText and f.tag:IsShown() then f.tag.text:SetText(progText) end
         local reqs = self:GetStepMobs(step)
@@ -1487,7 +1770,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
                 if frac > 0 then
                     m.fill.frac = frac
                     m.fill:ClearAllPoints()
-                    if self:GetSettings().trackerAlignRight then m.fill:SetPoint("TOPRIGHT", m.track, "TOPRIGHT", 0, 0)
+                    if live.trackerAlignRight then m.fill:SetPoint("TOPRIGHT", m.track, "TOPRIGHT", 0, 0)
                     else m.fill:SetPoint("TOPLEFT", m.track, "TOPLEFT", 0, 0) end
                     m.fill:SetWidth(math.max(1, (w - 2 * PAD) * frac))
                     m.fill:Show()

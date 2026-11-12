@@ -53,6 +53,38 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.6",
+            date = "2026-11-12",
+            title = "Standing route reminders, and timers that work with Nova again",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "Raid routes: standing reminders. A line such as \"hold your potion\" stays on the tracker from one step until a later one. Add it from a step's Add action menu.",
+                        "Route tracker, bar style: when your gear is swapped, a tick and the set's name show beside the step.",
+                        "Route tracker, bar style: for a few seconds after a swap the bar shows everything you are wearing, with the pieces that changed lit. Both have a switch on the route's Settings tab.",
+                        "Buff Timer Network: the Status card says which timer format is in use and warns when other players are on a newer one.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "Buff Timer Network: timers are shared in the format the current Nova World Buffs uses, so they pass between the two addons again. Older Readycheck versions need this update to keep receiving.",
+                        "Every window's resize corner is one solid corner that lights up under the mouse and while you drag it.",
+                        "Route tracker, bar style: the bar is one row shorter. The old gear swap line under it is gone.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "Songflower and other world buff timers were missing with a current Nova World Buffs installed.",
+                        "Route settings: the Auto width button no longer sits on the scale slider.",
+                        "Route tracker: \"show the next step\" works as soon as it is ticked.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.5",
             date = "2026-11-11",
             title = "One look for every control, and after-kill gear sets",

@@ -687,6 +687,16 @@ local function onLayerUnit(unit)
         elseif not WBT:MapLayerToParent(zoneID) then
             WBT:CreateNewLayer(zoneID, GUID, true)
         end
+        -- The layer's age: the earliest spawn among its city NPCs (see
+        -- WBT:GuidSpawnTime). Shared with the layer; Nova World Buffs
+        -- 3.48+ drops a layer that arrives without one.
+        local dl = d.layers[zoneID]
+        if dl then
+            local spawn = WBT:GuidSpawnTime(GUID)
+            if spawn and (not tonumber(dl.spawn) or dl.spawn == 0 or spawn < dl.spawn) then
+                dl.spawn = spawn
+            end
+        end
     end
 end
 
