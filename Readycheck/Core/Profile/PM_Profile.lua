@@ -59,6 +59,15 @@ RC._pms = RC._pms or {}
     -- InitializeCharacterProfile below - previously three diverging copies.
     -- Sections with entries in RC.defaults are seeded from them; everything
     -- else starts as an empty table.
+    -- THE /rc WINDOW'S START SIZE (2026-11-14, Zac: the windows "are like
+    -- super big by default"; he picked 80%, for new installs only). A
+    -- character whose profile is first made from now on starts with the
+    -- /rc window - and the popups, which follow it - at 80%. A character
+    -- from before keeps what it has: nil is 100%, as it always was. Like
+    -- defaultsGen this is written into a NEW profile only and must never go
+    -- into RC.defaults (those are filled into every profile).
+    RC.NEW_WINDOW_SCALE = 0.8
+
     function RC:BuildDefaultCharacterProfile()
         local function fromDefaults(key)
             if self.defaults and self.defaults[key] ~= nil then
@@ -66,13 +75,15 @@ RC._pms = RC._pms or {}
             end
             return {}
         end
+        local fontSettings = fromDefaults("fontSettings")
+        fontSettings.mainWindowScale = RC.NEW_WINDOW_SCALE
         return {
             enabled = true,
             -- a profile first made with the newer default layout (frames
             -- in their new default spots; see RC:NewDefaults)
             defaultsGen = 2,
             raidProfiles = {},
-            fontSettings = fromDefaults("fontSettings"),
+            fontSettings = fontSettings,
             executeSettings = fromDefaults("executeSettings"),
             trinketSwap = fromDefaults("trinketSwap"),
             consumablesHelper = fromDefaults("consumablesHelper"),

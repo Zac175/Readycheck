@@ -152,7 +152,7 @@ local TEXT = _sbc.TEXT
         local sbThumb = con:CreateTexture(nil, "OVERLAY")
         sbThumb:SetWidth(SB_W - 2)
         sbThumb:SetTexture("Interface\\Buttons\\WHITE8X8")
-        sbThumb:SetVertexColor(thumbC.r, thumbC.g, thumbC.b, 1)
+        sbThumb:SetVertexColor(RC.UI:ScrollThumbColor(false, 1))
         sbThumb:Hide()
 
         local sf = CreateFrame("ScrollFrame", nil, con)

@@ -175,6 +175,29 @@ function WT:IsAuraBoonable(index)
     return (entry ~= nil) and entry.boonable ~= false
 end
 
+-- The catalogue slot a buff belongs to - by spell id, else by its name
+-- (a variant id shares the name) - or nil for a buff that is not tracked.
+function WT:TrackedAuraSlot(spellId, name)
+    local ref = spellId and auraById[spellId]
+    if not ref and type(name) == "string" and name ~= "" then
+        ref = auraByName[name:lower()] or auraByNormalName[NormalizeName(name)]
+    end
+    return ref and ref.slot or nil
+end
+
+-- Is a world buff running on the player right now - out, not stored in a
+-- Chronoboon? The buffs the board tracks that a Chronoboon can hold (so
+-- not Battle Shout or the Fire Festival's). Reads the shared aura
+-- snapshot (RC.Auras): no aura API call of its own.
+function WT:WorldBuffsOut()
+    if not (RC.Auras and RC.Auras.Buffs) then return false end
+    for _, a in ipairs(RC.Auras:Buffs()) do
+        local slot = self:TrackedAuraSlot(a.spellId, a.name)
+        if slot and self:IsAuraBoonable(slot) then return true end
+    end
+    return false
+end
+
 ------------------------------------------------------------------------
 -- Coordinate pins (pull timer bars use these for Rend zone sizing)
 ------------------------------------------------------------------------

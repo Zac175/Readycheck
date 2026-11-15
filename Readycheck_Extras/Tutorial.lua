@@ -406,7 +406,7 @@ local function InitializeTutorial()
         {
             id = "editmode", place = "below",
             title = RCL["Move things where you want them"],
-            body  = RCL["Edit Mode shows every Readycheck bar and frame over a grid so you can drag them into place. Save & lock when you are done. Most bars can also be unlocked on their own with a right-click."],
+            body  = RCL["Edit Mode shows every Readycheck bar and frame over a grid so you can drag them into place. Save & Exit when you are done (Cancel puts everything back). Most bars can also be unlocked on their own with a right-click."],
             target = function(win) return win.editModeToolButton end,
         },
         {

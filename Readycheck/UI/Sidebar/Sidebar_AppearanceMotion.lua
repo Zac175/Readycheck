@@ -260,7 +260,7 @@ if not RC then return end
         end
 
         Paint(st.rail.bg, "scrollbar", "track")
-        Paint(st.rail.thumb, "scrollbar", "thumb", 1)
+        st.rail.thumb:SetVertexColor(RC.UI:ScrollThumbColor(false, 1))
         RC.UI:UpdateBorderColor(st.rail.border, RC:GetColor("ui", "borderNormal"), 1)
 
         -- the framework widgets repaint themselves from the theme

@@ -174,7 +174,7 @@ local _sbs = RC._sbs
                 scrollBar.bg:SetVertexColor(scrollTrackColor.r, scrollTrackColor.g, scrollTrackColor.b, scrollTrackColor.a or 0.8)
             end
             if scrollBar.thumb then
-                scrollBar.thumb:SetVertexColor(scrollThumbColor.r, scrollThumbColor.g, scrollThumbColor.b, 1)
+                scrollBar.thumb:SetVertexColor(self.UI:ScrollThumbColor(false, 1))
             end
             if scrollBar.border and self.UI and self.UI.UpdateBorderColor then
                 self.UI:UpdateBorderColor(scrollBar.border, borderColor)

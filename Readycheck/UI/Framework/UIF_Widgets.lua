@@ -133,7 +133,7 @@ local S = _uif.S
 
         local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
         thumb:SetTexture(FLAT)
-        thumb:SetVertexColor(thumbColor.r, thumbColor.g, thumbColor.b, 1)
+        thumb:SetVertexColor(RC.UI:ScrollThumbColor(false, 1))
         thumb:SetWidth(width)
         thumb:SetHeight(24)
         scrollBar:SetThumbTexture(thumb)
@@ -235,8 +235,7 @@ local S = _uif.S
         local token = 0
         local function Paint()
             local live = hot or drag or busy
-            local c = live and GetAccentGold() or GetScrollThumb()
-            thumb:SetVertexColor(c.r, c.g, c.b, live and 1 or 0.6)
+            thumb:SetVertexColor(RC.UI:ScrollThumbColor(live, 0.6))
         end
         bar._rcPaintThumb = Paint
         local function Settle()
@@ -1165,6 +1164,9 @@ local S = _uif.S
         if not self.measureFrame then
             self.measureFrame = CreateFrame("Frame", nil, UIParent)
             self.measureFrame:Hide()
+            -- (what is measured here are window buttons and tabs: measured
+            -- in the face they wear - Systems/FontSystem, BESIDE ZACUI)
+            self.measureFrame._rcWindow = true
             self.measureText = self.measureFrame:CreateFontString(nil, "OVERLAY")
         end
 
@@ -3390,6 +3392,10 @@ local S = _uif.S
         -- theme colours, re-read on every play so a palette change shows
         local function Tint()
             local a = GetAccentGold()
+            -- (beside ZacUI, an accent picked there lights the mark too)
+            local z = RC.ZacUIColor and RC:ZacUIColor("settings", "accent")
+            local own = RC.db and RC.db.customColors and RC.db.customColors.ui and RC.db.customColors.ui.accentGold
+            if z and not own then a = z end
             local w = (RC.GetColor and RC:GetColor("text", "white")) or a
             Paint(flare, a.r, a.g, a.b)
             Paint(ring, a.r, a.g, a.b)

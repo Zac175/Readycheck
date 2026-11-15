@@ -1376,10 +1376,12 @@ RC.encounterAddPhases = {
         -- Raid consume reminders (Consumables > Raid Consume Reminders,
         -- Readycheck_Consumables\Consumables_RaidReminders.lua): in a 40-man
         -- raid the ticked consumables you are not wearing show in the
-        -- reminders bar. enabled; onlyInBags = only ones you carry. items
-        -- (itemId / "mh" / "oh" -> true) has no default here: it is seeded
-        -- with the class's picks for this game version on first use.
-        consumeRemind = { enabled = true, onlyInBags = true },
+        -- reminders bar. enabled; onlyInBags = only ones you carry;
+        -- onlyWorldBuffs = only while a world buff is running on you (off
+        -- unless ticked). items (itemId / "mh" / "oh" -> true) has no
+        -- default here: it is seeded with the class's picks for this game
+        -- version on first use.
+        consumeRemind = { enabled = true, onlyInBags = true, onlyWorldBuffs = false },
         -- The glow on the raid consume reminder icons (RC.UI:CreateEdgeGlow):
         -- style "edge" | "pixel" | "autocast" | "border" | "none"; alpha =
         -- strength; size = how far it reaches; halo = the soft wide layer;
@@ -1845,7 +1847,13 @@ RC.encounterAddPhases = {
 
         scrollbar = {
             track = {r = 0.08, g = 0.08, b = 0.08, a = 0.8, label = RCL["Track"]},
-            thumb = {r = 0.6, g = 0.46, b = 0.18, a = 0.9, label = RCL["Thumb"]},
+            -- (2026-11-14, Zac: "some sliders in the addons were still
+            -- brown by default they should all match the like greyish
+            -- slider") the /rc window's thumb, white at 0.27, on every
+            -- scroll bar; it was a brown, 0.6 / 0.46 / 0.18 - a saved copy
+            -- of that is an old shade (LEGACY_COLORS). Painted through
+            -- RC.UI:ScrollThumbColor (UIF_Base).
+            thumb = {r = 1, g = 1, b = 1, a = 0.27, label = RCL["Thumb"]},
             arrowBackground = {r = 0.12, g = 0.12, b = 0.12, a = 1, label = RCL["Arrow BG"]},
             arrowBackgroundHover = {r = 0.18, g = 0.18, b = 0.18, a = 1, label = RCL["Arrow BG Hover"]},
             arrow = {r = 0.7, g = 0.7, b = 0.7, a = 1, label = RCL["Arrow Icon"]},
@@ -2146,6 +2154,8 @@ RC.encounterAddPhases = {
         ttkDisplay = { background = {0.08, 0.08, 0.08} },
         battleShoutReminder = { background = {0.08, 0.08, 0.08} },
         statsBar = { background = {0.12, 0.12, 0.12} },
+        -- (the brown every scroll thumb had until 2026-11-14)
+        scrollbar = { thumb = {0.6, 0.46, 0.18} },
     }
     local FURNITURE = { ui = true, buttons = true, sidebar = true, checkbox = true, dropdown = true, uiMover = true }
     -- Is this saved colour the old look rather than a pick? A colour set
@@ -2186,12 +2196,60 @@ RC.encounterAddPhases = {
         return n
     end
 
+    -- BESIDE ZACUI: ONE LOOK (2026-11-14; the font half and the why are in
+    -- Systems/FontSystem). The colours of Readycheck's windows - the
+    -- "settings" set the /rc window and every popup paint from - take the
+    -- colour PICKED in ZacUI for the same thing. Only a pick: the two
+    -- addons ship the same shades, so with nothing picked there nothing
+    -- changes here. A colour picked in Readycheck wins over both. The
+    -- alpha stays Readycheck's own (ZacUI keeps its window's opacity in
+    -- its colour; Readycheck's is a setting of its own).
+    --   settings key        = { ZacUI palette category, key }
+    RC.ZACUI_COLORS = {
+        windowBackground   = { "ui", "windowBg" },
+        accent             = { "ui", "accent" },
+        text               = { "text", "normal" },
+        buttonBackground   = { "button", "bg" },
+        dropdownBackground = { "dropdown", "bg" },
+        checkboxBackground = { "checkbox", "bg" },
+    }
+    RC.ZACUI_COLOR_ORDER = { "windowBackground", "accent", "text", "buttonBackground", "dropdownBackground", "checkboxBackground" }
+    local zacuiCache = {}
+    -- the colour picked in ZacUI for this window colour, or nil
+    function RC:ZacUIColor(category, colorKey)
+        if category ~= "settings" then return nil end
+        local map = RC.ZACUI_COLORS[colorKey]
+        if not map then return nil end
+        local Z, zdb = _G.ZacUI, _G.ZacUIDB
+        if type(Z) ~= "table" or type(zdb) ~= "table" or type(zdb.palette) ~= "table" then return nil end
+        local cat = zdb.palette[map[1]]
+        local pick = type(cat) == "table" and cat[map[2]]
+        if type(pick) ~= "table" or type(pick.r) ~= "number" or type(pick.g) ~= "number" or type(pick.b) ~= "number" then
+            return nil
+        end
+        -- (an old shipped shade ZacUI itself passes over is not a pick)
+        if type(Z.StaleColor) == "function" then
+            local ok, stale = pcall(Z.StaleColor, map[1], map[2], pick)
+            if ok and stale then return nil end
+        end
+        local own = self.defaultColors and self.defaultColors.settings and self.defaultColors.settings[colorKey]
+        local out = zacuiCache[colorKey]
+        if not out then out = {} zacuiCache[colorKey] = out end
+        out.r, out.g, out.b, out.a = pick.r, pick.g, pick.b, (own and own.a) or 1
+        return out
+    end
+
     function RC:GetColor(category, colorKey)
         local cc = self.db and self.db.customColors and self.db.customColors[category]
         local c = cc and cc[colorKey]
         -- (a saved colour that is only an old shipped shade is passed over)
         if c and not Stale(category, colorKey, c) then
             return c
+        end
+        -- (beside ZacUI: a window colour picked there)
+        if category == "settings" then
+            local z = self:ZacUIColor(category, colorKey)
+            if z then return z end
         end
         if self.defaultColors and self.defaultColors[category] and self.defaultColors[category][colorKey] then
             -- Returned directly (no per-lookup clone): callers only read

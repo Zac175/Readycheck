@@ -52,7 +52,6 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             RC.UI:StopAnimations(prev)
             prev:Hide()
             prev:SetAlpha(1)
-            prev:SetScale(1)
         end
         _uif.activeModal = dialog
         dialog._resolved = false
@@ -112,6 +111,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
     --             (the customization standard's chrome): left alone
     --   scan = false    only the buttons named here change (a tool window
     --             whose rows are its own)
+    --   scale = false   a window with a scale setting of its own (the icon
+    --             picker): it does not follow the /rc window's scale
     -- Every other styled button on the window takes the page look, also
     -- ones made later (each show looks again). Idempotent; repaints on
     -- show and on a theme change.
@@ -247,8 +248,21 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                 st.border = opts.border or frame._rcBorder or (type(frame.border) == "table" and frame.border.top and frame.border) or nil
                 if not st.border and not frame.SetBackdropBorderColor then st.border = self:CreateSimpleBorder(frame) end
             end
-            -- each open: buttons made since join the look, colours re-read
-            frame:HookScript("OnShow", function(f) RC.UI:SkinPopup(f) end)
+            st.ownScale = opts.scale == false
+            -- each open: buttons made since join the look, colours re-read,
+            -- the /rc window's scale put on
+            frame:HookScript("OnShow", function(f)
+                -- beside ZacUI: its font or colours changed since last
+                -- time? (before the paint below reads them); and the text
+                -- this window was built with, before it was in the shell
+                if RC.FollowZacUI then RC:FollowZacUI() end
+                if not st.dressed then
+                    st.dressed = true
+                    if RC.RedressWindowFonts and RC.UI:IsWindowShell(f) then RC:RedressWindowFonts(f) end
+                end
+                RC.UI:SkinPopup(f)
+                RC.UI:ApplyShellScale(f)
+            end)
         end
         local header = opts.header or st.header or FindHeader(frame)
         st.header = header
@@ -281,6 +295,60 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         PaintShell(frame)
         if first then RC:DebugPrint("SkinPopup: " .. tostring(frame.GetName and frame:GetName() or "?"), "ui") end
         return frame
+    end
+
+    -- ONE SCALE (2026-11-14, Zac: "most of the ui menus and stuff popups
+    -- etc are like super big by default" - popups ignored the /rc window's
+    -- -/+ scale and stood at 100% beside a window at 75%). Every popup,
+    -- dialog and small window in the shell opens at the /rc window's scale
+    -- (fontSettings.mainWindowScale, nil = 100%) and follows its -/+.
+    -- Not: a piece that sits on the screen where the player put it (a bound
+    -- frame, Core_Position), a window whose chrome the player styles
+    -- (chrome = false), or one with a scale setting of its own
+    -- (scale = false). A character that never touched the scale has 100%,
+    -- so nothing changes size on an update.
+    function RC.UI:WindowScale()
+        local fs = RC.db and RC.db.fontSettings
+        local v = fs and tonumber(fs.mainWindowScale)
+        if not v or v <= 0 then return 1 end
+        return v
+    end
+    local function FollowsScale(frame)
+        local st = shells[frame]
+        if not st or not st.chrome or st.ownScale then return false end
+        local P = RC.Position
+        if P and P.IsBound and P.IsBound(frame) then return false end
+        return true
+    end
+    function RC.UI:ShellFollowsScale(frame) return FollowsScale(frame) end
+    -- Is this shell a window (a popup, a dialog) and not a piece placed on
+    -- the screen or one the player styles? Window text wears ZacUI's font
+    -- beside ZacUI (Systems/FontSystem: BESIDE ZACUI).
+    function RC.UI:IsWindowShell(frame)
+        local st = shells[frame]
+        if not st or not st.chrome then return false end
+        local P = RC.Position
+        if P and P.IsBound and P.IsBound(frame) then return false end
+        return true
+    end
+    -- puts the scale on (a no-op for a window that does not follow)
+    function RC.UI:ApplyShellScale(frame)
+        if not frame or not FollowsScale(frame) then return end
+        local v = self:WindowScale()
+        -- (a popup that is a child of a scaled window already has that
+        -- window's scale: it is sized against the screen, not twice)
+        local parent = frame:GetParent()
+        if parent and parent ~= UIParent and parent.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
+            local pe, ue = parent:GetEffectiveScale(), UIParent:GetEffectiveScale()
+            if type(pe) == "number" and type(ue) == "number" and pe > 0 and ue > 0 then v = v * ue / pe end
+        end
+        if math.abs((frame:GetScale() or 1) - v) > 0.001 then frame:SetScale(v) end
+    end
+    -- the /rc window's scale changed: the popups on screen follow at once
+    function RC.UI:RescaleShells()
+        for f in pairs(shells) do
+            if f.IsShown and f:IsShown() then self:ApplyShellScale(f) end
+        end
     end
 
     function RC.UI:IsShellSkinned(frame) return shells[frame] ~= nil end

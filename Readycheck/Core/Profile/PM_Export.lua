@@ -134,6 +134,7 @@ local _pms = RC._pms
 
         local imported = 0
         local skipped = 0
+        local gearImported = false
         for key, value in pairs(data.data) do
             if not allowed[key] then
                 skipped = skipped + 1
@@ -147,12 +148,32 @@ local _pms = RC._pms
             else
                 self.db[key] = self.DeepCopy(value)
                 imported = imported + 1
+                if key == "gearManager" then gearImported = true end
             end
         end
 
         if imported == 0 then
             self:Print(RCL["ERROR: Import contained no valid settings"])
             return false
+        end
+
+        -- The gear manager works from a settings table of its own, and every
+        -- save writes that table back over the profile - so imported gear
+        -- manager settings were lost at the save just below. Its table takes
+        -- the imported values first (the mesh sync does the same on receive).
+        -- The set last worn is this character's own and is kept.
+        local GM = gearImported and self.GearManager
+        local gdb = GM and self.db.gearManager
+        if GM and GM.settingsLoaded and type(GM.settings) == "table" and type(gdb) == "table" then
+            if gdb.enabled ~= nil then GM.enabled = gdb.enabled end
+            if type(gdb.settings) == "table" then
+                gdb.settings.lastEquippedSetName = GM.settings.lastEquippedSetName
+                for key, value in pairs(gdb.settings) do
+                    if GM.settings[key] ~= nil then GM.settings[key] = value end
+                end
+                GM.locked = GM.settings.buttonsLocked or false
+            end
+            self:DebugPrint("Import: gear manager settings applied to the live gear manager", "gear")
         end
 
         self:SaveConfigurationToProfile()

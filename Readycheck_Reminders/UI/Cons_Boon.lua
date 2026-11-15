@@ -298,6 +298,37 @@ local TEXT = _sbc.TEXT
 
             yPos = yPos - card:GetHeight() - 15
 
+            -- AFTER THE RAID: the window for world buffs still running
+            -- when the raid's last boss dies or you leave the raid
+            -- (Readycheck_WorldTools, WT_AfterRaid).
+            -- The card is only there with that addon loaded.
+            local AR = RC.AfterRaidBuffs
+            if AR then
+                local arCard = self:CreateSettingsCard(parent, yPos, RCL["After the raid"])
+                local arY = -32
+                local arCb = self.UI:CreateSettingCheckbox(arCard, arY,
+                    RCL["Open the world buff window after a raid when world buffs are still on me"], AR.Enabled(),
+                    function(cb)
+                        local on = cb:GetChecked() and true or false
+                        AR.SetEnabled(on)
+                        RC:ForceCheckboxUpdate(cb, on)
+                    end)
+                arY = arY - 24
+                arY = K.Desc(arCard, arY, RCL["Opens when the raid's last boss dies or when you leave the raid. Shows each world buff still running with the time it has left: click a buff to cancel it, or boon what is left with one button; once they are stored the button becomes Unboon. It never opens in combat."])
+                local showBtn = self.UI:CreateStyledButton(arCard, RCL["Show the window"], 140, 24)
+                showBtn:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                showBtn:SetScript("OnClick", function()
+                    if AR.IsOpen() then
+                        AR.Close()
+                    elseif not AR.Open("manual") then
+                        RC:Print(RCL["The world buff window opens when you are out of combat."])
+                    end
+                end)
+                arY = arY - 34
+                arCard:SetContentHeight(math.abs(arY))
+                yPos = yPos - arCard:GetHeight() - 15
+            end
+
         elseif selectedTab == "bosses" then
             local raidTab = frame.boonRaidTab or "naxx"
             frame.boonRaidTab = raidTab

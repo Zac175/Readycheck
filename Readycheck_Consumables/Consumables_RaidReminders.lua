@@ -19,6 +19,8 @@
 -- their own). Every icon wears the framework's edge glow
 -- (RC.UI:CreateEdgeGlow), styled by RC.db.consumeRemindGlow.
 --
+-- An option shows them only while world buffs are out (onlyWorldBuffs).
+--
 -- One half-second tracked ticker, out of everything outside a raid.
 -- Settings: RC.db.consumeRemind (Database defaults, this character's
 -- profile, exported and synced with the consumables bar settings). The
@@ -102,6 +104,23 @@ local function InBigRaid()
     return true
 end
 CR.InBigRaid = InBigRaid
+
+-- "ONLY WHILE MY WORLD BUFFS ARE OUT" (d.onlyWorldBuffs; 2026-11-13, Zac):
+-- the reminders show only while a world buff is running on the player -
+-- none on, or all of them stored in a Chronoboon, and nothing shows. The
+-- world tools know which buffs those are (WT:WorldBuffsOut). Where they
+-- are not there - switched off, or a game version whose raids have no
+-- world buffs - the option does nothing and the reminders show as usual.
+local function WorldBuffsKnown()
+    local WT = RC.WorldTools
+    return (WT and WT.WorldBuffsOut and (not RC.FeatureOn or RC:FeatureOn("world_tools"))) and WT or nil
+end
+local function WorldBuffsOut()
+    local WT = WorldBuffsKnown()
+    if not WT then return true end
+    return WT:WorldBuffsOut() and true or false
+end
+CR.WorldBuffsKnown, CR.WorldBuffsOut = WorldBuffsKnown, WorldBuffsOut
 
 -- itemId -> { data, cat } for every buff consumable the page can offer
 local catalog, catalogBuilt
@@ -549,6 +568,7 @@ Tick = function()
     -- the readers live in Readycheck_Consumables (load on demand)
     if not (RC.HasConsumableBuff and RC.HasWeaponEnchant and RC.performanceCache) then return Hide() end
     if not InBigRaid() or UnitIsDeadOrGhost("player") then return Hide() end
+    if d.onlyWorldBuffs and not WorldBuffsOut() then return Hide() end
     local list = Missing()
     if #list == 0 then return Hide() end
     local f = Build()
@@ -756,7 +776,21 @@ function RC:ShowSidebarConsumeRemind(frame, preserveScroll)
         d.onlyInBags = cb:GetChecked() and true or false
         Save()
     end)
-    cy = cy - 30
+    -- (only where the game version has world buffs in its raids)
+    if not RC.FeatureOn or RC:FeatureOn("world_tools") then
+        cy = cy - 24
+        self.UI:CreateSettingCheckbox(gen, cy, RCL["Only while my world buffs are out"], d.onlyWorldBuffs == true, function(cb)
+            d.onlyWorldBuffs = cb:GetChecked() and true or false
+            Save()
+        end)
+        cy = cy - 22
+        cy = self.UI:CreateHelpLine(gen, 14, cy,
+            RCL["Shows them only while a world buff is running on you. With none on, or all of them stored in a Chronoboon, nothing shows. Needs World Tools."],
+            { wrap = true })
+        cy = cy - 6
+    else
+        cy = cy - 30
+    end
     gen:SetHeight(math.abs(cy))
     yPos = yPos - gen:GetHeight() - 12
 

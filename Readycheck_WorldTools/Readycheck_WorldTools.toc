@@ -31,6 +31,9 @@ WorldTools\WT_Core.lua
 WorldTools\WT_Timers.lua
 WorldTools\WT_Turnins.lua
 WorldTools\WT_Bars.lua
+# The window for world buffs still running when you leave a raid (cancel
+# one, or boon them). Reads the catalogue in WT_Core.
+WorldTools\WT_AfterRaid.lua
 
 # ---------- World buff timer network ----------
 # Core defines RC.WorldBuffTimers and its store. Detect drives the pull

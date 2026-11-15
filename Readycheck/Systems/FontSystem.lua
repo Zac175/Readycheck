@@ -80,6 +80,18 @@ RC.fontSystem = {
     pendingFontStrings = {}
 }
 
+-- SetFont on a file the client does not have: older clients return false
+-- and leave the string as it was, newer ones (1.15.9) RAISE "Invalid font
+-- asset ... file not found" - a LibSharedMedia entry for another language's
+-- font is enough. Both come back from here as "did not load" (false), so
+-- every caller's fallback runs and nothing is raised.
+local function TrySetFont(fontString, path, size, flags)
+    local called, set = pcall(fontString.SetFont, fontString, path, size, flags)
+    if not called then return false end
+    return set
+end
+RC.TrySetFont = TrySetFont
+
 -- CJK/Cyrillic clients render some custom font files as boxes; swap the
 -- known-bad paths back to STANDARD_TEXT_FONT for those locales only
 -- (ruRU is exempt from the FRIZQT swap - its default font renders fine).
@@ -122,6 +134,74 @@ function RC:GetFontPath(fontName)
     return LocaleSafeFont("Fonts\\FRIZQT__.TTF")
 end
 
+------------------------------------------------------------------------
+-- BESIDE ZACUI: ONE LOOK (2026-11-14)
+-- Zac, his two changelog windows side by side: "can the changelog be
+-- styled to what style the user has picked in the ui so things match
+-- more ... consistancy is a thing that i want all the time". He chose:
+-- when ZacUI is installed every Readycheck WINDOW wears ZacUI's font and
+-- colours; without ZacUI nothing changes.
+--
+-- THE FONT. Readycheck's windows (the /rc window, every popup, dialog and
+-- small window in the shell, the lists their dropdowns open) wear the
+-- face picked in ZacUI - while Readycheck's own font is left on Default.
+-- A font picked in Readycheck is the player's word and stays on
+-- everything. What sits on the screen (bars, trackers, reminders, a
+-- window's preview of them) keeps Readycheck's font either way: a new
+-- face changes how wide text is, and nothing a player placed may change
+-- size because of an update. ZacUI on "Blizzard default" has no face of
+-- its own: nothing to follow.
+--   RC:ZacUIFace()            the font file, or nil when not following
+--   RC:IsWindowText(region)   is this string part of a window?
+--   RC:FollowZacUI()          looks whether ZacUI's font or colours changed
+--                             since last time and re-dresses if so (asked
+--                             when a window opens; never from an event)
+-- (the colours: Core/Database DB_Raids, RC:GetColor)
+------------------------------------------------------------------------
+local function OwnFontPicked()
+    local fs = RC.db and RC.db.fontSettings
+    local name = fs and fs.selectedFont
+    return type(name) == "string" and name ~= "" and name:lower() ~= "default"
+end
+
+local zfaceName, zfacePath, zfaceAt = nil, nil, 0
+function RC:ZacUIFace()
+    local Z = _G.ZacUI
+    if type(Z) ~= "table" or type(Z.ResolveFontPath) ~= "function" then return nil end
+    local zdb = _G.ZacUIDB
+    local font = type(zdb) == "table" and zdb.font
+    local name = type(font) == "table" and font.name
+    if type(name) ~= "string" or name == "" then return nil end
+    if OwnFontPicked() then return nil end
+    -- (asked for every string that is dressed: the answer for a name is
+    -- kept; a name that has no file yet is asked again after 5 seconds)
+    local now = GetTime and GetTime() or 0
+    if zfaceName == name and (zfacePath or now - zfaceAt < 5) then return zfacePath end
+    local ok, path = pcall(Z.ResolveFontPath, name)
+    zfaceName, zfaceAt = name, now
+    zfacePath = (ok and type(path) == "string" and path ~= "") and path or nil
+    return zfacePath
+end
+
+-- A string is window text when something above it is the /rc window, one
+-- of its marked parts, a dropdown's list (_rcWindow / _rcSetRoot) or a
+-- popup in the shell that is a window (not a piece placed on the screen).
+-- A preview of an on-screen piece inside a window (_rcSetStop) is not.
+function RC:IsWindowText(region)
+    local f, n = region and region.GetParent and region:GetParent(), 0
+    while type(f) == "table" and n < 20 do
+        if f._rcSetStop then return false end
+        if f._rcSetRoot or f._rcWindow then return true end
+        if f._rcShell then
+            return (RC.UI and RC.UI.IsWindowShell and RC.UI:IsWindowShell(f)) and true or false
+        end
+        if not f.GetParent then return false end
+        f = f:GetParent()
+        n = n + 1
+    end
+    return false
+end
+
 function RC:ApplyCustomFont(fontString, size, outline)
     if not fontString or not fontString.SetFont then
         return false
@@ -150,6 +230,9 @@ function RC:ApplyCustomFont(fontString, size, outline)
     end
 
     local fontPath = self:GetFontPath()
+    -- (beside ZacUI: a window's text wears ZacUI's face - see above)
+    local zface = self:ZacUIFace()
+    if zface and self:IsWindowText(fontString) then fontPath = LocaleSafeFont(zface) end
 
     if type(fontOutline) ~= "string" or fontOutline:upper() == "NONE" then
         fontOutline = ""
@@ -157,7 +240,7 @@ function RC:ApplyCustomFont(fontString, size, outline)
 
     -- SetFont can fail silently on a bad path; GetFont() returning nil
     -- after the call is the only way to detect it, hence the fallback.
-    local ok = fontString:SetFont(fontPath, fontSize, fontOutline)
+    local ok = TrySetFont(fontString, fontPath, fontSize, fontOutline)
     local success = not (ok == false or not fontString:GetFont())
     if not success then
         fontString:SetFont("Fonts\\FRIZQT__.TTF", fontSize, fontOutline)
@@ -242,7 +325,7 @@ end
 function RC:ApplyFontSpec(fontString, spec, defaults)
     if not fontString or not fontString.SetFont then return false end
     local path, size, flags, shadow = self:ResolveFontSpec(spec, defaults)
-    local ok = fontString:SetFont(path, size, flags)
+    local ok = TrySetFont(fontString, path, size, flags)
     if ok == false or not fontString:GetFont() then
         fontString:SetFont("Fonts\\FRIZQT__.TTF", size, flags)
     end
@@ -604,7 +687,7 @@ function RC:SetFont(fontName)
     local testFrame = CreateFrame("Frame", nil, UIParent)
     local testText = testFrame:CreateFontString(nil, "OVERLAY")
 
-    local ok = testText:SetFont(fontPath, 12, "OUTLINE")
+    local ok = TrySetFont(testText, fontPath, 12, "OUTLINE")
     local success = (ok ~= false) and (testText:GetFont() ~= nil)
 
     testFrame:Hide()
@@ -670,6 +753,62 @@ function RC:PruneTrackedFonts(force)
     self.trackedFonts = keep
     self._rcFontsPrunedAt = #keep
     return dropped
+end
+
+-- Re-dresses the tracked strings under one frame (a popup the first time
+-- it shows: it was built before it was in the shell).
+function RC:RedressWindowFonts(root)
+    if not root or not self:ZacUIFace() then return 0 end
+    local n = 0
+    local function Walk(f, depth)
+        if depth > 12 or f._rcSetStop then return end
+        if f.GetRegions then
+            for _, r in ipairs({ f:GetRegions() }) do
+                if r._rcFontTracked and r._rcFontSpec == nil and r.GetFont
+                    and (r._rcFace == nil or r:GetFont() == r._rcFace) then
+                    self:ApplyCustomFont(r, r._wrFontSize or r.wrFontSize or 12, r._wrFontOutline or r.wrFontOutline or "OUTLINE")
+                    n = n + 1
+                end
+            end
+        end
+        if f.GetChildren then
+            for _, c in ipairs({ f:GetChildren() }) do Walk(c, depth + 1) end
+        end
+    end
+    Walk(root, 0)
+    return n
+end
+
+-- What of ZacUI's this follows, as one string: its font file and the
+-- colours picked there that Readycheck's windows take (RC.ZACUI_COLORS).
+local function ZacUISignature()
+    local parts = { tostring(RC:ZacUIFace()) }
+    if RC.ZacUIColor and RC.ZACUI_COLORS then
+        for _, key in ipairs(RC.ZACUI_COLOR_ORDER or {}) do
+            local c = RC:ZacUIColor("settings", key)
+            parts[#parts + 1] = c and string.format("%s=%.3f,%.3f,%.3f", key, c.r, c.g, c.b) or (key .. "=-")
+        end
+    end
+    return table.concat(parts, "|")
+end
+
+-- Asked when a window opens (the /rc window, a popup). Cheap when nothing
+-- changed: one string compared.
+function RC:FollowZacUI()
+    if type(_G.ZacUI) ~= "table" then return false end
+    local sig = ZacUISignature()
+    if sig == self._zacuiSig then return false end
+    local first = self._zacuiSig == nil
+    local wasFace = self._zacuiFace
+    self._zacuiSig = sig
+    self._zacuiFace = self:ZacUIFace()
+    -- (the first look only notes what is there: everything built so far
+    -- was dressed with it already)
+    if first then return false end
+    if wasFace ~= self._zacuiFace and self.UpdateAllFonts then self:UpdateAllFonts() end
+    if self.RefreshUIColors then self:RefreshUIColors() end
+    self:DebugPrint("ZacUI's look changed: windows re-dressed", "ui")
+    return true
 end
 
 function RC:UpdateAllFonts()

@@ -498,7 +498,8 @@ local function AddIconPicker()
         picker.resizeGrip = resizeGrip
 
         -- the 5.0 popup look (UIF_Dialogs); the icon grid keeps its own
-        RC.UI:SkinPopup(picker, { header = headerBar, title = title, close = closeBtn, scan = false })
+        -- (scale = false: the picker's size and scale are the player's own, saved with it)
+        RC.UI:SkinPopup(picker, { header = headerBar, title = title, close = closeBtn, scan = false, scale = false })
         pickerFrame = picker
         _G.WRIconPickerGrid = picker
         return picker

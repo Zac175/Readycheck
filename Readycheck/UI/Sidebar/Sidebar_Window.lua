@@ -635,6 +635,7 @@ local BACK_PANELS = {
                     -- (the saved window scale, not a pop scale: PopIn is alpha only,
                     -- so a 0.95 set here stayed and the saved scale was lost)
                     if self.sidebarConfigFrame.ApplyWinScale then self.sidebarConfigFrame:ApplyWinScale() end
+                    if RC.FollowZacUI then RC:FollowZacUI() end
                     self.sidebarConfigFrame:Show()
                     self.UI:PopIn(self.sidebarConfigFrame, 0.18)
 
@@ -689,6 +690,8 @@ local BACK_PANELS = {
         local CONTENT_WIDTH = ContentW(WINDOW_WIDTH)
 
         local frame = CreateFrame("Frame", "ReadycheckSidebarConfig", UIParent)
+        -- (window text: beside ZacUI it wears ZacUI's font - Systems/FontSystem)
+        frame._rcWindow = true
         frame:SetSize(WINDOW_WIDTH, WINDOW_HEIGHT)
         frame:SetPoint("CENTER")
         frame:SetMovable(true)
@@ -981,7 +984,7 @@ local BACK_PANELS = {
         AttachTitleTooltip(editModeButton,
             RCL["Edit Mode"],
             RCL["Show every movable Readycheck frame at once over a grid and drag them into place."],
-            RCL["Escape or Save & Lock to finish."])
+            RCL["Escape or Save & Exit to finish."])
         frame.editModeToolButton = editModeButton
 
         -- Opening the window while the mover is already up (/rc moveui,
@@ -1347,6 +1350,8 @@ local BACK_PANELS = {
             if scaleText then scaleText:SetText(math.floor(v * 100 + 0.5) .. "%") end
             -- the preview keeps its sample at the real, in-game size
             if RC.Preview and RC.Preview.Place then pcall(RC.Preview.Place) end
+            -- the popups on screen follow (UIF_Dialogs: ONE SCALE)
+            if RC.UI.RescaleShells then RC.UI:RescaleShells() end
         end
         local plus = CornerBox("plus128", function() SetWinScale(WinScale() + 0.05) end)
         plus:SetPoint("RIGHT", foldButton, "LEFT", -(CORNER_GAP + 8), 0)
@@ -1741,6 +1746,8 @@ local BACK_PANELS = {
         if self.UI and self.UI.PopIn then
             frame:SetAlpha(0)
             if frame.ApplyWinScale then frame:ApplyWinScale() end
+            -- beside ZacUI: its font or colours changed since last time?
+            if RC.FollowZacUI then RC:FollowZacUI() end
             frame:Show()
             self.UI:PopIn(frame, 0.18)
 

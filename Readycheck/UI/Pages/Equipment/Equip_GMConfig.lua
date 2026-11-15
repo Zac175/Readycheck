@@ -1411,7 +1411,6 @@ local C, GetCardBg, GetGearSetPreviewPath, TEXT = _seq.C, _seq.GetCardBg, _seq.G
                             RC.UI:StopAnimations(p)
                             p:Hide()
                             p:SetAlpha(1)
-                            p:SetScale(1)
                         end
                     end)
                 end

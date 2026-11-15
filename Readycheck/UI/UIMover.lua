@@ -17,6 +17,17 @@
 -- Secure frames (and bars holding secure buttons) cannot move in combat:
 -- their handles show a lock and refuse to start a drag until it ends; a
 -- drag already under way when combat starts is put down after combat.
+--
+-- THE WAY IN (2026-11-14, the same shape as ZacUI's Edit Mode). A bar
+-- along the top of the screen: what this is, how many frames are out and
+-- how many have moved, a box that finds one by name, Grid, Snap, the
+-- Frames panel, Undo, Cancel, Save & Exit; a line under it says how to
+-- use it. The box you click wears its own actions (Reset, Hide). The
+-- Frames panel (the old floating Move UI window) lists every frame with a
+-- tick and holds the exact numbers and the grid and snap sizes. Save &
+-- Exit, the X and Escape keep everything; Cancel puts back every frame
+-- moved in this pass; Ctrl+Z undoes the last move; the arrow keys nudge
+-- the picked box (Shift: 10).
 ------------------------------------------------------------------------
 local function InitializeUIMover()
     local RC = _G.Readycheck or _G.WR
@@ -43,6 +54,9 @@ local function InitializeUIMover()
     UM.showGrid = true
     UM.snapEnabled = false
     UM.snapSize = 10
+    UM.undo = {}            -- this pass's moves, newest last (Undo / Ctrl+Z)
+    UM.entry = {}           -- [frameKey] = where it was when the pass opened (Cancel)
+    UM.filterText = ""      -- the top bar's "Find a frame..." text, lower case
 
     local function GetColor(key)
         if RC.GetColor then
@@ -148,6 +162,7 @@ local function InitializeUIMover()
         swapToast               = RCL["Gear Swap Notice"],
         meshProgress            = RCL["Sync Transfer Bar"],
         gearSetPrompt           = RCL["Gear Set Picker"],
+        afterRaidBuffs          = RCL["After-Raid World Buffs"],
         wtPullTimersMain        = RCL["Buff Drop Bars (Main)"],
         wtPullTimersIdle        = RCL["Buff Drop Bars (Small)"],
         wtScreenAlert           = RCL["Buff Drop Screen Alert"],
@@ -198,12 +213,17 @@ local function InitializeUIMover()
         end
     end
 
-    -- The /moveui panel: a flat 300px window in the ZacUI family - fill
-    -- + 1px border, 30px title bar with a gold hairline under it, and a
-    -- chromeless X. Every fill below is WHITE8X8 vertex-coloured; no
-    -- Blizzard input/button art anywhere on it.
+    -- The Frames panel (the old floating Move UI window): a flat 300px
+    -- window in the ZacUI family - fill + 1px border, 30px title bar with a
+    -- gold hairline under it, and a chromeless X. Every fill below is
+    -- WHITE8X8 vertex-coloured; no Blizzard input/button art anywhere on
+    -- it. The top bar's Frames button opens it; it lists every frame with
+    -- a tick (untick: out of the way while you move the rest; click a
+    -- name: pick it) and holds the picked frame's exact numbers and the
+    -- grid and snap sizes.
     local FLAT = "Interface\\Buttons\\WHITE8X8"
     local PANEL_W, PANEL_PAD, TITLEBAR_H = 300, 12, 30
+    local VIS_ROW, LIST_ROWS = 22, 7
 
     local function FlatFill(frame, color, alpha, layer)
         local tex = frame:CreateTexture(nil, layer or "BACKGROUND")
@@ -211,6 +231,21 @@ local function InitializeUIMover()
         tex:SetTexture(FLAT)
         tex:SetVertexColor(color.r, color.g, color.b, alpha or color.a or 1)
         return tex
+    end
+
+    -- A line of help on a control of the bar or the panel.
+    local function Tip(owner, title, body, side)
+        owner:HookScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, side or "ANCHOR_BOTTOM")
+            local w = GetColor("whiteText")
+            GameTooltip:SetText(title, w.r, w.g, w.b)
+            if body then
+                local c = GetColor("tooltipText")
+                GameTooltip:AddLine(body, c.r, c.g, c.b, true)
+            end
+            GameTooltip:Show()
+        end)
+        owner:HookScript("OnLeave", function() GameTooltip:Hide() end)
     end
 
     function UM:CreateControlPanel()
@@ -221,11 +256,12 @@ local function InitializeUIMover()
         local headerBg = GetColor("headerBackground")
         local headerTxt = GetColor("headerText")
         local labelTxt = GetColor("labelText")
+        local grayTxt = RC:GetColor("text", "gray")
         local INNER_W = PANEL_W - 2 * PANEL_PAD
 
         local panel = CreateFrame("Frame", "WR_UIMoverPanel", UIParent)
         panel:SetSize(PANEL_W, 430)
-        panel:SetPoint("RIGHT", UIParent, "RIGHT", -30, 0)
+        panel:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -30, -80)
         panel:SetFrameStrata("TOOLTIP")
         -- above every handle (ANCHOR_LEVEL + one level per handle)
         panel:SetFrameLevel(2000)
@@ -235,6 +271,8 @@ local function InitializeUIMover()
         panel:SetClampedToScreen(true)
         panel:SetScript("OnDragStart", panel.StartMoving)
         panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
+        -- Escape closes the panel (it sits in UISpecialFrames); with the
+        -- panel closed the next Escape leaves move mode (the key frame).
         RC.UI:RegisterEscapeClose(panel)
         panel:HookScript("OnHide", function()
             if not UM.isMoving or UM.panelless then return end
@@ -244,20 +282,12 @@ local function InitializeUIMover()
                 UM:HideGrid()
                 if UM.editModeButton then UM.editModeButton:Show() end
             else
-                -- The panel sits in UISpecialFrames, so ESC (or any
-                -- CloseSpecialWindows cascade) hides it. This used to
-                -- re-show the panel a frame later, which made ESC look
-                -- like it flashed the window and did nothing. ESC now
-                -- means what it means everywhere else: leave move mode,
-                -- exactly as Save & Lock does, positions kept.
-                C_Timer.After(0, function()
-                    if UM._exiting then return end
-                    if UM.isMoving and not UM.panelless
-                       and UM.controlPanel and not UM.controlPanel:IsShown() then
-                        UM:ExitMoveMode("escape")
-                    end
-                end)
+                UM:RefreshTop()
             end
+        end)
+        panel:HookScript("OnShow", function()
+            UM:RefreshVisibilityList()
+            UM:RefreshTop()
         end)
 
         panel.bg = FlatFill(panel, panelBg)
@@ -290,38 +320,123 @@ local function InitializeUIMover()
 
         local title = RC:CreateFontString(header, "OVERLAY", nil, 15)
         title:SetPoint("LEFT", titleIcon, "RIGHT", 8, 0)
-        title:SetText(RCL["Move UI"])
+        title:SetText(RCL["Frames"])
         title:SetTextColor(headerTxt.r, headerTxt.g, headerTxt.b, 1)
 
+        -- The X closes the panel only: the bar's Save & Exit leaves.
         local closeButton = RC.UI:CreateXCloseButton(header, 22, function()
-            UM:ExitMoveMode("x button")
+            panel:Hide()
         end)
         closeButton:SetPoint("RIGHT", header, "RIGHT", -5, 0)
 
         local yPos = -(TITLEBAR_H + 1 + 10)
 
-        -- "Frame" label over the dropdown; the selected frame's anchor
-        -- point rides at the right of the same line.
-        local selectLabel = RC:CreateFontString(panel, "OVERLAY", nil, 10)
-        selectLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
-        selectLabel:SetText(RCL["Frame"])
-        selectLabel:SetTextColor(labelTxt.r, labelTxt.g, labelTxt.b, 1)
+        local desc = RC:CreateFontString(panel, "OVERLAY", nil, 10)
+        desc:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
+        desc:SetWidth(INNER_W)
+        desc:SetJustifyH("LEFT")
+        desc:SetText(RCL["Untick a frame to hide it while you move the rest. Click a name to pick it."])
+        desc:SetTextColor(grayTxt.r, grayTxt.g, grayTxt.b, 1)
+        yPos = yPos - 26 - 6
+
+        -- THE LIST: a row per frame (RefreshVisibilityList fills it).
+        local LIST_H = LIST_ROWS * VIS_ROW
+        local body = CreateFrame("Frame", nil, panel)
+        body:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
+        body:SetSize(INNER_W + 6, LIST_H)
+        local scroll = CreateFrame("ScrollFrame", nil, body)
+        scroll:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+        scroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -22, 0)
+        local content = CreateFrame("Frame", nil, scroll)
+        content:SetSize(INNER_W - 16, 1)
+        scroll:SetScrollChild(content)
+        panel.scroll, panel.content = scroll, content
+        panel.scrollBar = RC.UI:AttachScrollbar(scroll, body, { width = 12 })
+        panel.rows = {}
+        yPos = yPos - LIST_H - 8
+
+        -- Show all / Hide all / Reset all: three equal buttons.
+        local BTN_GAP = 4
+        local BTN_W = math.floor((INNER_W - 2 * BTN_GAP) / 3)
+        local BTN_H = 22
+
+        local showAll = RC.UI:CreateStyledButton(panel, RCL["Show all"], BTN_W, BTN_H)
+        showAll:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
+        showAll:SetScript("OnClick", function()
+            for key in pairs(UM.frames) do
+                if UM.hiddenKeys[key] then
+                    UM.hiddenKeys[key] = nil
+                    UM:ApplyHidden(key)
+                end
+            end
+            UM:RefreshVisibilityList()
+            UM:PlaceActions()
+        end)
+
+        local hideAll = RC.UI:CreateStyledButton(panel, RCL["Hide all"], BTN_W, BTN_H)
+        hideAll:SetPoint("LEFT", showAll, "RIGHT", BTN_GAP, 0)
+        hideAll:SetScript("OnClick", function()
+            for key, data in pairs(UM.frames) do
+                if data.frame and not UM.hiddenKeys[key] then
+                    UM.hiddenKeys[key] = true
+                    UM:ApplyHidden(key)
+                end
+            end
+            UM:RefreshVisibilityList()
+            UM:PlaceActions()
+        end)
+
+        local resetAllBtn = RC.UI:CreateStyledButton(panel, RCL["Reset all"], INNER_W - 2 * (BTN_W + BTN_GAP), BTN_H)
+        resetAllBtn:SetPoint("LEFT", hideAll, "RIGHT", BTN_GAP, 0)
+        if resetAllBtn.text then
+            local red = RC:GetColor("text", "red")
+            resetAllBtn.text:SetTextColor(red.r, red.g, red.b, 1)
+        end
+        resetAllBtn:SetScript("OnClick", function()
+            UM:ChangeMany(function()
+                for frameKey, _ in pairs(UM.frames) do
+                    UM:ResetFramePosition(frameKey)
+                end
+            end)
+            if UM.selectedFrame then
+                UM:UpdateCoordinateInputs(UM.selectedFrame)
+            end
+            UM:PlaceActions()
+        end)
+        Tip(resetAllBtn, RCL["Reset all"], RCL["Every frame back to its default spot. Undo puts them all back."], "ANCHOR_TOP")
+        yPos = yPos - BTN_H - 10
+
+        local function Divider(y)
+            local divider = panel:CreateTexture(nil, "ARTWORK")
+            divider:SetTexture(FLAT)
+            divider:SetHeight(1)
+            divider:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, y)
+            divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PANEL_PAD, y)
+            local divCol = RC:GetColor("ui", "borderNormal")
+            divider:SetVertexColor(divCol.r, divCol.g, divCol.b, divCol.a or 1)
+        end
+        Divider(yPos)
+        yPos = yPos - 1 - 10
+
+        -- THE PICKED FRAME: its name, and at the right of the same line
+        -- the point its numbers are measured from.
+        local pickedName = RC:CreateFontString(panel, "OVERLAY", nil, 11)
+        pickedName:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
+        pickedName:SetWidth(INNER_W - 80)
+        pickedName:SetJustifyH("LEFT")
+        pickedName:SetWordWrap(false)
+        pickedName:SetText(RCL["Click a frame to pick it"])
+        local whiteTxt = GetColor("whiteText")
+        pickedName:SetTextColor(whiteTxt.r, whiteTxt.g, whiteTxt.b, 1)
+        panel.pickedName = pickedName
 
         local selectedLabel = RC:CreateFontString(panel, "OVERLAY", nil, 10)
         selectedLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PANEL_PAD, yPos)
         selectedLabel:SetJustifyH("RIGHT")
         selectedLabel:SetText("")
-        local grayTxt = RC:GetColor("text", "gray")
         selectedLabel:SetTextColor(grayTxt.r, grayTxt.g, grayTxt.b, 1)
         panel.selectedLabel = selectedLabel
-        yPos = yPos - 13
-
-        local dropdownFrame = RC.UI:CreateScrollableDropdown(panel, INNER_W, RCL["-- Select Element --"], 10)
-        dropdownFrame:SetEmptyText(RCL["Nothing movable yet"], RCL["Frames register here as you turn their features on."])
-        dropdownFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
-        dropdownFrame:SetHeight(24)
-        panel.dropdownFrame = dropdownFrame
-        yPos = yPos - 24 - 10
+        yPos = yPos - 15
 
         local ARROW_UP = "Interface\\AddOns\\Readycheck\\Media\\arrowUp"
         local ARROW_DOWN = "Interface\\AddOns\\Readycheck\\Media\\arrow"
@@ -404,6 +519,11 @@ local function InitializeUIMover()
             input:SetTextColor(whiteText.r, whiteText.g, whiteText.b, 1)
             input:SetText("0")
             input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            -- Enter puts the typed numbers on the frame, as Apply does.
+            input:SetScript("OnEnterPressed", function(self)
+                self:ClearFocus()
+                UM:ApplyCoordinates()
+            end)
             -- Focus lights the box gold; it is the only affordance a flat
             -- box has for "you are typing here".
             input:SetScript("OnEditFocusGained", function()
@@ -426,61 +546,30 @@ local function InitializeUIMover()
         panel.yInput = CreateAxisStrip(PANEL_PAD + COL_W + COL_GAP, yPos, RCL["Y"], "down", "up",
             function() UM:NudgePosition(0, -1) end,
             function() UM:NudgePosition(0, 1) end)
-        yPos = yPos - 13 - STRIP_H - 10
+        yPos = yPos - 13 - STRIP_H - 8
 
-        -- Apply / Reset / Reset all: three equal buttons across the row.
-        local BTN_GAP = 4
-        local BTN_W = math.floor((INNER_W - 2 * BTN_GAP) / 3)
-        local BTN_H = 22
-
-        local applyBtn = RC.UI:CreateStyledButton(panel, RCL["Apply"], BTN_W, BTN_H)
+        -- Apply / Reset: the typed numbers on the picked frame, or its
+        -- default spot.
+        local HALF_W = math.floor((INNER_W - BTN_GAP) / 2)
+        local applyBtn = RC.UI:CreateStyledButton(panel, RCL["Apply"], HALF_W, BTN_H)
         applyBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
         applyBtn:SetScript("OnClick", function()
             UM:ApplyCoordinates()
         end)
 
-        local resetBtn = RC.UI:CreateStyledButton(panel, RCL["Reset"], BTN_W, BTN_H)
+        local resetBtn = RC.UI:CreateStyledButton(panel, RCL["Reset"], INNER_W - HALF_W - BTN_GAP, BTN_H)
         resetBtn:SetPoint("LEFT", applyBtn, "RIGHT", BTN_GAP, 0)
         resetBtn:SetScript("OnClick", function()
             if UM.selectedFrame then
-                UM:ResetFramePosition(UM.selectedFrame)
-                UM:UpdateCoordinateInputs(UM.selectedFrame)
+                local key = UM.selectedFrame
+                UM:Change(key, function() UM:ResetFramePosition(key) end)
+                UM:UpdateCoordinateInputs(key)
+                UM:PlaceActions()
             end
         end)
-
-        local resetAllBtn = RC.UI:CreateStyledButton(panel, RCL["Reset all"], INNER_W - 2 * (BTN_W + BTN_GAP), BTN_H)
-        resetAllBtn:SetPoint("LEFT", resetBtn, "RIGHT", BTN_GAP, 0)
-        if resetAllBtn.text then
-            local red = RC:GetColor("text", "red")
-            resetAllBtn.text:SetTextColor(red.r, red.g, red.b, 1)
-        end
-        resetAllBtn:SetScript("OnClick", function()
-            for frameKey, _ in pairs(UM.frames) do
-                UM:ResetFramePosition(frameKey)
-            end
-            if UM.selectedFrame then
-                UM:UpdateCoordinateInputs(UM.selectedFrame)
-            end
-        end)
-        yPos = yPos - BTN_H - 6
-
-        -- The list of every frame, with a tick to hide each one while
-        -- moving (see SHOW / HIDE WHILE MOVING below).
-        local visBtn = RC.UI:CreateStyledButton(panel, RCL["Show / hide frames"], INNER_W, BTN_H)
-        visBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
-        visBtn:SetScript("OnClick", function()
-            UM:ToggleVisibilityList()
-        end)
-        panel.visBtn = visBtn
         yPos = yPos - BTN_H - 10
 
-        local divider = panel:CreateTexture(nil, "ARTWORK")
-        divider:SetTexture(FLAT)
-        divider:SetHeight(1)
-        divider:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
-        divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PANEL_PAD, yPos)
-        local divCol = RC:GetColor("ui", "borderNormal")
-        divider:SetVertexColor(divCol.r, divCol.g, divCol.b, divCol.a or 1)
+        Divider(yPos)
         yPos = yPos - 1 - 10
 
         -- A slider row: 60px label at the left, the slider filling the
@@ -524,14 +613,7 @@ local function InitializeUIMover()
         gridCheckbox.parentFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
 
         gridCheckbox:SetScript("OnClick", function(self)
-            UM.showGrid = self:GetChecked() and true or false
-            if UM.showGrid then
-                if UM.isMoving then
-                    UM:ShowGrid()
-                end
-            else
-                UM:HideGrid()
-            end
+            UM:SetGridShown(self:GetChecked() and true or false)
         end)
 
         panel.gridCheckbox = gridCheckbox
@@ -557,7 +639,7 @@ local function InitializeUIMover()
         snapCheckbox.parentFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
 
         snapCheckbox:SetScript("OnClick", function(self)
-            UM.snapEnabled = self:GetChecked() and true or false
+            UM:SetSnap(self:GetChecked() and true or false)
         end)
 
         panel.snapCheckbox = snapCheckbox
@@ -572,22 +654,68 @@ local function InitializeUIMover()
             slider.Text:SetText(value .. RCL["px"])
         end)
         LayoutSliderRow(yPos, RCL["Snap"], snapSizeSlider)
-        yPos = yPos - SLIDER_ROW_H - 8
+        yPos = yPos - SLIDER_ROW_H - 10
 
-        local infoText = RC:CreateFontString(panel, "OVERLAY", nil, 10)
-        infoText:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
-        infoText:SetWidth(INNER_W)
-        infoText:SetJustifyH("LEFT")
-        infoText:SetText(RCL["|cff888888Click anchors or dropdown to select.\nDrag anchors to move. Right-click to reset.\nShift+Right-click to hide one while you move the rest.\nEnter exact X/Y values and click Apply.|r"])
-
-        -- Save & lock: the one "positive" fill on the panel - green fill
-        -- with a gold ring, full width along the bottom.
-        local saveBtn = RC.UI:CreateStyledButton(panel, RCL["Save & lock"], INNER_W, 26)
-        saveBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", PANEL_PAD, PANEL_PAD)
-        saveBtn:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -PANEL_PAD, PANEL_PAD)
-        saveBtn:SetScript("OnClick", function()
-            UM:ExitMoveMode("save & lock")
+        -- Cancel / Save & Exit along the bottom, as on the bar (the panel
+        -- is all there is while the game's own Edit Mode is open).
+        local cancelBtn = RC.UI:CreateStyledButton(panel, RCL["Cancel"], HALF_W, 26)
+        cancelBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, yPos)
+        cancelBtn:SetScript("OnClick", function()
+            UM:CancelMoveMode()
         end)
+        Tip(cancelBtn, RCL["Cancel"], RCL["Put back every frame moved since this opened, and leave."], "ANCHOR_TOP")
+
+        -- Save & Exit: the one "positive" fill on the panel - green fill
+        -- with a gold ring.
+        local saveBtn = RC.UI:CreateStyledButton(panel, RCL["Save & Exit"], INNER_W - HALF_W - BTN_GAP, 26)
+        saveBtn:SetPoint("LEFT", cancelBtn, "RIGHT", BTN_GAP, 0)
+        saveBtn:SetScript("OnClick", function()
+            UM:ExitMoveMode("save & exit")
+        end)
+        UM.PaintSave(saveBtn)
+        Tip(saveBtn, RCL["Save & Exit"], RCL["Keep everything where it is now, lock it and leave. (Escape does the same.)"], "ANCHOR_TOP")
+        yPos = yPos - 26 - PANEL_PAD
+        panel:SetHeight(-yPos)
+
+        -- the 5.0 popup header (UIF_Dialogs); the panel keeps its own
+        -- Move UI colours and buttons
+        RC.UI:SkinPopup(panel, { header = header, title = title, close = closeButton, chrome = false, scan = false })
+        panel:Hide()
+        self.controlPanel = panel
+        -- (the list lives in the panel now; the name the rest of the
+        -- addon and the game's Edit Mode button know it by is kept)
+        self.visList = panel
+
+        return panel
+    end
+
+    -- Grid and Snap, from the bar's buttons or the panel's ticks: the two
+    -- always agree.
+    function UM:SetGridShown(on)
+        self.showGrid = on and true or false
+        if self.showGrid then
+            if self.isMoving then self:ShowGrid() end
+        else
+            self:HideGrid()
+        end
+        local p = self.controlPanel
+        if p and p.gridCheckbox and (p.gridCheckbox:GetChecked() and true or false) ~= self.showGrid then
+            p.gridCheckbox:SetChecked(self.showGrid)
+        end
+        self:RefreshTop()
+    end
+
+    function UM:SetSnap(on)
+        self.snapEnabled = on and true or false
+        local p = self.controlPanel
+        if p and p.snapCheckbox and (p.snapCheckbox:GetChecked() and true or false) ~= self.snapEnabled then
+            p.snapCheckbox:SetChecked(self.snapEnabled)
+        end
+        self:RefreshTop()
+    end
+
+    -- The green "this keeps your work" look of Save & Exit (bar and panel).
+    function UM.PaintSave(saveBtn)
         if RC.UI.SetButtonConfigured then
             RC.UI:SetButtonConfigured(saveBtn, true)
         end
@@ -595,39 +723,25 @@ local function InitializeUIMover()
             local saveBtnBg = GetColor("saveButtonBg")
             saveBtn.bg:SetVertexColor(saveBtnBg.r, saveBtnBg.g, saveBtnBg.b, 1)
         end
-        saveBtn:SetScript("OnEnter", function(self)
+        -- (hooked, after the button's own hover paint: a tooltip hooked
+        -- on before or after stays)
+        saveBtn:HookScript("OnEnter", function(self)
             if self.bg then
                 local saveBtnHover = GetColor("saveButtonBgHover")
                 self.bg:SetVertexColor(saveBtnHover.r, saveBtnHover.g, saveBtnHover.b, 1)
             end
         end)
-        saveBtn:SetScript("OnLeave", function(self)
+        saveBtn:HookScript("OnLeave", function(self)
             if self.bg then
                 local saveBtnBg = GetColor("saveButtonBg")
                 self.bg:SetVertexColor(saveBtnBg.r, saveBtnBg.g, saveBtnBg.b, 1)
             end
         end)
-
-        -- the 5.0 popup header (UIF_Dialogs); the panel keeps its own
-        -- Move UI colours and buttons
-        RC.UI:SkinPopup(panel, { header = header, title = title, close = closeButton, chrome = false, scan = false })
-        panel:Hide()
-        self.controlPanel = panel
-
-        return panel
     end
 
+    -- (kept for callers from before the list moved into the panel)
     function UM:InitializeDropdown()
-        if not self.controlPanel or not self.controlPanel.dropdownFrame then return end
-        local dd = self.controlPanel.dropdownFrame
-        local items = {}
-        for frameKey, data in pairs(self.frames) do
-            items[#items + 1] = { text = data.displayName, value = frameKey }
-        end
-        table.sort(items, function(a, b) return a.text < b.text end)
-        dd:SetItems(items, function(value)
-            UM:SelectFrame(value)
-        end)
+        self:RefreshVisibilityList()
     end
 
     function UM:SelectFrame(frameKey)
@@ -635,14 +749,11 @@ local function InitializeUIMover()
         local data = self.frames[frameKey]
         if not data then return end
 
-        if self.controlPanel and self.controlPanel.dropdownFrame then
-            local dd = self.controlPanel.dropdownFrame
-            if dd.text then dd.text:SetText(data.displayName) end
-        end
-
         self:UpdateCoordinateInputs(frameKey)
 
         self:HighlightAnchor(frameKey)
+        self:PlaceActions()
+        self:RefreshVisibilityList()
     end
 
     function UM:UpdateCoordinateInputs(frameKey)
@@ -652,8 +763,10 @@ local function InitializeUIMover()
         local point, x, y = Readout(data)
         self.controlPanel.xInput:SetText(FmtCoord(x))
         self.controlPanel.yInput:SetText(FmtCoord(y))
-        -- The dropdown already names the frame; the label only carries
-        -- the anchor point the numbers are relative to.
+        -- The picked frame's name, and the point its numbers are from.
+        if self.controlPanel.pickedName then
+            self.controlPanel.pickedName:SetText(data.displayName or frameKey)
+        end
         if self.controlPanel.selectedLabel then
             self.controlPanel.selectedLabel:SetText(point)
         end
@@ -676,21 +789,23 @@ local function InitializeUIMover()
         end
         local data = self.frames[self.selectedFrame]
         if not data or not data.frame then return end
-        SetStored(data,
-            tonumber(self.controlPanel.xInput:GetText()) or 0,
-            tonumber(self.controlPanel.yInput:GetText()) or 0)
+        local x = tonumber(self.controlPanel.xInput:GetText()) or 0
+        local y = tonumber(self.controlPanel.yInput:GetText()) or 0
+        self:Change(self.selectedFrame, function() SetStored(data, x, y) end)
         self:UpdateCoordinateInputs(self.selectedFrame)
+        self:PlaceActions()
     end
 
     -- One arrow press = one UI unit.
     function UM:NudgePosition(deltaX, deltaY)
-        if not self.selectedFrame or not self.controlPanel then return end
+        if not self.selectedFrame then return end
         if self:RefuseLocked(self.selectedFrame) then return end
         local data = self.frames[self.selectedFrame]
         if not data or not data.frame then return end
         local _, x, y = Readout(data)
-        SetStored(data, x + deltaX, y + deltaY)
+        self:Change(self.selectedFrame, function() SetStored(data, x + deltaX, y + deltaY) end, nil, true)
         self:UpdateCoordinateInputs(self.selectedFrame)
+        self:PlaceActions()
     end
 
     function UM:HighlightAnchor(frameKey)
@@ -1049,6 +1164,131 @@ local function InitializeUIMover()
         end
     end
 
+    -- ============================================================
+    -- THE PASS: UNDO AND CANCEL
+    -- Where every frame was when move mode opened is kept (UM.entry) and
+    -- every change made since is on a stack (UM.undo). Undo (Ctrl+Z) puts
+    -- the last one back; Cancel puts back everything. A spot is the
+    -- frame's own stored numbers - what Readout shows - so putting one
+    -- back goes through the same save a drop does.
+    -- ============================================================
+    local function Spot(data)
+        if not (data and data.frame) then return nil end
+        local _, x, y = Readout(data)
+        return { x = x or 0, y = y or 0 }
+    end
+    local function SameSpot(a, b)
+        return (a and b and math.abs(a.x - b.x) < 0.05 and math.abs(a.y - b.y) < 0.05) and true or false
+    end
+    local function PutBack(data, spot)
+        if not (data and data.frame and spot) then return end
+        data._pending = nil
+        SetStored(data, spot.x, spot.y)
+    end
+    UM.Spot = Spot
+
+    -- One change to one frame (a drop, a nudge, typed numbers, a reset):
+    -- where the frame was is remembered when it moved. `before` is the
+    -- spot taken when a drag began; `nudge` folds a run of arrow presses
+    -- on one frame into a single step back.
+    function UM:Change(frameKey, fn, before, nudge)
+        local data = self.frames[frameKey]
+        if not (data and data.frame) then return end
+        before = before or Spot(data)
+        fn()
+        if data._pending or not SameSpot(before, Spot(data)) then
+            local last = self.undo[#self.undo]
+            if not (nudge and last and last.nudge == frameKey) then
+                self.undo[#self.undo + 1] = { { key = frameKey, spot = before }, nudge = nudge and frameKey or nil }
+            end
+        end
+        self:RefreshTop()
+    end
+
+    -- Several frames in one step (Reset all): one Undo puts them all back.
+    function UM:ChangeMany(fn)
+        local before = {}
+        for key, data in pairs(self.frames) do
+            if data.frame then before[key] = Spot(data) end
+        end
+        fn()
+        local entry = {}
+        for key, spot in pairs(before) do
+            local data = self.frames[key]
+            if data and data.frame and (data._pending or not SameSpot(spot, Spot(data))) then
+                entry[#entry + 1] = { key = key, spot = spot }
+            end
+        end
+        if #entry > 0 then self.undo[#self.undo + 1] = entry end
+        self:RefreshTop()
+    end
+
+    function UM:CanUndo() return #self.undo > 0 end
+
+    -- Puts back the last move. A secure frame cannot be anchored in a
+    -- fight: its move stays on the stack until combat ends (a drop that
+    -- was still waiting for combat to end is simply dropped).
+    function UM:Undo()
+        local n = #self.undo
+        if n == 0 then return false end
+        local entry = self.undo[n]
+        for _, e in ipairs(entry) do
+            local d = self.frames[e.key]
+            if d and not d._pending and self:IsLocked(e.key) then
+                self:RefuseLocked(e.key)
+                return false
+            end
+        end
+        self.undo[n] = nil
+        for _, e in ipairs(entry) do
+            local d = self.frames[e.key]
+            if d and d.frame then
+                if d._pending and self:IsLocked(e.key) then
+                    d._pending = nil
+                    AttachAnchor(d)
+                    UM.PaintLock(d)
+                else
+                    PutBack(d, e.spot)
+                end
+            end
+        end
+        if self.selectedFrame then self:UpdateCoordinateInputs(self.selectedFrame) end
+        self:RefreshTop()
+        return true
+    end
+
+    -- How many frames are not where they were when the pass opened.
+    function UM:MovedCount()
+        local n = 0
+        for key, spot in pairs(self.entry) do
+            local d = self.frames[key]
+            if d and d.frame and (d._pending or not SameSpot(spot, Spot(d))) then n = n + 1 end
+        end
+        return n
+    end
+
+    -- Cancel: every frame moved in this pass goes back to where it was
+    -- when the pass opened. A secure one waits for combat to end.
+    function UM:RestoreEntry()
+        for key, spot in pairs(self.entry) do
+            local d = self.frames[key]
+            if d and d.frame then
+                if d._pending then
+                    d._pending = nil
+                    AttachAnchor(d)
+                end
+                if not SameSpot(spot, Spot(d)) then
+                    if self:IsLocked(key) then
+                        d._restoreAfterCombat = spot
+                    else
+                        PutBack(d, spot)
+                    end
+                end
+            end
+        end
+        self.undo = {}
+    end
+
     -- Combat over: put down every drop that waited, repaint the locks.
     function UM:OnCombatEnd()
         for _, data in pairs(self.frames) do
@@ -1057,6 +1297,11 @@ local function InitializeUIMover()
                 data._pending = nil
                 if data.frame then MoveCenter(data, p[1], p[2]) end
             end
+            if data._restoreAfterCombat then
+                local spot = data._restoreAfterCombat
+                data._restoreAfterCombat = nil
+                if data.frame then PutBack(data, spot) end
+            end
             if data._hideAfterCombat then
                 data._hideAfterCombat = nil
                 if data.frame and not self.isMoving then data.frame:Hide() end
@@ -1064,11 +1309,16 @@ local function InitializeUIMover()
             PaintLock(data)
         end
         if self.isMoving and self.selectedFrame then self:UpdateCoordinateInputs(self.selectedFrame) end
+        if self.isMoving then
+            self:RefreshTop()
+            self:ApplyKeys()
+        end
     end
 
     function UM:OnCombatStart()
         if not self.isMoving then return end
         for _, data in pairs(self.frames) do PaintLock(data) end
+        self:RefreshTop()
     end
 
     do
@@ -1161,6 +1411,7 @@ local function InitializeUIMover()
                 UM:SelectFrame(self.frameKey)
                 -- a secure frame cannot move in combat: no drag starts
                 if UM:IsLocked(self.frameKey) then return end
+                self._spotBefore = Spot(UM.frames[self.frameKey])
                 self:StartMoving()
                 self.isDragging = true
             end
@@ -1170,14 +1421,18 @@ local function InitializeUIMover()
             if button == "LeftButton" and self.isDragging then
                 self:StopMovingOrSizing()
                 self.isDragging = false
-                UM:SaveFramePosition(self.frameKey, self)
+                local before = self._spotBefore
+                self._spotBefore = nil
+                UM:Change(self.frameKey, function() UM:SaveFramePosition(self.frameKey, self) end, before)
                 UM:UpdateCoordinateInputs(self.frameKey)
+                UM:PlaceActions()
             elseif button == "RightButton" and IsShiftKeyDown() then
                 GameTooltip:Hide()
                 UM:SetFrameHidden(self.frameKey, true)
             elseif button == "RightButton" then
-                UM:ResetFramePosition(self.frameKey)
+                UM:Change(self.frameKey, function() UM:ResetFramePosition(self.frameKey) end)
                 UM:UpdateCoordinateInputs(self.frameKey)
+                UM:PlaceActions()
             end
         end)
 
@@ -1226,6 +1481,7 @@ local function InitializeUIMover()
                 GameTooltip:AddLine(RCL["Locked in combat: it can be moved again when combat ends."], red.r, red.g, red.b, true)
             end
             GameTooltip:AddLine(RCL["Left-click: Select & drag"], tooltipText.r, tooltipText.g, tooltipText.b)
+            GameTooltip:AddLine(RCL["Arrow keys: Nudge the picked box (Shift: 10)"], tooltipText.r, tooltipText.g, tooltipText.b)
             GameTooltip:AddLine(RCL["Right-click: Reset position"], tooltipText.r, tooltipText.g, tooltipText.b)
             GameTooltip:AddLine(RCL["Shift+Right-click: Hide while moving"], tooltipText.r, tooltipText.g, tooltipText.b)
             GameTooltip:Show()
@@ -1439,7 +1695,8 @@ local function InitializeUIMover()
             for _, f in ipairs(ContentFrames(data)) do Unfade(f) end
             if data.anchor and data.frame then
                 AttachAnchor(data)
-                data.anchor:Show()
+                -- (a box the top bar's filter has put away stays away)
+                data.anchor:SetShown(self:FilterMatches(frameKey))
             end
         end
     end
@@ -1458,112 +1715,48 @@ local function InitializeUIMover()
         for _, frame in ipairs(list) do Unfade(frame) end
     end
 
-    -- The list: a small window in the panel's style, one tick per frame.
-    local VIS_W, VIS_H, VIS_ROW = 260, 420, 22
+    -- THE LIST lives in the Frames panel: a row per frame - a tick (shown
+    -- while moving) and its name (click: pick it). The box the top bar's
+    -- "Find a frame..." filters is the same list.
+    function UM:FilterMatches(frameKey)
+        local t = self.filterText
+        if not t or t == "" then return true end
+        local data = self.frames[frameKey]
+        local name = data and (data.displayName or frameKey) or frameKey
+        return tostring(name):lower():find(t, 1, true) ~= nil
+    end
+
+    -- The top bar's box: for the moment, only the boxes whose name holds
+    -- what was typed (the frames themselves stay as they are).
+    function UM:SetFilter(text)
+        self.filterText = tostring(text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        if not self.isMoving then return end
+        for key, data in pairs(self.frames) do
+            if data.anchor and data.frame and not self.hiddenKeys[key] then
+                data.anchor:SetShown(self:FilterMatches(key))
+            end
+        end
+        self:RefreshVisibilityList()
+        self:PlaceActions()
+        self:RefreshTop()
+    end
 
     function UM:CreateVisibilityList()
-        if self.visList then return self.visList end
-        local panelBg = GetColor("panelBackground")
-        local panelBorder = GetColor("panelBorder")
-        local headerTxt = GetColor("headerText")
-        local INNER = VIS_W - 2 * PANEL_PAD
-
-        local w = CreateFrame("Frame", "WR_UIMoverVisibility", UIParent)
-        w:SetSize(VIS_W, VIS_H)
-        w:SetFrameStrata("TOOLTIP")
-        w:SetFrameLevel(2020)
-        w:SetMovable(true)
-        w:EnableMouse(true)
-        w:RegisterForDrag("LeftButton")
-        w:SetClampedToScreen(true)
-        w:SetScript("OnDragStart", w.StartMoving)
-        w:SetScript("OnDragStop", w.StopMovingOrSizing)
-        RC.UI:RegisterEscapeClose(w)
-
-        w.bg = FlatFill(w, panelBg)
-        w.border = RC.UI:CreateSimpleBorder(w)
-        RC.UI:UpdateBorderColor(w.border, panelBorder)
-
-        local header = CreateFrame("Frame", nil, w)
-        header:SetHeight(TITLEBAR_H)
-        header:SetPoint("TOPLEFT", w, "TOPLEFT", 1, -1)
-        header:SetPoint("TOPRIGHT", w, "TOPRIGHT", -1, -1)
-        local headerFill = FlatFill(header, GetColor("headerBackground"))
-        if RC.UI.ApplyHeaderArt then
-            RC.UI:ApplyHeaderArt(header, { fill = headerFill, stepX = 90 })
-        end
-        local titleIcon = RC.UI:AddTitleIcon(header, 16, 8)
-        local title = RC:CreateFontString(header, "OVERLAY", nil, 15)
-        title:SetPoint("LEFT", titleIcon, "RIGHT", 8, 0)
-        title:SetText(RCL["Show / hide"])
-        title:SetTextColor(headerTxt.r, headerTxt.g, headerTxt.b, 1)
-        local close = RC.UI:CreateXCloseButton(header, 22, function() w:Hide() end)
-        close:SetPoint("RIGHT", header, "RIGHT", -5, 0)
-
-        local y = -(TITLEBAR_H + 1 + 10)
-        local desc = RC:CreateFontString(w, "OVERLAY", nil, 10)
-        desc:SetPoint("TOPLEFT", w, "TOPLEFT", PANEL_PAD, y)
-        desc:SetWidth(INNER)
-        desc:SetJustifyH("LEFT")
-        desc:SetText(RCL["Untick a frame to hide it while you move the rest. Everything comes back when you lock."])
-        local gray = RC:GetColor("text", "gray")
-        desc:SetTextColor(gray.r, gray.g, gray.b, 1)
-        y = y - 30
-
-        local half = math.floor((INNER - 4) / 2)
-        local showAll = RC.UI:CreateStyledButton(w, RCL["Show all"], half, 22)
-        showAll:SetPoint("TOPLEFT", w, "TOPLEFT", PANEL_PAD, y)
-        showAll:SetScript("OnClick", function()
-            for key in pairs(UM.frames) do
-                if UM.hiddenKeys[key] then
-                    UM.hiddenKeys[key] = nil
-                    UM:ApplyHidden(key)
-                end
-            end
-            UM:RefreshVisibilityList()
-        end)
-        local hideAll = RC.UI:CreateStyledButton(w, RCL["Hide all"], INNER - half - 4, 22)
-        hideAll:SetPoint("LEFT", showAll, "RIGHT", 4, 0)
-        hideAll:SetScript("OnClick", function()
-            for key, data in pairs(UM.frames) do
-                if data.frame and not UM.hiddenKeys[key] then
-                    UM.hiddenKeys[key] = true
-                    UM:ApplyHidden(key)
-                end
-            end
-            UM:RefreshVisibilityList()
-        end)
-        y = y - 22 - 8
-
-        local body = CreateFrame("Frame", nil, w)
-        body:SetPoint("TOPLEFT", w, "TOPLEFT", PANEL_PAD, y)
-        body:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -PANEL_PAD + 6, PANEL_PAD)
-        local scroll = CreateFrame("ScrollFrame", nil, body)
-        scroll:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
-        scroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -22, 0)
-        local content = CreateFrame("Frame", nil, scroll)
-        content:SetSize(INNER - 22, 1)
-        scroll:SetScrollChild(content)
-        w.scroll, w.content = scroll, content
-        w.scrollBar = RC.UI:AttachScrollbar(scroll, body, { width = 12 })
-        w.rows = {}
-
-        RC.UI:SkinPopup(w, { header = header, title = title, close = close, chrome = false, scan = false })
-        w:Hide()
-        self.visList = w
-        return w
+        return self:CreateControlPanel()
     end
 
     function UM:RefreshVisibilityList()
-        local w = self.visList
+        local w = self.controlPanel
         if not (w and w:IsShown()) then return end
         local items = {}
         for key, data in pairs(self.frames) do
-            if data.frame then
+            if data.frame and self:FilterMatches(key) then
                 items[#items + 1] = { key = key, text = data.displayName or key }
             end
         end
         table.sort(items, function(a, b) return a.text < b.text end)
+        local normal = GetColor("checkboxLabel")
+        local picked = GetColor("anchorPosText")
         for i, it in ipairs(items) do
             local cb = w.rows[i]
             if not cb then
@@ -1572,12 +1765,27 @@ local function InitializeUIMover()
                 cb:SetScript("OnClick", function(self)
                     if self.frameKey then
                         UM:SetFrameHidden(self.frameKey, not self:GetChecked())
+                        UM:PlaceActions()
                     end
                 end)
+                -- the name is the way to pick the frame
+                local pick = CreateFrame("Button", nil, cb.parentFrame)
+                pick:SetPoint("TOPLEFT", cb.parentFrame, "TOPLEFT", (cb:GetWidth() or 14) + 4, 0)
+                pick:SetPoint("BOTTOMRIGHT", cb.parentFrame, "BOTTOMRIGHT", 0, 0)
+                pick:SetScript("OnClick", function()
+                    if cb.frameKey then UM:SelectFrame(cb.frameKey) end
+                end)
+                -- (the name lights under the mouse; no fill of its own)
+                RC.UI:AttachHover(pick, normal, GetColor("whiteText"),
+                    { text = cb.Text, normTextColor = normal, hoverTextColor = GetColor("whiteText") })
+                cb.pick = pick
                 w.rows[i] = cb
             end
             cb.frameKey = it.key
             cb.Text:SetText(it.text)
+            local c = (it.key == self.selectedFrame) and picked or normal
+            cb.Text:SetTextColor(c.r, c.g, c.b, 1)
+            cb.pick._hoverNormText = c
             cb:SetChecked(not self.hiddenKeys[it.key])
             cb.parentFrame:ClearAllPoints()
             cb.parentFrame:SetPoint("TOPLEFT", w.content, "TOPLEFT", 0, -(i - 1) * VIS_ROW)
@@ -1592,25 +1800,319 @@ local function InitializeUIMover()
         w.scrollBar:SyncRange(contentH, w.scroll:GetHeight())
     end
 
-    -- Beside the panel, or under the Edit Mode buttons when there is no
-    -- panel (the game's Edit Mode is open).
+    -- The Frames panel, opened and closed (the bar's Frames button; the
+    -- button under the game's Edit Mode when that is what is open).
     function UM:ToggleVisibilityList()
-        local w = self:CreateVisibilityList()
+        local w = self:CreateControlPanel()
         if w:IsShown() then
             w:Hide()
             return
         end
-        w:ClearAllPoints()
-        local p = self.controlPanel
-        if p and p:IsShown() then
-            w:SetPoint("TOPRIGHT", p, "TOPLEFT", -6, 0)
-        elseif self.editModeVisButton and self.editModeVisButton:IsVisible() then
-            w:SetPoint("TOP", self.editModeVisButton, "BOTTOM", 0, -6)
+        if self.panelless then
+            self:OpenPanelFromEditMode()
         else
-            w:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            w:Show()
         end
-        w:Show()
         self:RefreshVisibilityList()
+        self:RefreshTop()
+    end
+
+    -- ============================================================
+    -- THE TOP BAR
+    -- One strip along the top of the screen, the way into everything move
+    -- mode does (the same bar ZacUI's Edit Mode has): what this is, how
+    -- many frames are out and how many have moved, a box that finds one
+    -- by name, Grid, Snap, the Frames panel, Undo, Cancel, Save & Exit. A
+    -- line under it says how to use it.
+    -- ============================================================
+    local TOP_H, HINT_H = 44, 22
+    local FILTER_MIN, FILTER_MAX = 120, 240
+    local HINT_TEXT = RCL["Drag a box to move it.     Arrow keys nudge the picked box (Shift: 10).     Right-click a box to reset it.     Escape saves and exits."]
+    local HINT_SHORT = RCL["Drag to move.   Arrows nudge.   Right-click resets.   Escape saves."]
+
+    -- What fits, from what the texts measure. Right to left: Save & Exit,
+    -- Cancel, Undo | Frames, Snap, Grid | the search box. Left: the title
+    -- and a status line. The search box gets what is left between the
+    -- two, between FILTER_MIN and FILTER_MAX. When that is too little the
+    -- status line shortens, then goes; then the search box goes. Nothing
+    -- is ever laid over anything.
+    function UM:LayoutTop()
+        local top = self.top
+        if not top then return end
+        local width = top:GetWidth() or 640
+        local x = 12
+        local function Put(b, gap)
+            b:ClearAllPoints()
+            b:SetPoint("RIGHT", top, "RIGHT", -x, 0)
+            x = x + (b:GetWidth() or 0) + gap
+        end
+        Put(top.save, 6) Put(top.cancel, 6) Put(top.undo, 16)
+        Put(top.list, 6) Put(top.snap, 6) Put(top.grid, 16)
+        local left = 14 + 3 + 9 + math.ceil(top.title:GetStringWidth() or 80)
+        local st = top._status or { "", "" }
+        local tries = { { st[1], true }, { st[2], true }, { "", true }, { st[2], false }, { "", false } }
+        for _, t in ipairs(tries) do
+            local status, withFilter = t[1], t[2]
+            local sw = 0
+            if status ~= "" then
+                top.count:SetText(status)
+                sw = 10 + math.ceil(top.count:GetStringWidth() or (#status * 6))
+            end
+            local room = width - x - left - sw - 16
+            if room >= (withFilter and FILTER_MIN or 0) then
+                top.count:SetText(status)
+                top.count:SetShown(status ~= "")
+                top.filter:SetShown(withFilter)
+                if withFilter then
+                    top.filter:SetWidth(math.min(FILTER_MAX, room))
+                    top.filter:ClearAllPoints()
+                    top.filter:SetPoint("RIGHT", top, "RIGHT", -x, 0)
+                end
+                top._layout = { status = status, filter = withFilter, room = room }
+                return
+            end
+        end
+        top.count:SetText("")
+        top.count:Hide()
+        top.filter:Hide()
+        top._layout = { status = "", filter = false, room = 0 }
+    end
+
+    function UM:CreateTopBar()
+        if self.top then return self.top end
+        local top = CreateFrame("Frame", "WR_UIMoverTop", UIParent)
+        top:SetFrameStrata("TOOLTIP")
+        -- above every handle, as the Frames panel is
+        top:SetFrameLevel(2000)
+        top:SetHeight(TOP_H)
+        local sw = UIParent:GetWidth() or 1024
+        top:SetWidth(math.max(640, math.min(1040, sw - 40)))
+        top:SetPoint("TOP", UIParent, "TOP", 0, 0)
+        top:EnableMouse(true)
+        top.bg = FlatFill(top, GetColor("panelBackground"), 0.97)
+        top.border = RC.UI:CreateSimpleBorder(top)
+        RC.UI:UpdateBorderColor(top.border, GetColor("panelBorder"))
+        top:Hide()
+
+        local tick = top:CreateTexture(nil, "ARTWORK")
+        tick:SetTexture(FLAT)
+        tick:SetSize(3, 20)
+        tick:SetPoint("LEFT", top, "LEFT", 14, 0)
+        local gold = RC:GetColor("ui", "accentGold")
+        tick:SetVertexColor(gold.r, gold.g, gold.b, 1)
+
+        local headerTxt = GetColor("headerText")
+        top.title = RC:CreateFontString(top, "OVERLAY", nil, 15)
+        top.title:SetPoint("LEFT", tick, "RIGHT", 9, 0)
+        top.title:SetText(RCL["Edit Mode"])
+        top.title:SetTextColor(headerTxt.r, headerTxt.g, headerTxt.b, 1)
+        -- the status line: how many frames, and how many moved in this
+        -- pass (LayoutTop shortens or drops it when the bar is narrow)
+        local grayTxt = RC:GetColor("text", "gray")
+        top.count = RC:CreateFontString(top, "OVERLAY", nil, 10)
+        top.count:SetPoint("LEFT", top.title, "RIGHT", 10, -1)
+        top.count:SetWordWrap(false)
+        top.count:SetTextColor(grayTxt.r, grayTxt.g, grayTxt.b, 1)
+
+        local function Btn(label, w, tip, body, fn)
+            local b = RC.UI:CreateStyledButton(top, label, w, 24)
+            b:SetScript("OnClick", fn)
+            Tip(b, tip, body)
+            return b
+        end
+        top.save = Btn(RCL["Save & Exit"], 96, RCL["Save & Exit"],
+            RCL["Keep everything where it is now, lock it and leave. (Escape does the same.)"],
+            function() UM:ExitMoveMode("save & exit") end)
+        UM.PaintSave(top.save)
+        top.cancel = Btn(RCL["Cancel"], 64, RCL["Cancel"],
+            RCL["Put back every frame moved since this opened, and leave."],
+            function() UM:CancelMoveMode() end)
+        top.undo = Btn(RCL["Undo"], 56, RCL["Undo  (Ctrl+Z)"], RCL["Put back the last move."],
+            function() UM:Undo() end)
+        top.list = Btn(RCL["Frames"], 66, RCL["Frames"],
+            RCL["The list of everything that can be moved: untick one to hide it while you place the rest, pick one by name, type exact numbers, reset one or all of them, set the grid and snap sizes."],
+            function() UM:ToggleVisibilityList() end)
+        top.snap = Btn(RCL["Snap"], 52, RCL["Snap to grid"],
+            RCL["A dragged frame lands on the snap grid (its size is in the Frames panel). A frame resting on the screen's edge stays there."],
+            function() UM:SetSnap(not UM.snapEnabled) end)
+        top.grid = Btn(RCL["Grid"], 52, RCL["Grid"], RCL["The alignment grid under everything (its size is in the Frames panel)."],
+            function() UM:SetGridShown(not UM.showGrid) end)
+
+        top.filter = RC.UI:CreateSearchBox(top, { width = FILTER_MIN, height = 24, placeholder = RCL["Find a frame..."],
+            onChange = function(text) UM:SetFilter(text) end })
+
+        -- HOW TO USE IT, in one line under the bar.
+        local hint = CreateFrame("Frame", "WR_UIMoverHint", top)
+        hint:SetFrameStrata("TOOLTIP")
+        hint:SetFrameLevel(2000)
+        hint:SetHeight(HINT_H)
+        hint:EnableMouse(false)
+        hint.bg = FlatFill(hint, GetColor("panelBackground"), 0.80)
+        hint.text = RC:CreateFontString(hint, "OVERLAY", nil, 10)
+        hint.text:SetPoint("CENTER", 0, 0)
+        hint.text:SetWordWrap(false)
+        hint.text:SetTextColor(grayTxt.r, grayTxt.g, grayTxt.b, 1)
+        hint.text:SetText(HINT_TEXT)
+        hint:SetPoint("TOP", top, "BOTTOM", 0, 0)
+        -- as wide as its text, never wider than the bar (a short version
+        -- when even that is too much)
+        local tw = math.ceil(hint.text:GetStringWidth() or 560) + 28
+        if tw > top:GetWidth() then
+            hint.text:SetText(HINT_SHORT)
+            tw = math.min(top:GetWidth(), math.ceil(hint.text:GetStringWidth() or 400) + 28)
+        end
+        hint:SetWidth(tw)
+        top.hint = hint
+
+        self.top = top
+        self:LayoutTop()
+        return top
+    end
+
+    -- A bar button that is a switch: the green "this is on" look.
+    local function SetOn(b, on)
+        if RC.UI.SetButtonConfigured then RC.UI:SetButtonConfigured(b, on and true or false) end
+    end
+
+    -- The bar's numbers and switches, after anything that changes them.
+    function UM:RefreshTop()
+        local top = self.top
+        if not (top and self.isMoving) then return end
+        local live = 0
+        for _, data in pairs(self.frames) do
+            if data.frame then live = live + 1 end
+        end
+        local n = self:MovedCount()
+        if n > 0 then
+            top._status = { n .. (n == 1 and RCL[" frame moved"] or RCL[" frames moved"]), n .. RCL[" moved"] }
+        else
+            top._status = { live .. (live == 1 and RCL[" frame"] or RCL[" frames"]), "" }
+        end
+        if RC.UI.SetWidgetEnabled then
+            RC.UI:SetWidgetEnabled(top.undo, self:CanUndo())
+        elseif top.undo.SetEnabled then
+            top.undo:SetEnabled(self:CanUndo())
+        end
+        SetOn(top.grid, self.showGrid)
+        SetOn(top.snap, self.snapEnabled)
+        SetOn(top.list, self.controlPanel and self.controlPanel:IsShown())
+        self:LayoutTop()
+    end
+
+    -- ============================================================
+    -- THE PICKED BOX'S ACTIONS
+    -- Click a box and what can be done with it sits under it (over it
+    -- when the box is at the bottom of the screen): Reset, Hide.
+    -- ============================================================
+    function UM:CreateActions()
+        if self.acts then return self.acts end
+        local acts = CreateFrame("Frame", "WR_UIMoverActs", UIParent)
+        acts:SetFrameStrata("TOOLTIP")
+        -- over every handle, under the bar and the panel
+        acts:SetFrameLevel(1990)
+        acts:SetSize(56 + 4 + 48, 20)
+        acts:Hide()
+        acts.reset = RC.UI:CreateStyledButton(acts, RCL["Reset"], 56, 20)
+        acts.reset:SetPoint("LEFT", acts, "LEFT", 0, 0)
+        acts.reset:SetScript("OnClick", function()
+            local key = UM.selectedFrame
+            if not key then return end
+            UM:Change(key, function() UM:ResetFramePosition(key) end)
+            UM:UpdateCoordinateInputs(key)
+            UM:PlaceActions()
+        end)
+        Tip(acts.reset, RCL["Reset"], RCL["Back to its default spot. Undo puts it back."])
+        acts.hide = RC.UI:CreateStyledButton(acts, RCL["Hide"], 48, 20)
+        acts.hide:SetPoint("LEFT", acts.reset, "RIGHT", 4, 0)
+        acts.hide:SetScript("OnClick", function()
+            local key = UM.selectedFrame
+            if not key then return end
+            GameTooltip:Hide()
+            UM:SetFrameHidden(key, true)
+            UM:PlaceActions()
+        end)
+        Tip(acts.hide, RCL["Hide"], RCL["Out of the way while you place the rest. The Frames button on the top bar brings it back."])
+        acts:SetWidth((acts.reset:GetWidth() or 56) + 4 + (acts.hide:GetWidth() or 48))
+        self.acts = acts
+        return acts
+    end
+
+    function UM:PlaceActions()
+        local acts = self.acts
+        local data = self.selectedFrame and self.frames[self.selectedFrame]
+        local anchor = data and data.anchor
+        if not (self.isMoving and anchor and anchor:IsShown()) then
+            if acts then acts:Hide() end
+            return
+        end
+        acts = self:CreateActions()
+        -- (a small box carries its name over it and its numbers under it)
+        local out = (anchor._textsInside == false) and 20 or 4
+        acts:ClearAllPoints()
+        local bottom = anchor.GetBottom and anchor:GetBottom()
+        if bottom and bottom < 30 + out then
+            acts:SetPoint("BOTTOM", anchor, "TOP", 0, out)
+        else
+            acts:SetPoint("TOP", anchor, "BOTTOM", 0, -out)
+        end
+        acts:Show()
+    end
+
+    -- ============================================================
+    -- KEYS
+    -- One keyboard frame, up for the pass: the arrow keys nudge the picked
+    -- box (Shift: 10), Ctrl+Z undoes, Escape closes the Frames panel when
+    -- it is open and otherwise leaves keeping everything. Every other key
+    -- goes on to the game. In combat a frame's key propagation cannot be
+    -- changed, so nothing is swallowed there; the keys still act.
+    -- ============================================================
+    local ARROWS = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
+    function UM:OnKey(key)
+        if key == "ESCAPE" then
+            local p = self.controlPanel
+            if p and p:IsShown() then p:Hide() else self:ExitMoveMode("escape") end
+            return true
+        end
+        if key == "Z" and IsControlKeyDown and IsControlKeyDown() then
+            self:Undo()
+            return true
+        end
+        local dir = ARROWS[key]
+        local data = dir and self.selectedFrame and self.frames[self.selectedFrame]
+        if data and data.anchor and data.anchor:IsShown() then
+            local step = (IsShiftKeyDown and IsShiftKeyDown()) and 10 or 1
+            self:NudgePosition(dir[1] * step, dir[2] * step)
+            return true
+        end
+        return false
+    end
+
+    function UM:ApplyKeys()
+        local kf = self.keyFrame
+        if not kf then
+            if not (self.isMoving and not self.panelless) then return end
+            kf = CreateFrame("Frame", "WR_UIMoverKeys", UIParent)
+            kf:Hide()
+            kf:EnableKeyboard(true)
+            if kf.SetPropagateKeyboardInput then kf:SetPropagateKeyboardInput(true) end
+            kf:SetScript("OnKeyDown", function(self, key)
+                local handled = UM.isMoving and UM:OnKey(key)
+                if self.SetPropagateKeyboardInput and not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(not handled)
+                end
+            end)
+            self.keyFrame = kf
+        end
+        -- (the game's own Edit Mode keeps its keys)
+        kf:SetShown(self.isMoving and not self.panelless and true or false)
+    end
+
+    -- Cancel: everything back to where it was when the pass opened, then
+    -- out the same way Save & Exit goes.
+    function UM:CancelMoveMode()
+        if not self.isMoving then return end
+        self:RestoreEntry()
+        self:ExitMoveMode("cancel")
     end
 
     function UM:CreateEditModeButton()
@@ -1630,27 +2132,10 @@ local function InitializeUIMover()
         btn:HookScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:SetText(RCL["Readycheck Mover"], 1, 1, 1)
-            GameTooltip:AddLine(RCL["Open the full mover panel - frame list, nudge arrows and coordinates - while staying in Edit Mode."], 0.7, 0.7, 0.7, true)
+            GameTooltip:AddLine(RCL["Open Readycheck's Frames panel - the list of frames (untick one to hide it), exact numbers, the grid and snap - while staying in Edit Mode."], 0.7, 0.7, 0.7, true)
             GameTooltip:Show()
         end)
         btn:HookScript("OnLeave", function() GameTooltip:Hide() end)
-
-        -- A child of the Mover button, so it shows and hides with it.
-        local vis = RC.UI:CreateStyledButton(btn, RCL["Show / hide Readycheck frames"], 200, 26)
-        vis:SetPoint("TOP", btn, "BOTTOM", 0, -4)
-        vis:SetFrameStrata("TOOLTIP")
-        vis:SetFrameLevel(2001)
-        vis:SetScript("OnClick", function()
-            UM:ToggleVisibilityList()
-        end)
-        vis:HookScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-            GameTooltip:SetText(RCL["Show / hide Readycheck frames"], 1, 1, 1)
-            GameTooltip:AddLine(RCL["Hide Readycheck frames you are not moving, so the rest is easy to reach. They come back when you leave Edit Mode."], 0.7, 0.7, 0.7, true)
-            GameTooltip:Show()
-        end)
-        vis:HookScript("OnLeave", function() GameTooltip:Hide() end)
-        self.editModeVisButton = vis
 
         btn:Hide()
         self.editModeButton = btn
@@ -1662,8 +2147,8 @@ local function InitializeUIMover()
         self.panelless = false
         if self.editModeButton then self.editModeButton:Hide() end
         self:CreateControlPanel()
-        self:InitializeDropdown()
         self.controlPanel:Show()
+        self:RefreshVisibilityList()
         if self.showGrid then
             self:ShowGrid()
         end
@@ -1956,14 +2441,36 @@ local function InitializeUIMover()
         self:RegisterAddonFrames()
         self:ActivatePreviews()
 
+        -- a new pass: nothing moved yet, nothing filtered
+        self.undo, self.entry, self.filterText = {}, {}, ""
+        for frameKey, data in pairs(self.frames) do
+            if data.frame then self.entry[frameKey] = Spot(data) end
+        end
+
         if self.panelless then
             if self.controlPanel then self.controlPanel:Hide() end
+            if self.top then self.top:Hide() end
             self:CreateEditModeButton():Show()
         else
             if self.editModeButton then self.editModeButton:Hide() end
+            -- the bar is the way in; the Frames panel waits for its button
             self:CreateControlPanel()
-            self:InitializeDropdown()
-            self.controlPanel:Show()
+            self.controlPanel:Hide()
+            local top = self:CreateTopBar()
+            if top.filter and top.filter.ClearSearch and top.filter:GetSearchText() ~= "" then
+                top.filter:ClearSearch()
+                self.filterText = ""
+            end
+            -- (ZacUI's own Edit Mode bar sits in the same place: when both
+            -- are open this one goes under it and its hint line)
+            local other = _G.ZacUIEditModeTop
+            top:ClearAllPoints()
+            if other and other.IsShown and other:IsShown() then
+                top:SetPoint("TOP", UIParent, "TOP", 0, -((other:GetHeight() or TOP_H) + HINT_H))
+            else
+                top:SetPoint("TOP", UIParent, "TOP", 0, 0)
+            end
+            top:Show()
         end
 
         for frameKey, data in pairs(self.frames) do
@@ -2003,6 +2510,9 @@ local function InitializeUIMover()
         if self.showGrid and not self.panelless then
             self:ShowGrid()
         end
+        self:ApplyKeys()
+        self:RefreshTop()
+        self:PlaceActions()
     end
 
     -- LEAVING MOVE MODE LOCKS EVERYTHING IT MOVES. Some frames carry a
@@ -2079,7 +2589,10 @@ local function InitializeUIMover()
             end
         end
         if self.editModeButton then self.editModeButton:Hide() end
-        if self.visList then self.visList:Hide() end
+        if self.top then self.top:Hide() end
+        if self.acts then self.acts:Hide() end
+        self:ApplyKeys()
+        self.undo, self.entry = {}, {}
         self:RestoreHidden()
 
         self:DeactivatePreviews()
@@ -2148,6 +2661,9 @@ local function InitializeUIMover()
             end
             if RC.SwapToast and RC.SwapToast.Ensure then
                 Make("swapToast", RC.SwapToast.Ensure, RC.SwapToast)
+            end
+            if RC.AfterRaidBuffs and RC.AfterRaidBuffs.Enabled() then
+                Make("afterRaidBuffs", RC.AfterRaidBuffs.Ensure)
             end
             if RC.consumablesChecker and RC.CreateConsumablesCheckerFrame then
                 Make("consumablesChecker", RC.CreateConsumablesCheckerFrame, RC)

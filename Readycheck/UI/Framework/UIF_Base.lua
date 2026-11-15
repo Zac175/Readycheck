@@ -589,6 +589,30 @@ local _uif = RC._uif
         return c
     end
 
+    -- THE SCROLL THUMB'S COLOUR, one for every scroll bar (2026-11-14, Zac:
+    -- "some sliders in the addons were still brown by default they should
+    -- all match the like greyish slider"). Outside the /rc window a thumb
+    -- was the palette's brown and gold while it moved; the /rc window's is
+    -- white at 0.27, a fifth brighter under the mouse. Now that grey is
+    -- every bar's, as long as no thumb colour is picked on the Colours
+    -- page. A picked one is painted as it always was: the pick at
+    -- `pickAlpha` (what that bar used: 1, or 0.6 where it rests dim), gold
+    -- while live. Returns r, g, b, a.
+    function RC.UI:ScrollThumbColor(live, pickAlpha)
+        local c = GetScrollThumb()
+        local d = RC.defaultColors and RC.defaultColors.scrollbar and RC.defaultColors.scrollbar.thumb
+        if d == nil or c == d then
+            local a = S.SCROLL_THUMB_A
+            local r, g, b = self:SCol("text", 1)
+            return r, g, b, live and math.min(1, a + 0.2) or a
+        end
+        if live then
+            local gold = GetAccentGold()
+            return gold.r, gold.g, gold.b, 1
+        end
+        return c.r, c.g, c.b, pickAlpha or 1
+    end
+
     -- Is this frame part of the /rc window's page or sidebar? The window
     -- marks its scroll child, sidebar and footer (_rcSetRoot); a widget
     -- built anywhere under them wears the window's look, one built

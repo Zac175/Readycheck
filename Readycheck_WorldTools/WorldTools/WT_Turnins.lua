@@ -65,6 +65,19 @@ function Gossip.Choose(index)
     end
 end
 
+-- The text of one option ("" when the client gives none).
+function Gossip.Text(index)
+    if C_GossipInfo and C_GossipInfo.GetOptions then
+        local o = C_GossipInfo.GetOptions()[index]
+        return (type(o) == "table" and type(o.name) == "string") and o.name or ""
+    end
+    if GetGossipOptions then
+        local text = select(index * 2 - 1, GetGossipOptions())
+        return type(text) == "string" and text or ""
+    end
+    return ""
+end
+
 function Gossip.Close()
     if C_GossipInfo and C_GossipInfo.CloseGossip then
         C_GossipInfo.CloseGossip()
@@ -631,15 +644,26 @@ local SAYGE_PAGE = {
 }
 local saygeDone = false
 
+-- The page after the buff has one option: a written fortune, which is an
+-- item put in the bags. It is never clicked (2026-11-13, Zac: "i dont
+-- want it to put a fortune in my bags"). Known two ways: the second
+-- question (three options) has been answered in this conversation, or
+-- the option says so itself.
+local function OffersWrittenFortune()
+    return Gossip.Text(1):lower():find("written fortune", 1, true) ~= nil
+end
+
 local function RunSayge(ag)
     -- The cookie dialog after the buff is pure flavour.
-    if saygeDone then
+    if saygeDone or OffersWrittenFortune() then
+        saygeDone = true
         if ag.dmfSkipCookie then Gossip.Close() end
         return
     end
 
     local _, class = UnitClass("player")
     local want = (ag.dmfBuffTypes and ag.dmfBuffTypes[class]) or "Damage"
+    local count = Gossip.Count()
 
     -- Damage is option one on both pages, so every page can be clicked
     -- as it arrives (each one re-fires GOSSIP_SHOW and lands back here)
@@ -652,11 +676,13 @@ local function RunSayge(ag)
         elseif now >= WT._fastDmfRunning then
             return                              -- ran out; stop clicking
         end
+        -- the three-option page is the last question: its answer gives
+        -- the buff, and the page that follows is the written fortune
+        if count == 3 then saygeDone = true end
         Gossip.Choose(1)
         return
     end
 
-    local count = Gossip.Count()
     local page = SAYGE_PAGE[count]
     if page then
         if count == 3 then saygeDone = true end

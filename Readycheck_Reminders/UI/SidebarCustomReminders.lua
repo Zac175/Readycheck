@@ -795,8 +795,14 @@ local function EnsureChrome(frame,sc,FH)
         sb:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
         if RC.UI and RC.UI.AddThumbBorder then RC.UI:AddThumbBorder(sb) end
         local stht=sb:GetThumbTexture();if stht then
-            local ttc=RC:GetColor("scrollbar","thumb") or RC:GetColor("ui","accentGold")
-            stht:SetSize(8,24);stht:SetVertexColor(ttc.r,ttc.g,ttc.b,0.8)
+            -- (one thumb colour for every scroll bar: RC.UI:ScrollThumbColor)
+            stht:SetSize(8,24)
+            if RC.UI and RC.UI.ScrollThumbColor then
+                stht:SetVertexColor(RC.UI:ScrollThumbColor(false, 0.8))
+            else
+                local ttc=RC:GetColor("scrollbar","thumb") or RC:GetColor("ui","accentGold")
+                stht:SetVertexColor(ttc.r,ttc.g,ttc.b,0.8)
+            end
         end
         -- Guards against feedback: wheel scroll drives the slider value, and
         -- the slider's OnValueChanged drives the scroll frame; without this

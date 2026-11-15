@@ -143,6 +143,29 @@ local _sbs = RC._sbs
         fontCountLabel:SetText(#availableFonts .. RCL[" fonts available"])
         fontCountLabel:SetTextColor(txtGray.r, txtGray.g, txtGray.b)
 
+        -- Beside ZacUI (Systems/FontSystem: BESIDE ZACUI): Readycheck's
+        -- windows wear the font picked in ZacUI while this one is left on
+        -- its default. Said here, where the font is chosen; nothing shows
+        -- without ZacUI, or while ZacUI itself is on the game's font.
+        do
+            local Z, zdb = _G.ZacUI, _G.ZacUIDB
+            local zname = type(Z) == "table" and type(zdb) == "table" and type(zdb.font) == "table" and zdb.font.name
+            if type(zname) == "string" and zname ~= "" then
+                local note = self:CreateFontString(selectCard, "OVERLAY", nil, 10)
+                note:SetPoint("TOPLEFT", selectCard, "TOPLEFT", 14, cardY + 6)
+                note:SetPoint("RIGHT", selectCard, "RIGHT", -14, 0)
+                note:SetJustifyH("LEFT")
+                note:SetWordWrap(false)
+                if self.ZacUIFace and self:ZacUIFace() then
+                    note:SetText(RCL["With ZacUI: this window and the popups wear ZacUI's font. Bars and trackers keep Readycheck's."])
+                else
+                    note:SetText(RCL["With ZacUI: a font picked here is used everywhere. Reset Fonts to Default to match ZacUI's in the windows."])
+                end
+                note:SetTextColor(txtGray.r, txtGray.g, txtGray.b)
+                cardY = cardY - 16
+            end
+        end
+
         local sizeLabel = self:CreateFontString(selectCard, "OVERLAY", nil, 11)
         sizeLabel:SetPoint("TOPLEFT", selectCard, "TOPLEFT", 14, cardY)
         sizeLabel:SetText(RCL["Base Size"])

@@ -111,7 +111,7 @@ local function InitializeMinimapButton()
         -- /rc moveui: the one UIMover overlay, never a second one.
         items[#items + 1] = { text = RCL["Edit Mode"],
             tooltip = RCL["Show every movable Readycheck frame at once over a grid and drag them into place."]
-                .. " " .. RCL["Escape or Save & Lock to finish."],
+                .. " " .. RCL["Escape or Save & Exit to finish."],
             func = function() if RC.EnterEditMode then RC:EnterEditMode() end end }
         items[#items + 1] = { text = RCL["Setup Wizard"], tooltip = RCL["Walks through the first-time setup again (/rc setup)."],
             func = function() if RC.SetupWizardCommand then RC:SetupWizardCommand() end end }

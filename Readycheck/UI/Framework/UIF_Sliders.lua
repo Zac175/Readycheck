@@ -647,6 +647,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
 
         local menuHeight = (maxVisible * itemHeight) + 4
         local menu = CreateFrame("Frame", nil, UIParent)
+        -- (a window's list is window text: Systems/FontSystem, BESIDE ZACUI)
+        menu._rcWindow = true
         menu:SetSize(width, menuHeight)
         menu:SetPoint("TOPLEFT", container, "BOTTOMLEFT", 0, -2)
         local STRATA_RANK = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4,
@@ -701,7 +703,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
 
         local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
         thumb:SetTexture(FLAT)
-        thumb:SetVertexColor(scrollThumbColor.r, scrollThumbColor.g, scrollThumbColor.b, 1)
+        thumb:SetVertexColor(RC.UI:ScrollThumbColor(false, 1))
         thumb:SetWidth(scrollBarWidth - 2)
         thumb:SetHeight(30)
         scrollBar:SetThumbTexture(thumb)
@@ -1193,8 +1195,9 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                     -- whose file is missing) leaves the string with no font,
                     -- and SetText would then error: fall back to the default
                     local fontPath = RC:GetFontPath(fontName)
-                    local set = itemText:SetFont(fontPath, 11, "OUTLINE")
-                    if set == false or not itemText:GetFont() then
+                    -- (newer clients raise on a missing file: caught)
+                    local called, set = pcall(itemText.SetFont, itemText, fontPath, 11, "OUTLINE")
+                    if not called or set == false or not itemText:GetFont() then
                         itemText:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
                     end
                 end

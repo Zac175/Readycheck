@@ -68,6 +68,40 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.8",
+            date = "2026-11-15",
+            title = "World buffs after the raid, and a new Edit Mode",
+            titles = { tbc = "A new Edit Mode", forever = "A new Edit Mode" },
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        { "After the raid: a window with the world buffs still on you. Boon them all with one click, or click a buff to remove it. It opens when you leave the raid or kill the last boss. Off by default: Chronoboon, Behavior, \"After the raid\".", feature = "chronoboon" },
+                        { "Raid Consume Reminders: \"Only while my world buffs are out\".", feature = "world_tools" },
+                        "Edit Mode has a bar along the top: find a frame by name, Grid, Snap, the Frames list, Undo, Cancel and Save & Exit.",
+                        "Edit Mode: the arrow keys nudge the picked frame (hold Shift for bigger steps) and Ctrl+Z undoes.",
+                        "Changelog: a \"Show all versions\" box in place of the View Full Changelog button.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "A new character opens Readycheck's windows at 80% size, and popups follow the main window's size.",
+                        "Every scroll bar is the same grey.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "Importing settings now keeps the gear manager's settings.",
+                        "Fixed an error when the font list holds a font this game client does not have.",
+                        { "The Darkmoon Faire timer now resets after 8 hours logged out in a rested place, as the game's does.", feature = "world_tools" },
+                        { "Sayge: with a buff picked, the written fortune is no longer taken as well.", feature = "world_tools" },
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.7",
             date = "2026-11-12",
             title = "A changelog for the game version you play",
@@ -1565,16 +1599,30 @@ local function InitializeChangelog()
         footerRule:SetTexture(FLAT)
         footerRule:SetVertexColor(ruleCol.r, ruleCol.g, ruleCol.b, ruleCol.a or 1)
 
-        local fullBtn = RC.UI:CreateStyledButton(buttonArea, "View Full Changelog", 170, 30)
-        fullBtn:SetPoint("LEFT", 14, 0)
-        fullBtn:SetScript("OnClick", function()
-            -- Same cached frame, just repopulated in "all versions" mode -
-            -- no Hide()/Show() round trip (that only caused a visible flash
-            -- now that the popup is built once). MarkAsSeen still runs so
-            -- the login popup does not reappear for this version.
+        -- "Show all versions", level with Got it (2026-11-12, Zac: "make
+        -- readychecks changelog match zui with the box that says show
+        -- previous versions as well instead of a button that says view
+        -- full changelog"). Ticked, the window lists every version and is
+        -- titled Changelog; unticked, the newest. The choice is kept for
+        -- the account, beside the version last seen, and is what the
+        -- window opens with next time. The same cached frame is filled
+        -- again - no Hide()/Show() round trip. (Its holder is a settings
+        -- root, so the box wears the settings window's look.)
+        local allHost = CreateFrame("Frame", nil, buttonArea)
+        allHost:SetPoint("LEFT", buttonArea, "LEFT", 16, 0)
+        allHost:SetSize(200, 30)
+        allHost._rcSetRoot = true
+        local allBox = RC.UI:CreateCheckbox(allHost, "Show all versions", RC.Changelog:ShowAllSaved())
+        allBox:ClearAllPoints()
+        allBox:SetPoint("LEFT", allHost, "LEFT", 0, 0)
+        allBox:SetScript("OnClick", function(self)
+            local on = self:GetChecked() and true or false
+            RC.Changelog:SetShowAll(on)
+            -- (seen now: the login popup does not come back for this version)
             RC.Changelog:MarkAsSeen()
-            RC.Changelog:Show(true)
+            RC.Changelog:Show(on)
         end)
+        frame.showAll = allBox
 
         -- Primary action wears the active look.
         local okBtn = RC.UI:CreateStyledButton(buttonArea, "Got it", 130, 30)
@@ -1600,10 +1648,9 @@ local function InitializeChangelog()
 
         -- the 5.0 popup look (UIF_Dialogs)
         RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = title, close = closeBtn,
-            dims = { versionText }, rules = { footerRule }, buttons = { fullBtn }, primary = okBtn })
+            dims = { versionText }, rules = { footerRule }, primary = okBtn })
         -- (2026-11-09, Zac likes ZacUI's Got it: a raised plate, the
         -- primary one with the accent on its edge and label)
-        RC.UI:StyleSettingsButton(fullBtn)
         RC.UI:StyleSettingsButton(okBtn)
 
         self.frame = frame
@@ -1624,6 +1671,8 @@ local function InitializeChangelog()
             self.linePool[self.lineCount] = fs
         end
         fs:ClearAllPoints()
+        -- (a pooled line may last have been a right-aligned version tag)
+        fs:SetJustifyH("LEFT")
         fs:Show()
         return fs
     end
@@ -1665,20 +1714,38 @@ local function InitializeChangelog()
 
         for i, versionData in ipairs(versionsToShow) do
             -- 12px gold version header with a 1px black rule beneath it.
+            -- With every version listed, each one says which it is at the
+            -- far end of its title line, as ZacUI's does (the newest alone
+            -- has its version beside the window's title).
+            local META_W = 0
+            if showAll then
+                META_W = 118
+                local meta = self:AcquireLine()
+                meta:SetPoint("TOPRIGHT", content, "TOPLEFT", contentWidth - 4, yOffset - 1)
+                meta:SetWidth(META_W)
+                RC:ApplyCustomFont(meta, 10, "")
+                local gray = RC:GetColor("text", "gray")
+                meta:SetTextColor(gray.r, gray.g, gray.b, gray.a or 1)
+                meta:SetJustifyH("RIGHT")
+                meta:SetText("v" .. tostring(versionData.version) .. (versionData.date and ("   " .. versionData.date) or ""))
+                META_W = META_W + 8
+            end
             local versionHeader = self:AcquireLine()
             versionHeader:SetPoint("TOPLEFT", 4, yOffset)
-            versionHeader:SetWidth(contentWidth - 8)
+            versionHeader:SetWidth(contentWidth - 8 - META_W)
             RC:ApplyCustomFont(versionHeader, 12, "")
             local goldText = GetGoldText()
             versionHeader:SetTextColor(goldText.r, goldText.g, goldText.b, 1)
             versionHeader:SetJustifyH("LEFT")
             versionHeader:SetText(versionData.title or ("Version " .. versionData.version))
+            -- a long title wraps: the rule and what follows go under all of it
+            local wrapped = math.max(0, math.ceil(versionHeader:GetStringHeight() or 12) - 14)
 
             local headerRule = self:AcquireRule()
-            headerRule:SetPoint("TOPLEFT", content, "TOPLEFT", 4, yOffset - 16)
+            headerRule:SetPoint("TOPLEFT", content, "TOPLEFT", 4, yOffset - 16 - wrapped)
             headerRule:SetWidth(contentWidth - 8)
 
-            yOffset = yOffset - 22
+            yOffset = yOffset - 22 - wrapped
 
             if versionData.sections then
                 for _, section in ipairs(versionData.sections) do
@@ -1741,13 +1808,28 @@ local function InitializeChangelog()
         end
     end
 
+    -- "Show all versions": the account's choice (unset = the newest only)
+    function RC.Changelog:ShowAllSaved()
+        local acct = ReadycheckDB and ReadycheckDB.account
+        return type(acct) == "table" and acct.changelogShowAll == true or false
+    end
+    function RC.Changelog:SetShowAll(on)
+        if not ReadycheckDB then return end
+        if not ReadycheckDB.account then ReadycheckDB.account = {} end
+        ReadycheckDB.account.changelogShowAll = on and true or nil
+    end
+
+    -- showAll: true / false to open that way; nil = as the box was left
     function RC.Changelog:Show(showAll)
         -- The popup is built once and cached; each open only repopulates
         -- the pooled content rows below.
         local frame = self:CreatePopup()
+        if showAll == nil then showAll = self:ShowAllSaved() end
+        showAll = showAll and true or false
+        if frame.showAll and frame.showAll:GetChecked() ~= showAll then frame.showAll:SetChecked(showAll) end
 
         if frame.title then
-            frame.title:SetText(showAll and "Full Changelog" or "What's New")
+            frame.title:SetText(showAll and "Changelog" or "What's New")
         end
 
         if frame.versionText then
@@ -1761,11 +1843,12 @@ local function InitializeChangelog()
         self:PopulateContent(showAll)
         frame:Raise()
         -- Pop in only on a real open; a repopulate while already visible
-        -- (View Full Changelog) must not replay the animation.
+        -- (the "Show all versions" box) must not replay the animation.
         if frame:IsShown() then
             if frame.popAnimation then RC.UI:StopAnimations(frame) end
             frame:SetAlpha(1)
-            frame:SetScale(1)
+            -- (the /rc window's scale, which this window follows)
+            if RC.UI.ApplyShellScale then RC.UI:ApplyShellScale(frame) else frame:SetScale(1) end
         else
             RC.UI:PopIn(frame, 0.12)
         end

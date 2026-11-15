@@ -313,6 +313,28 @@ local function InitializeWorldBuffSync()
     local DMF_LOCK_DUR  = 4 * 3600
     local DMF_CITY_FALL = 8 * 3600
 
+    -- Was this record written in a rest area? (2026-11-13, Zac: "being
+    -- logged out for 8 hours in a safe zone/rested area like stormwind
+    -- ... its not resetting my dmf timer still") The lockout goes after
+    -- 8 hours logged out in a rest area. The check used to look the
+    -- record's location up as a whole in the list of capitals, and a
+    -- location is "Stormwind City - Trade District": with a subzone in it
+    -- - which a capital nearly always has - it never matched, so the
+    -- lockout was never dropped. Now: the record's own rested mark (a
+    -- record of ours carries one since this fix, so an inn counts too),
+    -- else a capital's name anywhere in the location.
+    local function RestedAt(rec)
+        if type(rec) ~= "table" then return false end
+        if rec.rested == true then return true end
+        local loc = rec.location
+        if type(loc) ~= "string" or loc == "" then return false end
+        for city in pairs(MAJOR_CITIES) do
+            if loc:find(city, 1, true) then return true end
+        end
+        return false
+    end
+    WB.RestedAt = RestedAt
+
     -- Fire Festival auras carry no usable spellId on some clients, so they
     -- are matched on the exact English aura name as well.
     NAME_TO_KEY["Fire Festival Fortitude"] = "firefort"
@@ -863,8 +885,11 @@ local function InitializeWorldBuffSync()
             if self._dmfStamp then
                 dmfRem = dmfRem - (now - self._dmfStamp)
             elseif old and old.t then
-                if MAJOR_CITIES[old.location or ""] and (now - old.t) >= DMF_CITY_FALL then
+                -- the first record of a session: old is the one written
+                -- at the last logout
+                if RestedAt(old) and (now - old.t) >= DMF_CITY_FALL then
                     dmfRem = nil
+                    RC:DebugPrint("WorldBuffSync: DMF lockout dropped - logged out 8h+ in a rest area", "meshsync")
                 end
             end
         end
@@ -913,6 +938,9 @@ local function InitializeWorldBuffSync()
             chrono   = chrono,
             pvp      = pvp,
             location = location,
+            -- (in a rest area: an inn or a city. Read at every record, so
+            -- the one written at logout says where the character sleeps)
+            rested   = (IsResting and IsResting()) and true or nil,
             dmfRem   = dmfRem,
             level    = UnitLevel("player"),
             race     = select(2, UnitRace("player")),
@@ -1897,7 +1925,7 @@ local function InitializeWorldBuffSync()
                 if pd then
                     if isOnline then
                         pd = pd - (now - (p.t or now))
-                    elseif MAJOR_CITIES[p.location or ""]
+                    elseif RestedAt(p)
                        and (now - (p.t or now)) >= DMF_CITY_FALL then
                         pd = nil
                     end
