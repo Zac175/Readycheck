@@ -607,7 +607,7 @@ local S = _uif.S
         local t = self._rcFadeT or (hot and 1 or 0)
         local text = RC:GetColor("settings", "text")
         if not self:IsEnabled() then
-            if self._rcPlate then self._rcPlate:Paint(0.03, 0.03) end
+            if self._rcPlate then self._rcPlate:Paint(0.03, 0.03, nil, nil, 0) end
             self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", S.BTN_BG_A * 0.5))
             if self.text then self.text:SetTextColor(RC.UI:SCol("text", S.BTN_TXT_A * S.OFF_A)) end
             if self.border then RC.UI:UpdateBorderColor(self.border, text, S.BTN_BRD_A * 0.5) end
@@ -616,12 +616,27 @@ local S = _uif.S
         local A = RC.UI:SAccent()
         -- (2026-11-09) a page button is a raised plate: a lift and a top
         -- line on its fill, the edge warming to the accent under the mouse
-        local plate = (st == "button") and RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg) or nil
-        if plate then plate:Paint(Lerp(0.085, 0.13, t), Lerp(0.08, 0.14, t)) end
+        -- (2026-11-16) EVERY button is one, a popup's and the window's
+        -- footer buttons too: "footer" was a flat dark box with a thin edge
+        -- and a dim label, "close" the same in the accent - the weakest
+        -- things on a popup were its buttons. "footer" is now the plate
+        -- every button is; "close" - the button the window wants pressed -
+        -- is a plate whose FACE is the accent, with the window's own label
+        -- colour. Stronger than before as well (S.PL_*).
+        local plate = (st == "button" or st == "footer" or st == "close") and RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg) or nil
+        if plate then plate:Paint(Lerp(S.PL_LIFT, S.PL_LIFT_H, t), Lerp(S.PL_SHEEN, S.PL_SHEEN_H, t), nil, nil, S.PL_DROP) end
+        if plate and st == "close" and not self.isConfigured then
+            local f = Lerp(S.CTA_FACE, S.CTA_FACE_H, t)
+            self.bg:SetVertexColor(A.r * f, A.g * f, A.b * f, 1)
+            if self.border then RC.UI:UpdateBorderColor(self.border, A, Lerp(0.85, 1, t)) end
+            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(0.94, 1, t))) end
+            if self._rcAfterPaint then self._rcAfterPaint(self) end
+            return
+        end
         if plate and not self.isConfigured then
             self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
             if self.border then
-                local a0, a1 = S.BTN_BRD_A, 0.75
+                local a0, a1 = S.BTN_BRD_A, 0.80
                 local e = Lerp(0, 1, t)
                 RC.UI:UpdateBorderColor(self.border,
                     { r = Lerp(text.r, A.r, e), g = Lerp(text.g, A.g, e), b = Lerp(text.b, A.b, e) }, Lerp(a0, a1, t))

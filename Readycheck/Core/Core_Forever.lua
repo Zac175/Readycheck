@@ -354,3 +354,16 @@ Fill("UIParentLoadAddOn", function(name)
     local load = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
     if load then return load(name) end
 end)
+-- GetMerchantItemInfo(index) is gone too: C_MerchantFrame.GetItemInfo hands
+-- back a table (2026-11-15, Zac's Forever client at a vendor: "attempt to
+-- call a nil value"). The old flat answer: name, texture, price, lot size,
+-- stock, purchasable, usable, extended cost, currency id, spell id.
+local MF = C_MerchantFrame
+if MF and MF.GetItemInfo then
+    Fill("GetMerchantItemInfo", function(index)
+        local i = MF.GetItemInfo(index)
+        if type(i) ~= "table" then return nil end
+        return i.name, i.texture, i.price, i.stackCount, i.numAvailable, i.isPurchasable,
+            i.isUsable, i.hasExtendedCost, i.currencyID, i.spellID
+    end)
+end

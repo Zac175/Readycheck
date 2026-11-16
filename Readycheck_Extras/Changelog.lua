@@ -68,6 +68,33 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.9",
+            date = "2026-11-16",
+            title = "Windows and buttons with more depth",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        { "A chat line when your Darkmoon Faire lockout is pushed off. It has its own row, \"Lockout pushed off\", with the other alerts.", feature = "world_tools" },
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "Readycheck's windows have a little shading and a lit top edge instead of one flat colour.",
+                        "Buttons and the sidebar's page rows stand out more: a brighter raised face, a clearer outline and a thin shadow underneath.",
+                        "Popup buttons are raised like every other button. The main choice has a gold face, a destructive one a red face.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        { "The Darkmoon Faire lockout leaves the world buff board as soon as a full debuff bar pushes it off, and no longer comes back.", feature = "world_tools" },
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.8",
             date = "2026-11-15",
             title = "World buffs after the raid, and a new Edit Mode",

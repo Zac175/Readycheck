@@ -397,6 +397,18 @@ function RC:ShowSidebarWTTimers(frame, preserveScroll)
     card5:SetContentHeight(math.abs(cy))
     yPos = yPos - card5:GetHeight() - 15
 
+    -- Sayge's lockout pushed off (the buff board sees it, WorldBuffSync)
+    local card5d = self:CreateSettingsCard(parent, yPos, "Darkmoon Faire")
+    cy = -35
+    cy = AddDesc(card5d, cy,
+        "Sayge's lockout is a hidden debuff: a full debuff bar pushes it off, and he "
+        .. "gives a fortune again. This one is shown inside a raid too.")
+    local mark5d = RC.UI:MarkCard(card5d)
+    cy = AddAlertRow(card5d, cy, "Lockout pushed off", "lockoutPushed", "dmf")
+    GateCard(card5d, mark5d)
+    card5d:SetContentHeight(math.abs(cy))
+    yPos = yPos - card5d:GetHeight() - 15
+
     local card5b = self:CreateSettingsCard(parent, yPos, "Buff cooldown ready |cff777777(guild timer network)|r")
     local mark5b = RC.UI:MarkCard(card5b)
     cy = -35

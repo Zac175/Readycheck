@@ -216,6 +216,10 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             elseif frame.SetBackdropBorderColor then
                 frame:SetBackdropBorderColor(SCol("text", S.BORDER_A))
             end
+            -- the surface finish (UIF_Finish): the brushed ground and its
+            -- soft depth over the window's colour, as on the /rc window
+            -- and on ZacUI's windows
+            if RC.UI.Finish then RC.UI:Finish(frame, fill, "window") end
         end
         if st.header then ClearHeader(st.header) end
         if st.title then st.title:SetTextColor(SCol("text", 1)) end
@@ -622,10 +626,18 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
     -- Destructive confirm: normal fill, red label (text.red at rest,
     -- buttons.closeHover under the pointer). Layered on top of the
     -- styled button's own paint so the red survives hover/Repaint.
+    -- (2026-11-16) the destructive confirm is a plate whose FACE is the
+    -- red (as the safe one's is the accent), with the window's own label
+    -- colour: it was a flat dark box with a red label.
     local function PaintDestructive(btn)
         if not btn._destructive or not btn.text then return end
-        local c = btn:IsMouseOver() and GetCloseHover() or RC:GetColor("text", "red")
-        btn.text:SetTextColor(c.r, c.g, c.b, 1)
+        local S = _uif.S
+        local hot = btn:IsMouseOver()
+        local c = RC:GetColor("text", "red")
+        local f = hot and S.CTA_FACE_H or S.CTA_FACE
+        if btn.bg then btn.bg:SetVertexColor(c.r * f, c.g * f, c.b * f, 1) end
+        if btn.border then RC.UI:UpdateBorderColor(btn.border, c, hot and 1 or 0.85) end
+        btn.text:SetTextColor(RC.UI:SCol("text", hot and 1 or 0.94))
     end
 
     -- Shows a modal Yes/No dialog with a destructive-styled confirm

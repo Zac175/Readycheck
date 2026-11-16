@@ -362,6 +362,11 @@ do
         },
         buffCooldown = RelayCategory(SOUND_COOLDOWN),
         buffDropped = RelayCategory(SOUND_DROPPED),
+        -- Sayge's lockout pushed off by a full debuff bar (the buff board
+        -- sees it, WorldBuffSync). Said inside a raid too.
+        lockoutPushed = {
+            dmf = Alert("notify chat", "none"),
+        },
         -- Flat booleans, not alert rows: per-channel raid suppression plus
         -- the independent pull-timer-bars suppression toggle.
         raidDisable = { flash = true, sound = true, chat = true, notify = true, pullTimerBars = true },

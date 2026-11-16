@@ -524,7 +524,9 @@ local ALERT_SINKS = {
 
 -- dedupTag separates several legitimately distinct messages that share one
 -- category+buff inside the window (cooldown 10m / 1m / ready).
-function PT:DispatchAlert(category, buff, text, color, dedupTag)
+-- inRaidToo: the raid override does not mute this one (a lockout pushed
+-- off is about the character, and a raid is where it happens).
+function PT:DispatchAlert(category, buff, text, color, dedupTag, inRaidToo)
     local ts = TimerStore()
     -- Master switch sits in front of every per-buff toggle.
     if not (ts and ts.alertsEnabled and ts.alerts) then return end
@@ -543,7 +545,7 @@ function PT:DispatchAlert(category, buff, text, color, dedupTag)
     end
     lastAlertAt[dedupKey] = stamp
 
-    local muted = InsideRaidInstance() and ts.alerts.raidDisable or nil
+    local muted = (not inRaidToo) and InsideRaidInstance() and ts.alerts.raidDisable or nil
     local r, g, b = 1, 1, 1
     if color then r, g, b = color[1], color[2], color[3] end
 

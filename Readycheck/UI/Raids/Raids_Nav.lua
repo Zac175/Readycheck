@@ -59,9 +59,10 @@ local _sbr = RC._sbr
         if pl then
             pl:SetShown(not b.isCategory)
             if not b.isCategory then
-                if sel then pl:Paint(0, 0, A, 0.70)
-                elseif hot then pl:Paint(0.085, 0.06, A, 0.50)
-                else pl:Paint(0.045, 0.03, RC:GetColor("settings", "text"), 0.085) end
+                -- (2026-11-16: a row stands out more - S.NAV_PL_*)
+                if sel then pl:Paint(0, 0, A, 0.70, S.NAV_PL_DROP)
+                elseif hot then pl:Paint(S.NAV_PL_LIFT_H, S.NAV_PL_SHEEN_H, A, S.NAV_PL_EDGE_H, S.NAV_PL_DROP)
+                else pl:Paint(S.NAV_PL_LIFT, S.NAV_PL_SHEEN, RC:GetColor("settings", "text"), S.NAV_PL_EDGE, S.NAV_PL_DROP) end
             end
         end
         if b.groupLine then RC.UI:Grad(b.groupLine, A, 0.45) end

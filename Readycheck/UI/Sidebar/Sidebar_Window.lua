@@ -960,9 +960,10 @@ local BACK_PANELS = {
                 local hot, on = self._rcHot, self._rcActive
                 local A = RC.UI:SAccent()
                 local h = RC:GetColor("settings", "hoverTint")
-                if on then plate:Paint(0, 0, A, 0.70)
-                elseif hot then plate:Paint(0.085, 0.06, A, 0.50)
-                else plate:Paint(0.045, 0.03, RC:GetColor("settings", "text"), 0.085) end
+                -- (2026-11-16: a row stands out more - S.NAV_PL_*)
+                if on then plate:Paint(0, 0, A, 0.70, S.NAV_PL_DROP)
+                elseif hot then plate:Paint(S.NAV_PL_LIFT_H, S.NAV_PL_SHEEN_H, A, S.NAV_PL_EDGE_H, S.NAV_PL_DROP)
+                else plate:Paint(S.NAV_PL_LIFT, S.NAV_PL_SHEEN, RC:GetColor("settings", "text"), S.NAV_PL_EDGE, S.NAV_PL_DROP) end
                 hl:SetShown(false)
                 hl:SetVertexColor(SC("text", S.NAV_HL))
                 glow:SetShown(on and true or false)
@@ -1259,7 +1260,8 @@ local BACK_PANELS = {
                     plate:Paint(0.04, 0.14, edgeCol, 1)
                 else
                     if red then red:Hide() end
-                    plate:Paint(hot and 0.13 or 0.085, hot and 0.14 or 0.08, tc, hot and 0.22 or 0.13)
+                    plate:Paint(hot and S.PL_LIFT_H or S.PL_LIFT, hot and S.PL_SHEEN_H or S.PL_SHEEN, tc,
+                        hot and S.PL_EDGE_H or S.PL_EDGE, S.PL_DROP)
                 end
             end
         end
@@ -1391,6 +1393,9 @@ local BACK_PANELS = {
             self.bg:SetTexture(FLAT)
             self.bg:SetVertexColor(SC("windowBackground", 1))
             self.bg:SetAlpha(op)
+            -- the surface finish (UIF_Finish): the brushed ground and its
+            -- soft depth, as see-through as the window is
+            if RC.UI.Finish then RC.UI:Finish(self, self.bg, "window", op) end
             RC.UI:UpdateBorderColor(self.border, RC:GetColor("settings", "text"), S.BORDER_A)
             sidebarBg:SetVertexColor(SC("shade", S.SIDEBAR_A))
             -- (2026-11-09: the band is a 0.20 shade over the window colour,

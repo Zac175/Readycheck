@@ -573,6 +573,17 @@ local _uif = RC._uif
         CB_BRD_A = 0.05, CB_ACT_BRD_A = 0.15, CB_REST = 0.8,
         BTN_BG_A = 0.6, BTN_BG_HA = 0.65, BTN_BRD_A = 0.30, BTN_BRD_HA = 0.45, BTN_TXT_A = 0.55, BTN_TXT_HA = 0.70,
         FOOT_BG_A = 0.92, FOOT_BRD_A = 0.4, FOOT_BRD_HA = 0.6, FOOT_TXT_A = 0.5, FOOT_TXT_HA = 0.7, CLOSE_A = 0.7,
+        -- (2026-11-16, Zac: "in both uis the buttons and sidebar stuff needs
+        -- to be emphisized more") THE PLATES' STRENGTHS, in one place - the
+        -- same as ZacUI's (UI.PL). A button: its lift and top line at rest
+        -- and under the mouse, the shadow under its foot. A sidebar row: a
+        -- quieter plate. CTA: how dark the accent (or the red) is on the
+        -- face of the button a window wants pressed.
+        PL_LIFT = 0.13, PL_LIFT_H = 0.19, PL_SHEEN = 0.18, PL_SHEEN_H = 0.26, PL_DROP = 0.55,
+        PL_EDGE = 0.20, PL_EDGE_H = 0.32,
+        NAV_PL_LIFT = 0.085, NAV_PL_SHEEN = 0.09, NAV_PL_EDGE = 0.16,
+        NAV_PL_LIFT_H = 0.13, NAV_PL_SHEEN_H = 0.13, NAV_PL_EDGE_H = 0.62, NAV_PL_DROP = 0.40,
+        CTA_FACE = 0.42, CTA_FACE_H = 0.52,
         DD_BG_A = 0.9, DD_BG_HA = 0.98, DD_BRD_A = 0.20, DD_BRD_HA = 0.30, DD_TXT_A = 0.50, DD_TXT_HA = 0.60,
         DD_HL_A = 0.08, DD_SEL_A = 0.04,
         SCROLL_TRACK_A = 0.02, SCROLL_THUMB_A = 0.27, SCROLL_W = 4,
@@ -706,7 +717,7 @@ local _uif = RC._uif
     -- pale line along the inside of its top and, with edges = true, a
     -- one-pixel edge all round. Inset l / r / t / b from the frame (or laid
     -- on `over`, a texture). Made once per frame (frame._rcPlate).
-    -- :Paint(liftA, sheenA, edgeColor, edgeA) colours it from the theme;
+    -- :Paint(liftA, sheenA, edgeColor, edgeA, dropA) colours it from the theme;
     -- :SetShown hides all of it. p.box is the area it covers.
     function RC.UI:Plate(f, l, r, t, b, edges, over)
         local p = f._rcPlate
@@ -749,8 +760,18 @@ local _uif = RC._uif
                 p.edges[#p.edges + 1] = e
             end
         end
-        function p:Paint(liftA, sheenA, edgeColor, edgeA)
+        -- (2026-11-16) the plate's shadow: one dark line under its foot,
+        -- so it stands off the window (the window's shade colour)
+        p.drop = T("BACKGROUND", -1)
+        p.drop:SetHeight(1)
+        p.drop:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, 0)
+        p.drop:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0)
+        p.drop:SetVertexColor(0, 0, 0, 0)
+        -- dropA: the shadow's strength (nil = none)
+        function p:Paint(liftA, sheenA, edgeColor, edgeA, dropA)
             local c = RC:GetColor("settings", "text")
+            local sh = RC:GetColor("settings", "shade")
+            self.drop:SetVertexColor(sh.r, sh.g, sh.b, dropA or 0)
             local lo = (liftA or 0) * 0.35
             if CreateColor and self.lift.SetGradient then
                 self.lift:SetVertexColor(1, 1, 1, 1)

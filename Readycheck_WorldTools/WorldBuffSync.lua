@@ -335,6 +335,61 @@ local function InitializeWorldBuffSync()
     end
     WB.RestedAt = RestedAt
 
+    -- THE LOCKOUT PUSHED OFF (2026-11-15, Zac: "readycheck doesnt have
+    -- something when my dmf is pushed off/doesnt show up in the world buff
+    -- board ... its a debuff not buff its a hidden 4 hour debuff"). Sayge's
+    -- lockout is a hidden debuff, and a character holds 16 debuffs: a bar
+    -- of 16 visible ones means the hidden one is gone, and Sayge gives a
+    -- fortune again. Three things kept the board from saying so:
+    --  * the bar was only looked at when a record was written - every 30s
+    --    at best, usually every five minutes - so a bar that was full for
+    --    a few seconds was missed. It is now watched (the shared throttled
+    --    aura callback) for as long as a lockout is being counted;
+    --  * the next record put the lockout back: the timer network's own
+    --    clock and Nova World Buffs' number both keep running after a
+    --    push (Nova marks it reset and leaves the number counting), and a
+    --    Sayge buff still on the character re-made it from the buff;
+    --  * nothing was said.
+    -- A push is kept on the record as dmfPushed - when the pushed lockout
+    -- would have run out. Until then only a new fortune starts a lockout
+    -- again: the Sayge buff newly on the character, or the timer network's
+    -- clock, which is set when a fortune is taken and cleared at a push.
+    -- Nova's number is not read in that time; it is the pushed lockout.
+    local DMF_DEBUFF_CAP = 16
+    local DMF_WATCH_KEY  = "WorldBuffSync:DmfPush"
+    local function DebuffBarFull()
+        return #RC.Auras:Debuffs() >= DMF_DEBUFF_CAP
+    end
+    local function DmfWatch(on)
+        on = on and true or false
+        if on == (WB._dmfWatching or false) then return end
+        WB._dmfWatching = on
+        if on then
+            RC:RegisterUnitAuraCallback(DMF_WATCH_KEY, 0.2, function() WB:CheckDmfPushed() end)
+        elseif RC.UnregisterUnitAuraCallback then
+            RC:UnregisterUnitAuraCallback(DMF_WATCH_KEY)
+        end
+    end
+    -- What follows a push: the alert row on the World Tools alerts page
+    -- speaks (quiet: the push is old news - found at login) and the other
+    -- boards are told.
+    local function DmfPushed(quiet)
+        if not quiet then
+            local text = RCL["Darkmoon Faire lockout pushed off - Sayge will give you a fortune again."]
+            local bars = RC.WorldTools and RC.WorldTools.Bars
+            if bars and bars.DispatchAlert then
+                local c = RC.GetColor and RC:GetColor("text", "green")
+                bars:DispatchAlert("lockoutPushed", "dmf", text, c and c.r and { c.r, c.g, c.b } or nil, nil, true)
+            else
+                RC:Print(text)
+            end
+        end
+        local wait = WB_MIN_SEND_GAP - (time() - (WB._lastFullSend or 0))
+        C_Timer.After(wait > 1 and wait or 1, function()
+            if WB.Broadcast then WB:Broadcast() end
+        end)
+    end
+
     -- Fire Festival auras carry no usable spellId on some clients, so they
     -- are matched on the exact English aura name as well.
     NAME_TO_KEY["Fire Festival Fortitude"] = "firefort"
@@ -879,6 +934,20 @@ local function InitializeWorldBuffSync()
 
         local old = self.peers[key]
         local dmfRem = old and old.dmfRem
+        -- (when a pushed-off lockout would have run out; see DMF_DEBUFF_CAP)
+        local dmfPushed = old and old.dmfPushed
+        if dmfPushed and now >= dmfPushed then dmfPushed = nil end
+        local dmfPushedNow, dmfPushQuiet = false, false
+        local firstOfSession = not self._dmfStamp
+        local nwbMark = self:NWBSelfDmfReset() or nil
+        -- the lockout is gone: remember until when it would have run, and
+        -- stop the timer network's clock for it
+        local function TakePush(quiet)
+            local WBT = RC.WorldBuffTimers
+            if WBT and WBT.ClearDmfCooldown then WBT:ClearDmfCooldown(dmfRem) end
+            dmfPushed, dmfRem = now + dmfRem, nil
+            dmfPushedNow, dmfPushQuiet = true, quiet
+        end
         local heads = ReadHeads()
         local dropped = ReadDropped() or {}
         if dmfRem then
@@ -897,21 +966,41 @@ local function InitializeWorldBuffSync()
         local sayActive = (buffs.sayges and buffs.sayges > 0 and not sayFrozen) and true or false
         local unboonEvent = (self._prevBooned == true) and (not booned)
         if self._saygesInit and sayActive and not self._saygesPrev and not unboonEvent then
-            dmfRem = DMF_LOCK_DUR
-        elseif sayActive and not dmfRem then
+            -- a new fortune
+            dmfRem, dmfPushed = DMF_LOCK_DUR, nil
+        elseif sayActive and not self._saygesPrev and unboonEvent then
+            -- the buff came back out of a Chronoboon: counted as it always
+            -- was, whatever was pushed off before it was stored
+            dmfPushed = nil
+            if not dmfRem then dmfRem = 7200 + (buffs.sayges or 0) end
+        elseif sayActive and not dmfRem and not dmfPushed then
             dmfRem = 7200 + (buffs.sayges or 0)
         end
         do
-            local nwbRem = self:ReadNWBSelfDMF()
-            if nwbRem ~= nil then dmfRem = nwbRem > 0 and nwbRem or nil end
-        end
-        -- 16 is the client's debuff cap: at a full bar the fortune aura can
-        -- be pushed off, which also clears the re-roll lockout.
-        if dmfRem then
-            if #RC.Auras:Debuffs() >= 16 then
-                dmfRem = nil
-                RC:DebugPrint("WorldBuffSync: DMF lockout pushed off by a full debuff bar", "meshsync")
+            -- Nova World Buffs marks a lockout it saw pushed off and leaves
+            -- its number counting. Its mark newly set (the record keeps
+            -- what was last seen, so a mark left over from an earlier
+            -- lockout is not read twice) is a push this board missed.
+            if nwbMark and not (old and old.nwbDmfReset) and dmfRem and dmfRem > 0 then
+                TakePush(firstOfSession)
+                RC:DebugPrint("WorldBuffSync: DMF lockout pushed off (Nova World Buffs saw it)", "meshsync")
             end
+            if dmfPushed then
+                -- while a push stands, only the timer network's own clock
+                -- (a fortune taken since) starts a lockout again
+                local WBT = RC.WorldBuffTimers
+                local own = WBT and WBT.GetSelfDMFRemaining and WBT:GetSelfDMFRemaining()
+                if own and own > 0 then dmfPushed, dmfRem = nil, own end
+            else
+                local nwbRem = self:ReadNWBSelfDMF()
+                if nwbRem ~= nil then dmfRem = nwbRem > 0 and nwbRem or nil end
+            end
+        end
+        -- 16 is the client's debuff cap: a bar of 16 visible debuffs has
+        -- pushed the hidden lockout off.
+        if dmfRem and dmfRem > 0 and DebuffBarFull() then
+            TakePush(false)
+            RC:DebugPrint("WorldBuffSync: DMF lockout pushed off by a full debuff bar", "meshsync")
         end
         if dmfRem and dmfRem <= 0 then dmfRem = nil end
         self._saygesPrev = sayActive
@@ -942,6 +1031,8 @@ local function InitializeWorldBuffSync()
             -- the one written at logout says where the character sleeps)
             rested   = (IsResting and IsResting()) and true or nil,
             dmfRem   = dmfRem,
+            dmfPushed = dmfPushed,
+            nwbDmfReset = nwbMark,
             level    = UnitLevel("player"),
             race     = select(2, UnitRace("player")),
             heads    = heads,
@@ -949,8 +1040,25 @@ local function InitializeWorldBuffSync()
             own      = true,
             t        = time(),
         }
+        -- the debuff bar is watched only while there is a lockout to push
+        DmfWatch(dmfRem ~= nil)
+        if dmfPushedNow then DmfPushed(dmfPushQuiet) end
         return gold, booned, buffs, cd, hs, class, frozen, pvp, location, chrono, dmfRem,
             UnitLevel("player")
+    end
+
+    -- The watched debuff bar (see DMF_DEBUFF_CAP): the shared aura callback
+    -- lands here, at most every 0.2s, and only while this character's
+    -- lockout is being counted. A full bar writes a record, which is where
+    -- the push is taken.
+    function WB:CheckDmfPushed()
+        local rec = self.peers[LocalKey()]
+        local rem = rec and rec.dmfRem
+        if rem and self._dmfStamp then rem = rem - (time() - self._dmfStamp) end
+        if not rem or rem <= 0 then DmfWatch(false) return false end
+        if not DebuffBarFull() then return false end
+        self:RecordSelf()
+        return true
     end
 
     function WB:Broadcast()
@@ -1983,7 +2091,7 @@ local function InitializeWorldBuffSync()
         return online, tracked
     end
 
-    function WB:ReadNWBSelfDMF()
+    local function NWBSelf()
         local db = _G.NWBdatabase
         if type(db) ~= "table" or type(db.global) ~= "table" then return nil end
         local rd = db.global[GetRealmName()]
@@ -1991,6 +2099,19 @@ local function InitializeWorldBuffSync()
         local chars = fd and fd.myChars
         local me = chars and chars[UnitName("player")]
         if type(me) ~= "table" then return nil end
+        return me
+    end
+
+    -- Nova World Buffs' own word that this character's lockout was pushed
+    -- off: it sets this mark and leaves its number counting down.
+    function WB:NWBSelfDmfReset()
+        local me = NWBSelf()
+        return me ~= nil and me.dmfCooldownNoMsgs == true
+    end
+
+    function WB:ReadNWBSelfDMF()
+        local me = NWBSelf()
+        if not me then return nil end
         local now = GetServerTime()
         for k, v in pairs(me) do
             if type(k) == "string" and type(v) == "number"
@@ -2438,7 +2559,9 @@ local function InitializeWorldBuffSync()
                 local rec = WB.peers[LocalKey()]
                 if rec then
                     rec.dmfRem = tonumber(mins) * 60
+                    rec.dmfPushed = nil
                     WB._dmfStamp = time()
+                    DmfWatch(true)
                     RC:Print(RCL["DMF lockout set to "] .. mins .. RCL["m for this character."])
                 else
                     RC:Print(RCL["No record for this character yet - wait a few seconds after login and retry."])
@@ -2448,7 +2571,7 @@ local function InitializeWorldBuffSync()
         end
         if msg and string.match(msg, "^%s*dmfreset") then
             local rec = WB.peers[LocalKey()]
-            if rec then rec.dmfRem = nil end
+            if rec then rec.dmfRem, rec.dmfPushed = nil, nil end
             RC:Print(RCL["DMF lockout tracking cleared for this character - it re-learns "]
                 .. RCL["exactly from the next fortune taken (or backfills from a live buff)."])
             return

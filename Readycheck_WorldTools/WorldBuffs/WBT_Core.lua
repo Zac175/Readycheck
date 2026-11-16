@@ -800,7 +800,28 @@ function WBT:SetDmfCooldown(seconds)
     local c = self:CharData()
     if not c then return end
     c.dmfCooldownUntil = GetServerTime() + (seconds or 14400)
+    c.dmfPushedUntil = nil
     self:Debug("DMF cooldown set: " .. tostring(seconds or 14400) .. "s")
+end
+
+-- The lockout is a hidden debuff, and a full debuff bar pushes it off (the
+-- buff board watches for that, WorldBuffSync): nothing is left to count.
+-- dmfPushedUntil is when the pushed lockout would have run out (remaining:
+-- what the board had left, for a lockout this clock never held). Until
+-- then the legacy copy below leaves this character alone - the number it
+-- would bring in is the pushed lockout, still counting - and only a new
+-- fortune (SetDmfCooldown) starts the clock again.
+function WBT:ClearDmfCooldown(remaining)
+    local c = self:CharData()
+    if not c then return end
+    local now = GetServerTime()
+    local was = c.dmfCooldownUntil
+    if not (was and was > now) then
+        was = (tonumber(remaining) and remaining > 0) and (now + remaining) or nil
+    end
+    c.dmfCooldownUntil = nil
+    c.dmfPushedUntil = was
+    self:Debug("DMF cooldown cleared: lockout pushed off")
 end
 
 function WBT:GetSelfDMFRemaining()
@@ -924,7 +945,16 @@ function WBT:ImportLegacyData(verbose)
             local chars = fd.myChars
             if type(chars) == "table" then
                 for charName, cv in pairs(chars) do
-                    if type(cv) == "table" then
+                    local charKey = charName .. "-" .. tostring((GetNormalizedRealmName and GetNormalizedRealmName()) or WBT.realm):gsub("%s+", "")
+                    local mine = s.chars[charKey]
+                    if mine and mine.dmfPushedUntil and mine.dmfPushedUntil <= GetServerTime() then
+                        mine.dmfPushedUntil = nil
+                    end
+                    -- Not a lockout that was pushed off: one Nova itself marks
+                    -- reset (it leaves the number counting), or one this
+                    -- addon saw pushed.
+                    if type(cv) == "table" and cv.dmfCooldownNoMsgs ~= true
+                            and not (mine and mine.dmfPushedUntil) then
                         for k, v in pairs(cv) do
                             if type(k) == "string" and type(v) == "number"
                                     and k:lower():find("dmf", 1, true)
