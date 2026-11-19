@@ -68,6 +68,26 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.11",
+            date = "2026-11-19",
+            title = "Icon sizes for nameplate debuffs",
+            titles = { forever = "A login error fixed" },
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        { "Nameplates: each debuff group has its own icon size, and icon rows have a setting for the space between icons. Until you set one, the icon follows the text size as before.", feature = "nameplate_debuffs" },
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "An error at login when another addon's copy of a shared library was broken. The minimap button loads anyway.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.10",
             date = "2026-11-19",
             title = "Smart keys for bosses, World Buff Drops, and a window look you can pick",

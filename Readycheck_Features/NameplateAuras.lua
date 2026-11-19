@@ -361,8 +361,18 @@ local function InitializeNameplateAuras()
         return { point = "CENTER", relPoint = "CENTER", x = 0, y = 0 }
     end
 
+    -- The icon's own size (group.iconSize, 2026-11-19) once it is set on
+    -- the page; until then it follows the text size plus a 2px ring, as it
+    -- always did. iconGap: the space between a row's icons (2 unless set).
     local function iconSize(group)
+        local own = group and tonumber(group.iconSize)
+        if own and own > 0 then return own end
         return gsize(group) + 2
+    end
+    local function iconGap(group)
+        local own = group and tonumber(group.iconGap)
+        if own and own >= 0 then return own end
+        return 2
     end
 
     -- The font file in use right now, resolved at most once per frame:
@@ -639,9 +649,10 @@ local function InitializeNameplateAuras()
         local fSize  = gsize(group)
         local smallSize = tsize(group)
         -- Icon tracks the main text size plus a 2px ring so the border
-        -- texture has somewhere to sit; baseDrop nudges the smaller timer
-        -- up onto the count's baseline instead of its frame bottom.
-        local compact = fSize + 2
+        -- texture has somewhere to sit (or is the group's own icon size);
+        -- baseDrop nudges the smaller timer up onto the count's baseline
+        -- instead of its frame bottom.
+        local compact = iconSize(group)
         local baseDrop = math.floor((fSize - smallSize) * 0.2 + 0.5)
 
         elem.icon:SetTexture(entry.icon)
@@ -717,8 +728,8 @@ local function InitializeNameplateAuras()
                 _ak[j + 1] = ak; _as[j + 1] = as
             end
             if n > ROW_MAX then n = ROW_MAX end
-            local sz = gsize(group) + 2
-            local gap = 2
+            local sz = iconSize(group)
+            local gap = iconGap(group)
             local step = sz + gap
             local ep, rp = anchorPoints(group)
             local dir = group.growDir or "right"
@@ -1771,7 +1782,11 @@ local function InitializeNameplateAurasUI()
 
                 local szLbl = self:CreateFontString(card, "OVERLAY", nil, 10)
                 szLbl:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cardY)
-                szLbl:SetText(isCountGroup and RCL["Number text size (icon scales to match)"] or RCL["Text size (icon scales to match)"])
+                if tonumber(group.iconSize) then
+                    szLbl:SetText(isCountGroup and RCL["Number text size"] or RCL["Text size"])
+                else
+                    szLbl:SetText(isCountGroup and RCL["Number text size (icon scales to match)"] or RCL["Text size (icon scales to match)"])
+                end
                 szLbl:SetTextColor(TEXT.gray[1], TEXT.gray[2], TEXT.gray[3])
                 cardY = cardY - 16
                 local szVal = group.fontSize or c.fontSize or 11
@@ -1806,6 +1821,51 @@ local function InitializeNameplateAurasUI()
                     apply()
                 end)
                 cardY = cardY - 40
+
+                -- the icon's own size: until it is moved it follows the
+                -- text size (the slider shows what that gives)
+                do
+                    local iLbl = self:CreateFontString(card, "OVERLAY", nil, 10)
+                    iLbl:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cardY)
+                    iLbl:SetText(RCL["Icon size"])
+                    iLbl:SetTextColor(TEXT.gray[1], TEXT.gray[2], TEXT.gray[3])
+                    cardY = cardY - 16
+                    local iVal = tonumber(group.iconSize) or ((group.fontSize or c.fontSize or 11) + 2)
+                    local iS = self.UI:CreateSlider(card, 6, 48, iVal, 1)
+                    iS:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cardY)
+                    iS.Text:SetText(iVal .. RCL[" px"])
+                    iS:SetScript("OnValueChanged", function(sl, v)
+                        v = math.floor(v)
+                        sl.Text:SetText(v .. RCL[" px"])
+                        group.iconSize = v
+                        szLbl:SetText(isCountGroup and RCL["Number text size"] or RCL["Text size"])
+                        if sl.saveTimer then sl.saveTimer:Cancel() end
+                        sl.saveTimer = C_Timer.NewTimer(0.4, function() RC:SaveConfigurationToProfile() end)
+                        apply()
+                    end)
+                    cardY = cardY - 40
+                end
+
+                if (group.mode or "single") == "row" then
+                    local sLbl = self:CreateFontString(card, "OVERLAY", nil, 10)
+                    sLbl:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cardY)
+                    sLbl:SetText(RCL["Space between icons"])
+                    sLbl:SetTextColor(TEXT.gray[1], TEXT.gray[2], TEXT.gray[3])
+                    cardY = cardY - 16
+                    local sVal = tonumber(group.iconGap) or 2
+                    local sS = self.UI:CreateSlider(card, 0, 12, sVal, 1)
+                    sS:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cardY)
+                    sS.Text:SetText(sVal .. RCL[" px"])
+                    sS:SetScript("OnValueChanged", function(sl, v)
+                        v = math.floor(v)
+                        sl.Text:SetText(v .. RCL[" px"])
+                        group.iconGap = v
+                        if sl.saveTimer then sl.saveTimer:Cancel() end
+                        sl.saveTimer = C_Timer.NewTimer(0.4, function() RC:SaveConfigurationToProfile() end)
+                        apply()
+                    end)
+                    cardY = cardY - 40
+                end
 
                 if isCountGroup then
                     local gLbl = self:CreateFontString(card, "OVERLAY", nil, 10)

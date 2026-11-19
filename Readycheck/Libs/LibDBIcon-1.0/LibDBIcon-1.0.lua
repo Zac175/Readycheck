@@ -312,7 +312,13 @@ local function createButton(name, object, db, customCompartmentIcon)
 	if db and db.showInCompartment then
 		lib:AddButtonToCompartment(name, customCompartmentIcon)
 	end
-	lib.callbacks:Fire("LibDBIcon_IconCreated", button, name) -- Fire 'Icon Created' callback
+	-- Readycheck / ZacUI: guard (2026-11-19: on a client where another addon's
+	-- callback library hands back a registry with no Fire, this line threw and
+	-- took the minimap button's registration with it; the button is made all
+	-- the same, only the "icon created" notice is not sent there)
+	if type(lib.callbacks) == "table" and type(lib.callbacks.Fire) == "function" then
+		lib.callbacks:Fire("LibDBIcon_IconCreated", button, name) -- Fire 'Icon Created' callback
+	end
 end
 
 -- Wait a bit with the initial positioning to let any GetMinimapShape addons
