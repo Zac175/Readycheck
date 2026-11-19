@@ -55,3 +55,6 @@ WorldBuffSync.lua
 WorldTools\WT_UI.lua
 WorldBuffs\WBT_UI.lua
 UI\SidebarWorldBuffs.lua
+# World Buff Drops: who can still hand in a head or heart. Reads
+# RC.WorldBuffs (WorldBuffSync above).
+UI\SidebarWorldBuffDrops.lua

@@ -1048,11 +1048,11 @@ do
                 local inv = GetInventoryItemID and GetInventoryItemID("player", w.inv)
                 local owner
                 if weaponsOn and wdb.showEquippedWeapons ~= false
-                    and not (w.key == "mh" and RC.IsHordeMode and RC:IsHordeMode("weaponsBar"))
+                    and not (w.key == "mh" and RC.IsMainHandHidden and RC:IsMainHandHidden("weaponsBar"))
                     and not (wdb.hiddenWeapons and inv and wdb.hiddenWeapons[inv]) then
                     owner = { channel = wdb.ttsEnabled, lead = wdb.showBeforeExpiry or 60, bar = "weapons" }
-                elseif helperOn and not hidden(cdb, w.id)
-                    and not (w.key == "mh" and RC.IsHordeMode and RC:IsHordeMode("consumablesHelper"))
+                elseif helperOn and cdb.weaponStones ~= false and not hidden(cdb, w.id)
+                    and not (w.key == "mh" and RC.IsMainHandHidden and RC:IsMainHandHidden("consumablesHelper"))
                     and not (cdb.hiddenWeapons and inv and cdb.hiddenWeapons[inv]) then
                     owner = { channel = nil, lead = cdb.showBeforeExpiry or 60, bar = "helper" }
                 end

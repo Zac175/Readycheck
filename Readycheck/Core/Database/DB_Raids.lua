@@ -1450,8 +1450,11 @@ RC.encounterAddPhases = {
         consumablesHelper = {
             enabled = false,
             buttonSize = 32,
-            -- Horde Mode by faction ("Horde"/"Alliance" = true/false);
-            -- unset means on for Horde characters, off for Alliance ones
+            -- (weaponStones - the weapon buttons on this bar: main hand, off
+            -- hand, bag weapons - has no default here: unset reads as on)
+            -- the main hand button by faction ("Horde"/"Alliance" = true: hidden,
+            -- false: shown); unset means hidden for a Horde character on Classic
+            -- Era, shown for everyone else (RC:IsMainHandHidden)
             hordeByFaction = {},
             buttonsPerRow = 10,
             iconSpacing = 4,
@@ -1633,8 +1636,7 @@ RC.encounterAddPhases = {
         weaponsBar = {
             enabled = false,
             buttonSize = 36,
-            -- Horde Mode by faction ("Horde"/"Alliance" = true/false);
-            -- unset means on for Horde characters, off for Alliance ones
+            -- the main hand button by faction (as consumablesHelper's)
             hordeByFaction = {},
             buttonsPerRow = 4,
             iconSpacing = 4,

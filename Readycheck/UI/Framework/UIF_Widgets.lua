@@ -145,12 +145,11 @@ local S = _uif.S
         end)
         scrollBar:Hide()
 
+        -- the wheel: the /rc window's own (SmoothWheel, below) - 60 a notch
+        -- in a popup or a list, eased, further when the notches come fast.
+        -- (It was 20 a notch, a line of text, with no glide.)
         scrollFrame:EnableMouseWheel(true)
-        scrollFrame:SetScript("OnMouseWheel", function(_, delta)
-            local cur = scrollBar:GetValue()
-            local mn, mx = scrollBar:GetMinMaxValues()
-            scrollBar:SetValue(math.min(mx, math.max(mn, cur - delta * 20)))
-        end)
+        self:SmoothWheel(scrollFrame, scrollBar, opts.wheel or 60)
 
         function scrollBar:SyncRange(contentH, viewportH)
             local range = math.max(0, (contentH or 0) - (viewportH or 0))
@@ -280,6 +279,8 @@ local S = _uif.S
     -- what is left, 12 a second, done under 0.3 px). The easing runs only
     -- while it is moving; a value set from elsewhere (a page change, a
     -- jump) stops it where that put the bar.
+    -- (2026-11-18: the look's wheel speed multiplies a notch, and with
+    -- smooth scrolling off a notch jumps straight to its place)
     function RC.UI:SmoothWheel(area, bar, step)
         step = step or S.WHEEL
         local target, last
@@ -287,6 +288,8 @@ local S = _uif.S
         runner:Hide()
         runner:SetScript("OnUpdate", function(self, dt)
             local cur = bar:GetValue()
+            -- (moved by something else since our last step - a page change,
+            -- a jump, a drag of the thumb: that wins)
             if last and math_abs(cur - last) > 0.01 then self:Hide() return end
             local diff = target - cur
             if math_abs(diff) < 0.3 then
@@ -301,8 +304,22 @@ local S = _uif.S
             if math_abs(stepv) < floor then
                 stepv = ((diff > 0) and 1 or -1) * math_min(math_abs(diff), floor)
             end
-            last = cur + stepv
-            bar:SetValue(last)
+            bar:SetValue(cur + stepv)
+            -- WHAT THE BAR TOOK, read back - not what it was handed
+            -- (2026-11-17, Zac: "scrolling everywhere just feels super slow
+            -- and not responsive"). The window's bars have a value step of
+            -- 1, and a bar with a step rounds the value it is given: the
+            -- value handed over was remembered, the rounded one came back
+            -- on the next frame, that read as "moved by something else" and
+            -- the glide stopped a frame or two in - of a notch's 80 it went
+            -- 47 at 60 fps, 20 at 144, 12 at 240: the faster the game ran,
+            -- the less a notch moved.
+            last = bar:GetValue()
+            -- (rounded back to where it stood: less than a step is left)
+            if last == cur then
+                bar:SetValue(target)
+                self:Hide()
+            end
         end)
         runner:SetScript("OnHide", function() last = nil end)
         -- (2026-11-08, Zac: "scrolling ... is really slow when im just
@@ -317,8 +334,14 @@ local S = _uif.S
             if now - lastWheel < 0.2 then boost = math_min(4, boost * 1.5) else boost = 1 end
             lastWheel = now
             local base = (runner:IsShown() and target) or bar:GetValue()
-            target = math_max(mn, math_min(mx, base - delta * step * boost))
+            local L = RC.UI:Look()
+            target = math_max(mn, math_min(mx, base - delta * step * boost * L.wheel))
             last = nil
+            if not L.smooth then
+                runner:Hide()
+                bar:SetValue(target)
+                return
+            end
             runner:Show()
         end)
         area._rcWheel = runner
@@ -604,63 +627,52 @@ local S = _uif.S
     local function Lerp(a, b, t) return a + (b - a) * t end
     local function PaintSetButton(self, hot)
         local st = self._rcSet
-        local t = self._rcFadeT or (hot and 1 or 0)
+        local off = not self:IsEnabled()
+        local t = off and 0 or (self._rcFadeT or (hot and 1 or 0))
+        -- (a button that takes no clicks is the same plate at half strength)
+        local k = off and 0.5 or 1
         local text = RC:GetColor("settings", "text")
-        if not self:IsEnabled() then
-            if self._rcPlate then self._rcPlate:Paint(0.03, 0.03, nil, nil, 0) end
-            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", S.BTN_BG_A * 0.5))
-            if self.text then self.text:SetTextColor(RC.UI:SCol("text", S.BTN_TXT_A * S.OFF_A)) end
-            if self.border then RC.UI:UpdateBorderColor(self.border, text, S.BTN_BRD_A * 0.5) end
-            return
-        end
         local A = RC.UI:SAccent()
-        -- (2026-11-09) a page button is a raised plate: a lift and a top
-        -- line on its fill, the edge warming to the accent under the mouse
+        -- (2026-11-09) a button is a raised plate: a lift and a top line on
+        -- its fill, the edge warming to the accent under the mouse.
         -- (2026-11-16) EVERY button is one, a popup's and the window's
-        -- footer buttons too: "footer" was a flat dark box with a thin edge
-        -- and a dim label, "close" the same in the accent - the weakest
-        -- things on a popup were its buttons. "footer" is now the plate
-        -- every button is; "close" - the button the window wants pressed -
-        -- is a plate whose FACE is the accent, with the window's own label
-        -- colour. Stronger than before as well (S.PL_*).
-        local plate = (st == "button" or st == "footer" or st == "close") and RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg) or nil
-        if plate then plate:Paint(Lerp(S.PL_LIFT, S.PL_LIFT_H, t), Lerp(S.PL_SHEEN, S.PL_SHEEN_H, t), nil, nil, S.PL_DROP) end
-        if plate and st == "close" and not self.isConfigured then
-            local f = Lerp(S.CTA_FACE, S.CTA_FACE_H, t)
-            self.bg:SetVertexColor(A.r * f, A.g * f, A.b * f, 1)
-            if self.border then RC.UI:UpdateBorderColor(self.border, A, Lerp(0.85, 1, t)) end
-            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(0.94, 1, t))) end
-            if self._rcAfterPaint then self._rcAfterPaint(self) end
-            return
-        end
-        if plate and not self.isConfigured then
-            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
-            if self.border then
-                local a0, a1 = S.BTN_BRD_A, 0.80
-                local e = Lerp(0, 1, t)
-                RC.UI:UpdateBorderColor(self.border,
-                    { r = Lerp(text.r, A.r, e), g = Lerp(text.g, A.g, e), b = Lerp(text.b, A.b, e) }, Lerp(a0, a1, t))
-            end
-            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(0.82, 1, t))) end
-            if self._rcAfterPaint then self._rcAfterPaint(self) end
-            return
-        end
-        if st == "close" or self.isConfigured then
-            local fa = (st == "close") and S.FOOT_BG_A or Lerp(S.BTN_BG_A, S.BTN_BG_HA, t)
-            self.bg:SetVertexColor(RC.UI:SCol(st == "close" and "windowBackground" or "buttonBackground", fa))
-            local a = Lerp(S.CLOSE_A, 1, t)
-            if self.border then RC.UI:UpdateBorderColor(self.border, A, a) end
-            if self.text then self.text:SetTextColor(A.r, A.g, A.b, a) end
-        elseif st == "footer" then
-            self.bg:SetVertexColor(RC.UI:SCol("windowBackground", S.FOOT_BG_A))
-            if self.border then RC.UI:UpdateBorderColor(self.border, text, Lerp(S.FOOT_BRD_A, S.FOOT_BRD_HA, t)) end
-            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(S.FOOT_TXT_A, S.FOOT_TXT_HA, t))) end
+        -- footer buttons too ("footer" is the plate every button is), and
+        -- its face is ZacUI's (S.PL_*, RC.UI:ButtonFace). "close" - the
+        -- button the window wants pressed - is a plate whose FACE is the
+        -- accent, with the window's own label colour; a dialog marks its
+        -- main button active as well, and that one was left a dark box with
+        -- a gold label ("Reload", "OK", "Got it"): it is the gold face too.
+        -- A picked button (isConfigured) keeps the accent on its edge and
+        -- label.
+        local plate = RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg)
+        RC.UI:PlateSync()
+        local sheen, drop = Lerp(S.PL_SHEEN, S.PL_SHEEN_H, t) * k, S.PL_DROP * k
+        -- (the look's "main button: like the others": a plate like every
+        -- button, the accent on its edge and label)
+        local mainPlain = st == "close" and (RC.UI:Look()).mainPlain
+        if st == "close" and not mainPlain then
+            local f = Lerp(S.CTA_BOT, S.CTA_BOT_H, t)
+            self.bg:SetVertexColor(A.r * f, A.g * f, A.b * f, k)
+            plate:Paint(Lerp(S.CTA_LIFT, S.CTA_LIFT_H, t) * k, sheen, nil, nil, drop, 0, A)
+            if self.border then RC.UI:UpdateBorderColor(self.border, A, Lerp(0.85, 1, t) * k) end
+            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(0.94, 1, t) * k)) end
         else
-            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", Lerp(S.BTN_BG_A, S.BTN_BG_HA, t)))
-            if self.border then RC.UI:UpdateBorderColor(self.border, text, Lerp(S.BTN_BRD_A, S.BTN_BRD_HA, t)) end
-            if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(S.BTN_TXT_A, S.BTN_TXT_HA, t))) end
+            local la, lo, lc = RC.UI:ButtonFace(t)
+            self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", k))
+            plate:Paint(la * k, sheen, nil, nil, drop, lo * k, lc)
+            if self.isConfigured or mainPlain then
+                if self.border then RC.UI:UpdateBorderColor(self.border, A, Lerp(0.85, 1, t) * k) end
+                if self.text then self.text:SetTextColor(A.r, A.g, A.b, k) end
+            else
+                if self.border then
+                    RC.UI:UpdateBorderColor(self.border,
+                        { r = Lerp(text.r, A.r, t), g = Lerp(text.g, A.g, t), b = Lerp(text.b, A.b, t) },
+                        Lerp(S.PL_EDGE, S.PL_EDGE_ACC, t) * k)
+                end
+                if self.text then self.text:SetTextColor(RC.UI:SCol("text", Lerp(S.PL_TXT, 1, t) * k)) end
+            end
         end
-        -- a caller's own last word on the paint (a dialog's red Delete label)
+        -- a caller's own last word on the paint (a dialog's red Delete)
         if self._rcAfterPaint then self._rcAfterPaint(self) end
     end
     local function PaintStyledButton(self, hot)
@@ -1241,9 +1253,12 @@ local S = _uif.S
             -- line along its top; the others sit back in the strip
             local plate = RC.UI:Plate(self, 0, 0, 0, 0, false, self.bg)
             if self.isSelected then
+                -- (2026-11-16: a button's face at rest and its edge, as
+                -- ZacUI's open tab)
+                local la, lo, lc = RC.UI:ButtonFace(0)
                 self.bg:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
-                plate:Paint(0.11, 0)
-                RC.UI:UpdateBorderColor(self.border, text, 0.16)
+                plate:Paint(la, 0, nil, nil, nil, lo, lc)
+                RC.UI:UpdateBorderColor(self.border, text, S.PL_EDGE)
                 self.text:SetTextColor(RC.UI:SCol("text", 1))
             else
                 self.bg:SetVertexColor(RC.UI:SCol("shade", hot and 0.18 or 0.30))
@@ -1439,8 +1454,11 @@ local S = _uif.S
                 local tc = RC:GetColor("settings", "text")
                 pl:SetShown(isAct or hot)
                 if isAct then
+                    -- (2026-11-16: a button's face at rest and its edge, as
+                    -- ZacUI's open tab)
+                    local la, lo, lc = RC.UI:ButtonFace(0)
                     pl.box:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
-                    pl:Paint(0.11, 0, tc, 0.16)
+                    pl:Paint(la, 0, tc, S.PL_EDGE, nil, lo, lc)
                 elseif hot then
                     pl.box:SetVertexColor(RC.UI:SCol("buttonBackground", 0.5))
                     pl:Paint(0.05, 0, tc, 0.10)
@@ -2358,14 +2376,19 @@ local S = _uif.S
         else
             fill = hot and GetButtonHoverBG() or GetButtonNormalBG()
             RC.UI:UpdateBorderColor(self.border, GetBorderNormal(), 1)
-            self.icon:SetDesaturated(true)
-            self.icon:SetAlpha(0.45)
+            self.icon:SetDesaturated(not self.keepColor)
+            self.icon:SetAlpha(self.offAlpha or 0.45)
         end
         self.bg:SetVertexColor(fill.r, fill.g, fill.b, 1)
     end
 
-    function RC.UI:CreateIconToggleTile(parent, size, iconTexture)
+    -- opts (optional): keepColor - OFF keeps the icon's colours (a tile of
+    -- a preview, where the icon is what is recognised); offAlpha - the
+    -- icon's alpha OFF (default 0.45).
+    function RC.UI:CreateIconToggleTile(parent, size, iconTexture, opts)
         local tile = CreateFrame("Button", nil, parent)
+        tile.keepColor = opts and opts.keepColor or nil
+        tile.offAlpha = opts and opts.offAlpha or nil
         tile:SetSize(size, size)
         tile:RegisterForClicks("LeftButtonUp")
 

@@ -263,29 +263,6 @@ local GetTabHoverBg, GetTabNormalBg, GetTabNormalText, GetTabSelectedBg, GetTabS
             shownInfo:SetTextColor(TEXT.normal[1], TEXT.normal[2], TEXT.normal[3])
             cardY = cardY - 34
 
-            local hordeCheck = self.UI:CreateSettingCheckbox(shownCard, cardY, "Horde mode: hide the main-hand weapon button", RC:IsHordeMode("weaponsBar"), function(cb)
-                local newState = cb:GetChecked()
-                RC:SetHordeMode("weaponsBar", newState)
-                RC:ForceCheckboxUpdate(cb, newState)
-                RC:ForceRebuildWeaponButtons()
-                RC:SaveConfigurationToProfile()
-            end)
-
-            hordeCheck:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                local gold, norm, gray = RC:GetColor("text", "gold"), RC:GetColor("text", "normal"), RC:GetColor("text", "gray")
-                GameTooltip:SetText(RCL["Horde Mode"], gold.r, gold.g, gold.b)
-                GameTooltip:AddLine(RCL["Hides the main-hand weapon button on this bar, so stones and oils only go on the off-hand. The consumables bar has its own switch."], norm.r, norm.g, norm.b, true)
-                GameTooltip:AddLine(RCL["Remembered for this character's faction only: on for Horde and off for Alliance until you change it."], norm.r, norm.g, norm.b, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(RCL["Horde warriors use Windfury Totem on their main-hand,"], gray.r, gray.g, gray.b, true)
-                GameTooltip:AddLine(RCL["so only the off-hand needs a sharpening stone."], gray.r, gray.g, gray.b, true)
-                GameTooltip:Show()
-            end)
-            hordeCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            cardY = cardY - 30
-
-
             if self.db.weaponsBar.showEquippedWeapons == nil then
                 self.db.weaponsBar.showEquippedWeapons = true
             end
@@ -298,8 +275,31 @@ local GetTabHoverBg, GetTabNormalBg, GetTabNormalText, GetTabSelectedBg, GetTabS
                 if RC.ShowSidebarWeaponsBarConfig then RC:ShowSidebarWeaponsBarConfig(frame, true) end
             end)
             cardY = cardY - 26
-            -- (2026-11-09) not offered on TBC
-            if RC.Flavor and RC:Flavor() == "tbc" then hordeCheck:Hide() cardY = cardY + 26 end
+
+            -- The main hand's button (2026-11-16: this was "Horde mode"; Zac:
+            -- "there shouldnt be an option anymore"). Nothing to switch on: it
+            -- starts off for a Horde character on Classic Era, on for everyone
+            -- else, and this tick is the list's way to say otherwise.
+            local mainHandCheck = self.UI:CreateSettingCheckbox(shownCard, cardY, "Main hand button", not RC:IsMainHandHidden("weaponsBar"), function(cb)
+                local newState = cb:GetChecked() and true or false
+                RC:SetMainHandShown("weaponsBar", newState)
+                RC:ForceCheckboxUpdate(cb, newState)
+                RC:ForceRebuildWeaponButtons()
+                RC:SaveConfigurationToProfile()
+            end)
+            mainHandCheck:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                local gold, norm, gray = RC:GetColor("text", "gold"), RC:GetColor("text", "normal"), RC:GetColor("text", "gray")
+                GameTooltip:SetText(RCL["Main hand button"], gold.r, gold.g, gold.b)
+                GameTooltip:AddLine(RCL["The main hand's button on this bar. The consumables bar has its own tick, in its item list."], norm.r, norm.g, norm.b, true)
+                GameTooltip:AddLine(RCL["Remembered for this character's faction only."], norm.r, norm.g, norm.b, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(RCL["Starts off for Horde on Classic Era: Windfury Totem is on the main hand there,"], gray.r, gray.g, gray.b, true)
+                GameTooltip:AddLine(RCL["so only the off hand needs a sharpening stone."], gray.r, gray.g, gray.b, true)
+                GameTooltip:Show()
+            end)
+            mainHandCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            cardY = cardY - 26
 
             if self.db.weaponsBar.showBagWeapons == nil then
                 self.db.weaponsBar.showBagWeapons = true

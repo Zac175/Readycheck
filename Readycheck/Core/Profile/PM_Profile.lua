@@ -77,6 +77,14 @@ RC._pms = RC._pms or {}
         end
         local fontSettings = fromDefaults("fontSettings")
         fontSettings.mainWindowScale = RC.NEW_WINDOW_SCALE
+        -- THE RAID CONSUME REMINDERS START OFF (2026-11-18, Zac: "the raid
+        -- consume reminders should be off by default"). Like the window's
+        -- start size this is for a profile first made from now on: a
+        -- character from before keeps what it has, and one that never made
+        -- its table still reads RC.defaults.consumeRemind (on), which is why
+        -- the switch is written here and not there.
+        local consumeRemind = fromDefaults("consumeRemind")
+        consumeRemind.enabled = false
         return {
             enabled = true,
             -- a profile first made with the newer default layout (frames
@@ -92,6 +100,7 @@ RC._pms = RC._pms or {}
             trinketBar = {},
             consumablesChecker = fromDefaults("consumablesChecker"),
             consumableSettings = {},
+            consumeRemind = consumeRemind,
             gearManager = {},
             gearButtons = {},
             gearButtonPositions = {},
@@ -114,6 +123,9 @@ RC._pms = RC._pms or {}
             customReminders = { reminders = {}, nextId = 1 },
             smartMacros = {},
             smartMacrosNextId = 1,
+            -- the boss abilities whose bar buttons are found and linked
+            -- by themselves: [tile key] = true (smart keys; unset = none)
+            smartKeysAuto = {},
             autoDetectedTrinkets = {},
             lastSidebarSelection = nil,
             lastUsed = GetServerTime(),

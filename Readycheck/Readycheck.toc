@@ -1,8 +1,8 @@
 ## Interface: 11509, 20506, 16001
-## Title: |cffd6a640Readycheck|r |cff999999v5.0.9|r
+## Title: |cffd6a640Readycheck|r |cff999999v5.0.10|r
 ## Notes: The Complete Character Toolkit - reminders, consumables, gear, trinket swaps, TTK modeling and more
 ## Author: Zac
-## Version: 5.0.9
+## Version: 5.0.10
 ## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
 ## SavedVariables: ReadycheckDB, WarriorReminderDB
 ## X-Category: Combat
@@ -151,6 +151,10 @@ Systems\RaidData\RaidConfigs.lua
 Systems\RaidData\RaidConfigsTBC.lua
 Systems\RaidData\RaidConfigsForever.lua
 Systems\RaidData\RaidFlavor.lua
+# The damage meter with a raid config: a config can ask for the meter's
+# windows (ZacUI, Details, Recount, Skada) to be out of sight while it is
+# in force. Before RaidProfilesSystem.lua, which asks it at login.
+Systems\RaidData\MeterHold.lua
 Systems\RaidData\RaidProfilesSystem.lua
 Systems\RaidData\NaxxDuplicateHandler.lua
 # Boss/add/trash name resolution, lifted out of TE_Triggers and TTK_Model

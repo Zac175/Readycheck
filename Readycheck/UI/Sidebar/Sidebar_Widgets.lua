@@ -236,7 +236,14 @@ local _sbs = RC._sbs
         end
 
         card._rcSettingsCard = true
-        if set then card:Repaint() end
+        if set then
+            card:Repaint()
+        elseif RC.UI.Finish then
+            -- (2026-11-16) a card with a fill of its own is a plate on its
+            -- window, as ZacUI's cards are: lit along its top, shaded
+            -- toward its foot (UIF_Finish, "card")
+            RC.UI:Finish(card, bgTexture, "card")
+        end
         return card
     end
 

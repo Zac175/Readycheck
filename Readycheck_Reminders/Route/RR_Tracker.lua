@@ -1060,6 +1060,10 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         if not settings then return end
         -- the standing reminders that are up (a measuring pass only looks)
         local holds = self._measuring and self:ActiveHolds() or self:SyncHolds()
+        -- the steps' smart macro swaps follow the route the same way
+        if not self._measuring and RC.SmartMacro then
+            RC.SmartMacro:RouteChanged()
+        end
         local alignR = settings.trackerAlignRight == true
         -- (2026-11-12) ticked and the count never touched is ONE step, as
         -- the page's slider shows: the old line read a count that was

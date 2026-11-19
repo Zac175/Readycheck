@@ -68,6 +68,44 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.10",
+            date = "2026-11-19",
+            title = "Smart keys for bosses, World Buff Drops, and a window look you can pick",
+            titles = { tbc = "Smart keys for bosses, and a window look you can pick", forever = "A window look you can pick" },
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        { "Smart keys: link a bar button to an ability on a boss's page. On a boss where that ability is switched off the button does nothing; everywhere else it works as you made it. Click a button on a preview of your bars to link it, or tick Automatic to have it found.", feature = "raid_configs" },
+                        { "A linked button reads WAIT on your bars until that ability's reminder goes off on the boss.", feature = "raid_configs" },
+                        { "A boss's new Macros page, and a route step, can switch a smart macro, a group of them or a bar slot to one item, such as the potion for that boss. Smart macros can be put in groups.", feature = "raid_configs" },
+                        { "World Buff Drops page: which of your characters can still hand in a head or heart, and which already have. It lists level 60s to start with; pick a lower level to see more.", feature = "world_tools" },
+                        { "A raid config can hide your damage meter's windows while you are in that raid: Manage, \"Damage meter...\". The meter keeps counting, and the windows come back when you leave or pick another config.", feature = "raid_configs" },
+                        "Appearance: a \"Window look\" card. Pick a finish preset or set the depth, outlines and texture yourself, and choose button depth, the main button's look, wheel speed and smooth scrolling.",
+                        { "After the raid: buffs that are not on you keep their place, dimmed, so the icons do not move when you click one off. Settings pick which are shown and how dim.", feature = "chronoboon" },
+                        { "After the raid: the window shows the Chronoboon's cooldown. A setting keeps the Boon button live during it.", feature = "chronoboon" },
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "Readycheck's windows have raised title bars, and every dialog's main button has the gold face.",
+                        "The What's New window is smaller and scrolls.",
+                        "Consumables bar: the Horde mode option is gone. \"Weapon stones on this bar\" turns its weapon buttons on or off. The main hand button starts hidden only for Horde on Classic Era.",
+                        "Raid consume reminders start switched off on a new profile.",
+                        "Smart Macros has its own icon.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "The mouse wheel moved the settings window only part of a notch. Popups and lists scroll smoothly as well.",
+                        { "On a raid's pages the content scrolled under the window's corner buttons.", feature = "raid_configs" },
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.9",
             date = "2026-11-16",
             title = "Windows and buttons with more depth",
@@ -1488,13 +1526,21 @@ local function InitializeChangelog()
         ReadycheckDB.account.lastSeenVersion = self:GetCurrentVersion()
     end
 
+    -- the window's size and side margin (ZacUI's What's New)
+    RC.Changelog.WIDTH, RC.Changelog.HEIGHT, RC.Changelog.MARGIN = 520, 380, 18
+
     function RC.Changelog:CreatePopup()
         if self.frame then
             return self.frame
         end
 
+        -- (2026-11-16, Zac: "i like the zui changelog and the size of it
+        -- can you adjust readycheck changelog to be more of that size")
+        -- ZacUI's window: 520 x 380, whatever the list holds (this one was
+        -- 420 wide and as tall as its text, 250 to 550), its 18 px side
+        -- margin, a 16 px title and 12 px for the version and dates.
         local frame = CreateFrame("Frame", "ReadycheckChangelogFrame", UIParent)
-        frame:SetSize(420, 400)
+        frame:SetSize(RC.Changelog.WIDTH, RC.Changelog.HEIGHT)
         frame:SetPoint("CENTER", 0, 50)
         frame:SetFrameStrata("DIALOG")
         frame:SetMovable(true)
@@ -1567,7 +1613,7 @@ local function InitializeChangelog()
 
         local title = titleBar:CreateFontString(nil, "OVERLAY")
         title:SetPoint("LEFT", titleIcon, "RIGHT", 8, 0)
-        RC:ApplyCustomFont(title, 15, "OUTLINE")
+        RC:ApplyCustomFont(title, 16, "OUTLINE")
         title:SetTextColor(headerTextColor.r, headerTextColor.g, headerTextColor.b, 1)
         title:SetText("What's New")
         frame.title = title
@@ -1578,7 +1624,7 @@ local function InitializeChangelog()
 
         local versionText = titleBar:CreateFontString(nil, "OVERLAY")
         versionText:SetPoint("RIGHT", -36, 0)
-        RC:ApplyCustomFont(versionText, 11, "")
+        RC:ApplyCustomFont(versionText, 12, "")
         versionText:SetTextColor(TEXT.gray[1], TEXT.gray[2], TEXT.gray[3], 1)
         versionText:SetText("v" .. self:GetCurrentVersion())
         frame.versionText = versionText
@@ -1593,7 +1639,8 @@ local function InitializeChangelog()
         closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -5, 0)
 
         local scrollFrame = CreateFrame("ScrollFrame", nil, frame)
-        scrollFrame:SetPoint("TOPLEFT", 6, -36)
+        -- (the lines start 4 px inside the list: the margin less that)
+        scrollFrame:SetPoint("TOPLEFT", RC.Changelog.MARGIN - 4, -36)
         scrollFrame:SetPoint("BOTTOMRIGHT", -22, 54)
         frame.scrollFrame = scrollFrame
 
@@ -1636,7 +1683,7 @@ local function InitializeChangelog()
         -- again - no Hide()/Show() round trip. (Its holder is a settings
         -- root, so the box wears the settings window's look.)
         local allHost = CreateFrame("Frame", nil, buttonArea)
-        allHost:SetPoint("LEFT", buttonArea, "LEFT", 16, 0)
+        allHost:SetPoint("LEFT", buttonArea, "LEFT", RC.Changelog.MARGIN - 2, 0)
         allHost:SetSize(200, 30)
         allHost._rcSetRoot = true
         local allBox = RC.UI:CreateCheckbox(allHost, "Show all versions", RC.Changelog:ShowAllSaved())
@@ -1653,22 +1700,18 @@ local function InitializeChangelog()
 
         -- Primary action wears the active look.
         local okBtn = RC.UI:CreateStyledButton(buttonArea, "Got it", 130, 30)
-        okBtn:SetPoint("RIGHT", -20, 0)
+        okBtn:SetPoint("RIGHT", -RC.Changelog.MARGIN, 0)
         okBtn:SetActive(true)
         okBtn:SetScript("OnClick", function()
             RC.Changelog:Hide()
         end)
 
-        -- Framework resize grip; same bounds as before. Repopulating stays
-        -- on mouse-up (as the old grip did) rather than every size tick.
+        -- Framework resize grip, ZacUI's bounds. Repopulating stays on
+        -- mouse-up rather than every size tick.
         local resizeGrip = RC.UI:AttachResizeGrip(frame, {
-            minW = 350, minH = 200, maxW = 600, maxH = 700,
+            minW = 360, minH = 260, maxW = 900, maxH = 900,
         })
         resizeGrip:HookScript("OnMouseUp", function()
-            -- Once the player has sized the window by hand, PopulateContent
-            -- must stop applying its own 420xN auto-size or the frame would
-            -- snap back the instant the grip is released.
-            frame.userSized = true
             content:SetWidth(scrollFrame:GetWidth())
             RC.Changelog:PopulateContent(frame.showingAll)
         end)
@@ -1676,9 +1719,8 @@ local function InitializeChangelog()
         -- the 5.0 popup look (UIF_Dialogs)
         RC.UI:SkinPopup(frame, { fill = bg, header = titleBar, title = title, close = closeBtn,
             dims = { versionText }, rules = { footerRule }, primary = okBtn })
-        -- (2026-11-09, Zac likes ZacUI's Got it: a raised plate, the
-        -- primary one with the accent on its edge and label)
-        RC.UI:StyleSettingsButton(okBtn)
+        -- (Got it is the window's main button: the accent face, as ZacUI's
+        -- Got it - it was restyled here as a page button with a gold label)
 
         self.frame = frame
         return frame
@@ -1746,11 +1788,11 @@ local function InitializeChangelog()
             -- has its version beside the window's title).
             local META_W = 0
             if showAll then
-                META_W = 118
+                META_W = 140
                 local meta = self:AcquireLine()
                 meta:SetPoint("TOPRIGHT", content, "TOPLEFT", contentWidth - 4, yOffset - 1)
                 meta:SetWidth(META_W)
-                RC:ApplyCustomFont(meta, 10, "")
+                RC:ApplyCustomFont(meta, 12, "")
                 local gray = RC:GetColor("text", "gray")
                 meta:SetTextColor(gray.r, gray.g, gray.b, gray.a or 1)
                 meta:SetJustifyH("RIGHT")
@@ -1827,12 +1869,6 @@ local function InitializeChangelog()
             scrollBar:SetValue(0)
         end
 
-        if not self.frame.userSized then
-            local frameHeight = 30 + 6 + math.min(contentHeight, 400) + 6 + 36
-            frameHeight = math.max(frameHeight, 250)
-            frameHeight = math.min(frameHeight, 550)
-            self.frame:SetSize(420, frameHeight)
-        end
     end
 
     -- "Show all versions": the account's choice (unset = the newest only)

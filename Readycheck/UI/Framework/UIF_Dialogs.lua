@@ -221,7 +221,16 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             -- and on ZacUI's windows
             if RC.UI.Finish then RC.UI:Finish(frame, fill, "window") end
         end
-        if st.header then ClearHeader(st.header) end
+        if st.header then
+            ClearHeader(st.header)
+            -- (2026-11-16) a WINDOW's title bar is a raised piece of it,
+            -- as on ZacUI's windows: lifted, lit along its top, a dark
+            -- line along its foot and a pale one under it. It was the bare
+            -- ground with the title on it. A POPUP (a question, a
+            -- CreatePopupShell: frame._rcBare) keeps its title on the
+            -- ground, as ZacUI's popups do.
+            if st.chrome and not frame._rcBare and RC.UI.Finish then RC.UI:Finish(st.header, nil, "bar") end
+        end
         if st.title then st.title:SetTextColor(SCol("text", 1)) end
         if st.subtitle then st.subtitle:SetTextColor(SCol("text", S.DIM_A)) end
         for _, fs in ipairs(st.texts) do fs:SetTextColor(SCol("text", SHELL_BODY_A)) end
@@ -369,6 +378,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         opts = opts or {}
         local S = _uif.S
         local f = CreateFrame("Frame", name, UIParent)
+        f._rcBare = true   -- a popup: no raised title bar (PaintShell)
         f:SetSize(opts.width or 420, opts.height or 240)
         f:SetPoint("CENTER", 0, 20)
         f:SetFrameStrata(opts.strata or "DIALOG")
@@ -468,6 +478,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
     -- .titleBar/.titleText/.closeBtn/.accentLine on the dialog; onClose
     -- runs from the X. Drag by the title bar only.
     local function BuildDialogShell(self, dialog, onClose)
+        dialog._rcBare = true   -- a popup: no raised title bar (PaintShell)
         local winBg  = GetWindowBG()
         local hdrBg  = GetHeaderBG()
         local hdrTxt = GetHeaderText()
@@ -632,12 +643,25 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
     local function PaintDestructive(btn)
         if not btn._destructive or not btn.text then return end
         local S = _uif.S
-        local hot = btn:IsMouseOver()
+        local t = btn._rcFadeT or (btn:IsMouseOver() and 1 or 0)
         local c = RC:GetColor("text", "red")
-        local f = hot and S.CTA_FACE_H or S.CTA_FACE
+        if RC.UI.Look and (RC.UI:Look()).mainPlain then
+            -- (the look's "main button: like the others") the button's own
+            -- paint has drawn the ordinary face: the red goes on its edge
+            -- and label
+            if btn.border then RC.UI:UpdateBorderColor(btn.border, c, 0.85 + 0.15 * t) end
+            btn.text:SetTextColor(c.r, c.g, c.b, 1)
+            return
+        end
+        local f = S.CTA_BOT + (S.CTA_BOT_H - S.CTA_BOT) * t
         if btn.bg then btn.bg:SetVertexColor(c.r * f, c.g * f, c.b * f, 1) end
-        if btn.border then RC.UI:UpdateBorderColor(btn.border, c, hot and 1 or 0.85) end
-        btn.text:SetTextColor(RC.UI:SCol("text", hot and 1 or 0.94))
+        -- (the face is lit with its own red, as the safe one's with the accent)
+        if btn._rcPlate then
+            btn._rcPlate:Paint(S.CTA_LIFT + (S.CTA_LIFT_H - S.CTA_LIFT) * t, S.PL_SHEEN + (S.PL_SHEEN_H - S.PL_SHEEN) * t,
+                nil, nil, S.PL_DROP, 0, c)
+        end
+        if btn.border then RC.UI:UpdateBorderColor(btn.border, c, 0.85 + 0.15 * t) end
+        btn.text:SetTextColor(RC.UI:SCol("text", 0.94 + 0.06 * t))
     end
 
     -- Shows a modal Yes/No dialog with a destructive-styled confirm

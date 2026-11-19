@@ -218,6 +218,87 @@ local BACK_PANELS = {
                 C_Timer.After(0, function() OpenMenu(picker) end)
             end
 
+            -- THE DAMAGE METER WITH THIS CONFIG (RaidProfilesSystem.lua,
+            -- RC:SetRaidProfileMeterHide): a small picker in the Manage
+            -- box's place, the choice in use marked, Back to the menu.
+            -- Listed only where a meter offers to be held.
+            local function OpenMeterPicker()
+                if manageDropdown._meterPicker then
+                    manageDropdown._meterPicker:Hide()
+                    manageDropdown._meterPicker:SetParent(nil)
+                    manageDropdown._meterPicker = nil
+                end
+
+                local picker = RC.UI:CreateScrollableDropdown(barFrame, 250, RCL["Damage meter with this config"], 12)
+                manageDropdown._meterPicker = picker
+                if picker.SetSearchEnabled then picker:SetSearchEnabled(false) end
+
+                picker:ClearAllPoints()
+                picker:SetPoint("RIGHT", manageDropdown, "RIGHT", 0, 0)
+                picker:SetHeight(22)
+                picker:SetFrameLevel((manageDropdown:GetFrameLevel() or 0) + 4)
+
+                local function TearDown()
+                    if manageDropdown._meterPicker == picker then
+                        manageDropdown._meterPicker = nil
+                    end
+                    if picker.menu then picker.menu:Hide() end
+                    picker:Hide()
+                    picker:SetParent(nil)
+                end
+
+                local function OpenMenu(dd)
+                    if not dd or not dd.menu then return end
+                    if RC.UI._openDropdown and RC.UI._openDropdown ~= dd then
+                        local other = RC.UI._openDropdown
+                        if other.menu then other.menu:Hide() end
+                        other.isOpen = false
+                    end
+                    dd.menu:Show()
+                    dd.isOpen = true
+                    RC.UI._openDropdown = dd
+                end
+
+                local now = RC:GetRaidProfileMeterHide(raidName, profileName) or "shown"
+                picker:SetItems({
+                    {
+                        text       = RCL["Back"],
+                        value      = "__back__",
+                        icon       = "Interface\\AddOns\\Readycheck\\Media\\arrowLeft",
+                        iconColor  = RC:GetColor("dropdown", "arrow"),
+                        iconNoCrop = true,
+                        iconBorder = true,
+                        iconSize   = 10,
+                    },
+                    { text = RCL["Shown"],                       value = "shown" },
+                    { text = RCL["Hidden, threat window stays"], value = "meter" },
+                    { text = RCL["Hidden, threat window too"],   value = "all" },
+                }, function(value)
+                    TearDown()
+                    if value == "__back__" then
+                        C_Timer.After(0, function() OpenMenu(manageDropdown) end)
+                        return
+                    end
+                    if value == now then return end
+                    if RC:SetRaidProfileMeterHide(raidName, profileName, value ~= "shown" and value or nil) then
+                        if value == "shown" then
+                            RC:Print(string.format(RCL["Damage meter: shown with the raid config \"%s\"."], profileName))
+                        else
+                            RC:Print(string.format(RCL["Damage meter: hidden while \"%s\" is the picked config and you are in %s."], profileName, raidName))
+                        end
+                    end
+                end)
+                picker:SetSelectedValue(now, RCL["Damage meter with this config"])
+
+                picker.menu:HookScript("OnHide", function()
+                    C_Timer.After(0, function()
+                        if manageDropdown._meterPicker == picker then TearDown() end
+                    end)
+                end)
+
+                C_Timer.After(0, function() OpenMenu(picker) end)
+            end
+
             local manageItems = {
                 { text = RCL["New profile..."],    value = "__new__" },
                 { text = RCL["Rename profile..."],  value = "__rename__" },
@@ -230,6 +311,9 @@ local BACK_PANELS = {
             end
             if builtInProfile then
                 table.insert(manageItems, { text = RCL["Built-in: "] .. builtInProfile.name, value = "__builtin__" })
+            end
+            if RC.MeterHoldOffered and RC:MeterHoldOffered() then
+                table.insert(manageItems, { text = RCL["Damage meter..."], value = "__meter__" })
             end
 
             manageDropdown:SetItems(manageItems, function(value)
@@ -297,6 +381,8 @@ local BACK_PANELS = {
                     end
                 elseif value == "__merge__" then
                     OpenMergePicker()
+                elseif value == "__meter__" then
+                    OpenMeterPicker()
                 end
             end)
             manageDropdown:SetSelectedValue("__manage__", "Manage")
@@ -1173,8 +1259,16 @@ local BACK_PANELS = {
 
         -- the page scrolls 27 in from each side: what it puts 18 in (cards,
         -- headers, tab rows) lands on the window's 45 px content pad
+        -- THE CORNER'S ROOM (2026-11-17, Zac: "the x butotn scaling button
+        -- etc overlaps stuff when i scroll down"). The corner's boxes -
+        -- reload, the scale, fold, the X - are 26 high, 18 down from the
+        -- window's top. A page whose title is pinned starts its scroll area
+        -- under the title, well clear of them; a page with nothing pinned
+        -- (a raid's pages) started it at the very top, so what scrolled up
+        -- went under the boxes. The scroll area never starts above this.
+        local CORNER_CLEAR = 18 + 26 + 6
         local contentScroll = CreateFrame("ScrollFrame", "WRSidebarContentScroll", contentArea)
-        contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", S.PAGE_X, 0)
+        contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", S.PAGE_X, -CORNER_CLEAR)
         contentScroll:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -S.PAGE_X, 0)
 
         local contentChild = CreateFrame("Frame", nil, contentScroll)
@@ -1187,7 +1281,7 @@ local BACK_PANELS = {
         -- white 0.27 thumb, hidden when the page fits
         local scrollBar = CreateFrame("Slider", nil, contentArea)
         scrollBar:SetWidth(16)
-        scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -6, -4)
+        scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -6, -4 - CORNER_CLEAR)
         scrollBar:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -6, 4)
         scrollBar:SetOrientation("VERTICAL")
         scrollBar:SetMinMaxValues(0, 1)
@@ -1260,8 +1354,12 @@ local BACK_PANELS = {
                     plate:Paint(0.04, 0.14, edgeCol, 1)
                 else
                     if red then red:Hide() end
-                    plate:Paint(hot and S.PL_LIFT_H or S.PL_LIFT, hot and S.PL_SHEEN_H or S.PL_SHEEN, tc,
-                        hot and S.PL_EDGE_H or S.PL_EDGE, S.PL_DROP)
+                    -- (2026-11-16: a button's face - the box is the button
+                    -- colour, lit as a button is)
+                    local la, lo, lc = RC.UI:ButtonFace(hot and 1 or 0)
+                    plate.box:SetVertexColor(RC.UI:SCol("buttonBackground", 1))
+                    plate:Paint(la, hot and S.PL_SHEEN_H or S.PL_SHEEN, tc,
+                        hot and S.PL_EDGE_H or S.PL_EDGE, S.PL_DROP, lo, lc)
                 end
             end
         end
@@ -1530,6 +1628,8 @@ local BACK_PANELS = {
             end
             pinnedTop:SetHeight(math.max(1, top))
             if top > 0 then pinnedTop:Show() else pinnedTop:Hide() end
+            -- (nothing pinned: the scroll area still starts under the corner)
+            top = math.max(top, CORNER_CLEAR)
             local _, _, _, _, oldTop = contentScroll:GetPoint(1)
             contentScroll:SetPoint("TOPLEFT", contentArea, "TOPLEFT", S.PAGE_X, -top)
             scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -6, -4 - top)

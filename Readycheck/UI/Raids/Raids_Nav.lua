@@ -125,6 +125,8 @@ local _sbr = RC._sbr
         -- hairlines live inside the plate. A group row has none.
         local box = button
         if not isCategory then box = RC.UI:Plate(button, 12, 12, 1, 2, true).box end
+        -- (a look change repaints every plate through its frame's Repaint)
+        if not button.Repaint then button.Repaint = PaintNavRow end
         button.glow = Tex("BACKGROUND", 1) button.glow:SetAllPoints(box)
         button.hoverGlow = Tex("BACKGROUND", 2) button.hoverGlow:SetAllPoints(box)
         button.bg = Tex("BACKGROUND", 3) button.bg:SetAllPoints(box)

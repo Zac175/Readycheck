@@ -4,13 +4,34 @@
 -- macro body based on current target; RC.SmartMacro evaluates them live.
 -- Settings live under RC.db.smartMacros (synced as "smartMacros" in
 -- SidebarMeshSync.lua).
+-- An entry of the list is an in-game macro (by name) or one slot of the
+-- action bars (mac.slot; 0 until one is picked). Either can have a group
+-- (mac.group) and a link to a boss ability (mac.ability).
+-- Also here (2026-11-16): what the raid pages use -
+--   the SWAP pickers that hand an entry, or a group of them, one item for
+--   a boss or a route step (RC:BuildSmartMacroSwapCard for a boss's page,
+--   RC:BuildSmartMacroSwapRow for the route's step editor); the swaps
+--   themselves are raid-profile data: bosses[boss].macroSwaps and route
+--   step actions.macros;
+--   the LINK card under each ability of a boss's page
+--   (RC:BuildSmartMacroLinkCard): which macros and bar slots are only
+--   live on bosses where that ability is switched on.
+-- SWITCHED ON BY RC.smartKeys, which Readycheck_Features sets
+-- (SmartKeys.lua; Readycheck_Testing's until 2026-11-18): without it this
+-- page is the rules editor alone, and the raid pages show none of the
+-- above. The bar preview, the click-a-button slot picker and the macro
+-- list those cards use live in that file too.
 ------------------------------------------------------------------------
 local AddonName = "Readycheck"
 local RC = _G[AddonName]
+-- Taint-safe API local (fallback on RC.Compat, built in Core; never
+-- write _G - a written Blizzard global taints its readers)
+local GetItemInfo = GetItemInfo or (RC and RC.Compat and RC.Compat.GetItemInfo)
+local GetSpellInfo = GetSpellInfo or (RC and RC.Compat and RC.Compat.GetSpellInfo)
 
 -- Forward-declared so the 'function SM_RenderList/Edit' definitions below
 -- assign these file-locals instead of leaking globals into _G.
-local SM_RenderList, SM_RenderEdit
+local SM_RenderList, SM_RenderEdit, SM_RenderSlotEdit
 
 local PAD    = 10
 local ROW_H  = 28
@@ -137,6 +158,510 @@ local function MakeDrop(parent, x, y, w, items, currentVal, onChange)
     return d
 end
 
+------------------------------------------------------------------------
+-- SWAPS: one item for a macro or a group, from a raid page
+-- (2026-11-16, Zac: "i wanted it added to raid configs and have the
+-- ability like if i set mrp for this boss or route step and i have a
+-- smart macro for potions it will change my macro to that"; "i have
+-- individual potions bound on my bar i want to be able to change all of
+-- them to this potion so i dont fat finger something on accident").
+-- A swap = { group = "<group>" | macro = "<macro name>", item = "<item
+-- name>", itemId = n }; the engine is RC.SmartMacro (Readycheck_Features).
+------------------------------------------------------------------------
+local function TrimStr(v) return (type(v) == "string") and v:match("^%s*(.-)%s*$") or "" end
+
+-- BAR SLOTS. The action bars' 120 slots are the game's own: every bar
+-- addon shows the same ones, so an entry names a slot by its number.
+local function SlotNumber(v)
+    local n = tonumber(v)
+    if n and n >= 1 and n <= 120 and n == math.floor(n) then return n end
+    return nil
+end
+-- an entry that is a bar slot (0: none picked yet)
+local function IsSlotEntry(mac) return type(mac) == "table" and mac.slot ~= nil end
+-- what a slot holds, in words, and its icon (nil: empty)
+function RC:ActionSlotHolds(slot)
+    local kind, id = GetActionInfo(slot)
+    if not kind then return nil end
+    local name
+    if kind == "spell" then
+        name = GetSpellInfo(id)
+    elseif kind == "item" then
+        name = GetItemInfo(id)
+    elseif kind == "macro" then
+        name = C_ActionBar.GetActionText(slot)
+    end
+    return name or kind, C_ActionBar.GetActionTexture(slot)
+end
+function RC:ActionSlotLabel(slot)
+    local n = SlotNumber(slot)
+    if not n then return RCL["Bar slot (none picked)"] end
+    local holds = RC:ActionSlotHolds(n)
+    return RCL["Bar slot "] .. n .. (holds and (" - " .. holds) or "")
+end
+-- what an entry goes by in a list
+local function EntryLabel(mac)
+    if IsSlotEntry(mac) then return RC:ActionSlotLabel(mac.slot) end
+    local n = TrimStr(mac.macroName)
+    return n ~= "" and n or RCL["(unnamed)"]
+end
+
+-- what a swap can be aimed at: every group first, then every macro, then
+-- every bar slot
+function RC:SmartMacroSwapTargets()
+    local out, groups, seenG, names, seenM, slots, seenS = {}, {}, {}, {}, {}, {}, {}
+    for _, mac in ipairs((RC.db and RC.db.smartMacros) or {}) do
+        local g = TrimStr(mac.group)
+        if g ~= "" and not seenG[g:lower()] then
+            seenG[g:lower()] = true
+            groups[#groups + 1] = g
+        end
+        if IsSlotEntry(mac) then
+            local sn = SlotNumber(mac.slot)
+            if sn and not seenS[sn] then
+                seenS[sn] = true
+                slots[#slots + 1] = sn
+            end
+        else
+            local n = TrimStr(mac.macroName)
+            if n ~= "" and not seenM[n] then
+                seenM[n] = true
+                names[#names + 1] = n
+            end
+        end
+    end
+    table.sort(groups, function(a, b) return a:lower() < b:lower() end)
+    table.sort(names, function(a, b) return a:lower() < b:lower() end)
+    table.sort(slots)
+    for _, g in ipairs(groups) do out[#out + 1] = { text = RCL["All of: "] .. g, value = "g:" .. g } end
+    for _, n in ipairs(names) do out[#out + 1] = { text = n, value = "m:" .. n } end
+    for _, sn in ipairs(slots) do out[#out + 1] = { text = RC:ActionSlotLabel(sn), value = "s:" .. sn } end
+    return out
+end
+
+-- the macros and bar slots of one group, as they are listed
+function RC:SmartMacroGroupMembers(group)
+    local out, g = {}, TrimStr(group):lower()
+    if g == "" then return out end
+    for _, mac in ipairs((RC.db and RC.db.smartMacros) or {}) do
+        if TrimStr(mac.group):lower() == g then
+            if IsSlotEntry(mac) then
+                local sn = SlotNumber(mac.slot)
+                if sn then out[#out + 1] = RCL["slot "] .. sn end
+            elseif TrimStr(mac.macroName) ~= "" then
+                out[#out + 1] = mac.macroName
+            end
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+-- THE ABILITIES AN ENTRY CAN BE LINKED TO: the tiles of a boss's page
+-- for this character (RC:GetAvailableAbilities), as { key, name, icon }
+function RC:SmartMacroLinkAbilities()
+    local out = {}
+    for _, info in ipairs(RC:GetAvailableAbilities("boss") or {}) do
+        out[#out + 1] = { key = info[1], name = info[2], icon = info[3] }
+    end
+    return out
+end
+local function AbilityName(key)
+    for _, a in ipairs(RC:SmartMacroLinkAbilities()) do
+        if a.key == key then return a.name end
+    end
+    return tostring(key)
+end
+
+-- The items a swap's "Pick" list offers: what you carry of the
+-- consumables catalogue, potions first - each as the item really in the
+-- bags (a merged row or a target dummy is whichever version is carried).
+-- `all` lists the whole catalogue instead (editing another character's
+-- raid: their bags are not known here), without the dummies.
+local SWAP_CATS = { "potions", "protectionPotions", "utilities", "flasks", "elixirs", "food",
+    "drinks", "buffs", "classItems", "special" }
+function RC:SmartMacroItemChoices(all)
+    local items, seen = {}, {}
+    local rc = RC.raidConsumables or {}
+    for _, catKey in ipairs(SWAP_CATS) do
+        local cat = rc[catKey]
+        if type(cat) == "table" and type(cat.items) == "table" then
+            local list = {}
+            for itemId, data in pairs(cat.items) do
+                local row = type(data) == "table" and data or nil
+                local synthetic = row and (row.baseItemId ~= nil or row.slot ~= nil)
+                if type(itemId) == "number" and not synthetic then
+                    local id
+                    if all then
+                        id = (not RC:IsTargetDummy(itemId)) and itemId or nil
+                    else
+                        id = RC:CarriedVersion(itemId, row)
+                    end
+                    if id and not seen[id] then
+                        seen[id] = true
+                        list[#list + 1] = { id = id, name = RC:ItemLabel(itemId, row), icon = RC:ItemLabelIcon(id, row) }
+                    end
+                end
+            end
+            table.sort(list, function(x, y) return (x.name or "") < (y.name or "") end)
+            for _, t in ipairs(list) do
+                items[#items + 1] = { text = t.name, value = t.id, icon = t.icon }
+            end
+        end
+    end
+    if #items == 0 then
+        items[1] = { text = RCL["Nothing from the consumables list in your bags"], value = 0 }
+    end
+    return items
+end
+
+-- the value a swap's aim shows in its picker
+local function SwapAimValue(e)
+    local m = TrimStr(e.macro)
+    if m ~= "" then return "m:" .. m, m end
+    local sn = SlotNumber(e.slot)
+    if sn then return "s:" .. sn, RC:ActionSlotLabel(sn) end
+    local g = TrimStr(e.group)
+    if g ~= "" then return "g:" .. g, RCL["All of: "] .. g end
+    return nil
+end
+
+-- the item a swap names, for its box
+local function SwapItemText(e)
+    local name = TrimStr(e.item)
+    if name == "" and tonumber(e.itemId) then
+        name = GetItemInfo(tonumber(e.itemId)) or ("item:" .. tostring(e.itemId))
+    end
+    return name
+end
+
+-- One swap's controls on `parent`, top-left at (x, y):
+--   [ which macro or group v ] [ item name ] [ Pick v ]
+-- e is the swap's own table and is written in place. opts: targetW, itemW,
+-- pickW, all (the Pick list shows the whole catalogue), onChange(e, typed)
+-- after any change: the caller saves, and redraws unless `typed` - the
+-- item box gave up focus with a new name in it, and redrawing then would
+-- eat the click that took the focus.
+-- Returns the row's height.
+function RC:BuildSmartMacroSwapRow(parent, x, y, e, opts)
+    opts = opts or {}
+    local targetW, itemW, pickW = opts.targetW or 150, opts.itemW or 170, opts.pickW or 76
+    local function Changed(typed)
+        if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+        if opts.onChange then opts.onChange(e, typed) end
+    end
+
+    local targets = RC:SmartMacroSwapTargets()
+    local curVal, curLabel = SwapAimValue(e)
+    local known = false
+    for _, t in ipairs(targets) do if t.value == curVal then known = true break end end
+    -- (a swap aimed at a macro or group that is gone still shows what it names)
+    if curVal and not known then targets[#targets + 1] = { text = curLabel .. RCL[" (not set up)"], value = curVal } end
+    local empty = (#targets == 0)
+    local tDD = RC.UI:CreateScrollableDropdown(parent, targetW,
+        empty and RCL["No smart macros yet"] or RCL["Which key..."], 10)
+    tDD:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y + 2)
+    tDD:SetItems(targets, function(val)
+        local kind, name = tostring(val):match("^([gms]):(.+)$")
+        if not kind then return end
+        e.group, e.macro, e.slot = nil, nil, nil
+        if kind == "g" then e.group = name elseif kind == "m" then e.macro = name else e.slot = SlotNumber(name) end
+        Changed()
+    end)
+    if curVal then tDD:SetSelectedValue(curVal, curLabel) end
+
+    local eb = RC.UI:CreateStyledEditBox(parent, { height = 22, width = itemW, maxLetters = 80 })
+    eb:SetPoint("TOPLEFT", parent, "TOPLEFT", x + targetW + 6, y + 2)
+    eb.editBox:SetText(SwapItemText(e))
+    eb.editBox:SetCursorPosition(0)
+    local function Commit(self, typed)
+        local txt = TrimStr(self:GetText())
+        if txt == SwapItemText(e) then return end
+        -- typed (or shift-clicked in): the name is the item; the picked id
+        -- no longer says which
+        e.item, e.itemId = (txt ~= "" and txt or nil), nil
+        Changed(typed)
+    end
+    eb.editBox:SetScript("OnEnterPressed", function(self) Commit(self) self:ClearFocus() end)
+    eb.editBox:SetScript("OnEditFocusLost", function(self) Commit(self, true) end)
+    -- shift-click an item anywhere to drop its name in (SmartMacro's hook)
+    eb.editBox:HookScript("OnEditFocusGained", function(self)
+        if RC.SmartMacro then RC.SmartMacro._lastFocusedEB = self end
+    end)
+    eb.editBox:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(RCL["The item the macro uses"], 1, 1, 1)
+        GameTooltip:AddLine(RCL["Type its name, shift-click it in your bags while this box is active, or pick it from the list."], 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    eb.editBox:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
+    local pDD = RC.UI:CreateScrollableDropdown(parent, pickW, RCL["Pick"], 12)
+    pDD:SetPoint("TOPLEFT", parent, "TOPLEFT", x + targetW + 6 + itemW + 6, y + 2)
+    pDD:SetItems(RC:SmartMacroItemChoices(opts.all), function(val)
+        local id = tonumber(val)
+        if not id or id == 0 then return end
+        -- (its real name for the macro; until the client has it, the
+        -- macro goes by the item's number)
+        e.itemId, e.item = id, (GetItemInfo(id))
+        eb.editBox:SetText(SwapItemText(e))
+        eb.editBox:SetCursorPosition(0)
+        Changed()
+    end)
+    return 26, tDD, eb, pDD
+end
+
+-- A boss's swaps as one card on its raid page (the "Macros" tile).
+-- cfg is the boss's settings table; its macroSwaps list is created on the
+-- first add and removed again when the last row goes. opts: all,
+-- onRerender() to redraw the page after a row is added or removed,
+-- onSave() to save. Returns the new yPos.
+function RC:BuildSmartMacroSwapCard(parent, yPos, cfg, opts)
+    opts = opts or {}
+    local grayC = RC:GetColor("text", "disabled")
+    local card = RC:CreateSettingsCard(parent, yPos, RCL["Smart macros on this boss"])
+    local cy = -35
+    local function Line(text, col, size)
+        local fs = MakeFS(card, size or 10, text)
+        fs:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy)
+        local cw = card:GetWidth() or 0
+        fs:SetWidth(cw > 200 and (cw - 30) or 420)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+        if col then fs:SetTextColor(col.r or col[1], col.g or col[2], col.b or col[3], 1) end
+        cy = cy - math.max(14, (fs:GetStringHeight() or 12)) - 8
+        return fs
+    end
+    Line(RCL["Hand a smart macro, a bar slot - or every one of a group - one item for this boss. From the moment you target the boss it uses that item, whatever else it is set to, until you target another enemy or the fight is over. Pick a group and every key in it becomes the same item, so no key can fire the wrong one. Nothing can change in a fight: target the boss before the pull."],
+        grayC)
+
+    local function Save()
+        if opts.onSave then opts.onSave() else RC:SaveConfigurationToProfile() end
+    end
+    local function Rerender()
+        if opts.onRerender then opts.onRerender() end
+    end
+
+    if not RC.CreateSmartMacro then
+        Line(RCL["Smart macros need the Readycheck_Features addon. Enable it in your AddOns list and /reload."],
+            RC:GetColor("text", "red"), 11)
+    elseif #RC:SmartMacroSwapTargets() == 0 then
+        Line(RCL["No smart macros or bar slots yet. Add them on the Smart Macros page (under Extras) - a macro by its exact in-game name, a bar slot by picking its button - and give the ones that belong together the same group: \"Potions\" for every potion key."],
+            RC:GetColor("text", "warning"), 11)
+    end
+
+    local list = (type(cfg.macroSwaps) == "table") and cfg.macroSwaps or {}
+    for i, e in ipairs(list) do
+        local idx = i
+        local h = RC:BuildSmartMacroSwapRow(card, 15, cy, e, {
+            all = opts.all,
+            onChange = function(_, typed)
+                Save()
+                if not typed then Rerender() end
+            end,
+        })
+        local x = RC.UI:CreateXCloseButton(card, 18, function()
+            table.remove(cfg.macroSwaps, idx)
+            if #cfg.macroSwaps == 0 then cfg.macroSwaps = nil end
+            if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+            Save()
+            Rerender()
+        end)
+        x:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, cy + 1)
+        cy = cy - h
+        -- a group: say which macros it covers
+        local g = TrimStr(e.group)
+        if g ~= "" and TrimStr(e.macro) == "" then
+            local members = RC:SmartMacroGroupMembers(g)
+            local txt = (#members > 0) and (g .. ": " .. table.concat(members, ", "))
+                or (g .. RCL[": nothing is in this group yet"])
+            local fs = MakeFS(card, 9, txt)
+            fs:SetPoint("TOPLEFT", card, "TOPLEFT", 17, cy + 2)
+            fs:SetPoint("TOPRIGHT", card, "TOPRIGHT", -34, cy + 2)
+            fs:SetJustifyH("LEFT")
+            fs:SetWordWrap(false)
+            if grayC then fs:SetTextColor(grayC.r, grayC.g, grayC.b, 1) end
+            cy = cy - 16
+        end
+        cy = cy - 4
+    end
+
+    local addBtn = Btn(card, RCL["+ Add a key"], 120, 22)
+    addBtn:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy)
+    addBtn:SetScript("OnClick", function()
+        cfg.macroSwaps = (type(cfg.macroSwaps) == "table") and cfg.macroSwaps or {}
+        cfg.macroSwaps[#cfg.macroSwaps + 1] = {}
+        Save()
+        Rerender()
+    end)
+    cy = cy - 30
+
+    card:SetContentHeight(math.abs(cy))
+    return yPos - card:GetHeight() - 15
+end
+
+-- THE LINK CARD under an ability of a boss's page (2026-11-16, Zac: "i
+-- want the macro for each of the configurable things inside a boss
+-- deathwish reck etc. ... i want to make it so my deathwish is only
+-- active for bosses i should death wish on"): which macros and bar slots
+-- follow this ability. A link is the entry's own (mac.ability), so it is
+-- the same on every boss: live where the ability is switched on, off
+-- where it is not. cfg: this boss's settings, for the line that says
+-- which it is here. opts.onRerender() after a change. Returns the new yPos.
+function RC:BuildSmartMacroLinkCard(parent, yPos, abilityKey, abilityName, cfg, opts)
+    opts = opts or {}
+    local grayC = RC:GetColor("text", "disabled")
+    local card = RC:CreateSettingsCard(parent, yPos, RCL["Keys for "] .. tostring(abilityName))
+    local cy = -35
+    local function Line(text, col, size)
+        local fs = MakeFS(card, size or 10, text)
+        fs:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy)
+        local cw = card:GetWidth() or 0
+        fs:SetWidth(cw > 200 and (cw - 30) or 420)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+        if col then fs:SetTextColor(col.r, col.g, col.b, 1) end
+        cy = cy - math.max(14, (fs:GetStringHeight() or 12)) - 8
+        return fs
+    end
+    local function Changed()
+        RC:SaveConfigurationToProfile()
+        if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+        if opts.onRerender then opts.onRerender() end
+    end
+
+    Line(RCL["A button linked here is only live on bosses where this is switched on. Linking puts a small macro on the button in place of its spell or item - same key, same place, same icon - and nothing is ever taken off your bars. On a boss that is set up but has this off, that macro does nothing from the moment you target the boss until you target another enemy or the fight is over. On a boss with nothing set up your keys are as you made them. Unlinking puts the spell or item back."],
+        grayC)
+    local on = RC:EncounterAbilityOn(cfg, abilityKey)
+    local item = on and RC:EncounterAbilityItem(cfg, abilityKey) or nil
+    if not RC:EncounterHasConfig(cfg) then
+        Line(RCL["On this boss: nothing is set up, so your keys are as you made them."], grayC, 11)
+    elseif on and item then
+        Line(RCL["On this boss: live, and using "] .. (GetItemInfo(item) or ("item:" .. item)) .. RCL[" (the one item set up here)."],
+            RC:GetColor("text", "success"), 11)
+    elseif on then
+        Line(RCL["On this boss: live."], RC:GetColor("text", "success"), 11)
+    else
+        Line(RCL["On this boss: off (it is not switched on here)."], RC:GetColor("text", "warning"), 11)
+    end
+
+    Line(RCL["The key cannot be locked until its reminder goes off: the game lets no addon change a macro or a bar slot in a fight. Instead a linked button on your bars is dimmed and reads WAIT on the boss until this ability's reminder has gone off there."],
+        grayC)
+
+    local list = (RC.db and RC.db.smartMacros) or {}
+    local linkedMacros = {}
+    for _, mac in ipairs(list) do
+        if not IsSlotEntry(mac) and TrimStr(mac.macroName) ~= "" and mac.ability == abilityKey then
+            linkedMacros[#linkedMacros + 1] = mac
+        end
+    end
+    local autoOn = RC:SmartKeyAutoOn(abilityKey)
+    local WHY = {
+        busy = RCL["A button can only be linked out of combat, with nothing on the cursor."],
+        empty = RCL["That button is empty: put the spell, item or macro on it first."],
+        full = RCL["No room for another macro: delete one in /macro first."],
+    }
+    local function LinkSlot(slot)
+        local mac = RC:SmartKeyEntryOnSlot(slot)
+        if mac and mac.ability == abilityKey then
+            -- (one found automatically comes straight back: nothing to do)
+            if mac.auto and autoOn then return end
+            RC:SmartKeyUnlinkSlot(slot)
+        else
+            -- (by hand: it is no longer the automatic keys' to drop)
+            local made, why = RC:SmartKeyLinkSlot(slot, abilityKey, false)
+            if not made then RC:Print(WHY[why] or WHY.empty) end
+        end
+        Changed()
+    end
+
+    if not RC.CreateSmartMacro then
+        Line(RCL["Smart macros need the Readycheck_Features addon. Enable it in your AddOns list and /reload."],
+            RC:GetColor("text", "red"), 11)
+    else
+        -- AUTOMATIC: every bar button that holds this ability, found and
+        -- linked without a click (SmartKeys.lua, RC:SmartKeyAutoSync)
+        if RC:SmartKeyAutoOffered(abilityKey) then
+            local chk = RC.UI:CreateCheckbox(card, RCL["Automatic: find it on my bars"], autoOn)
+            chk:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy)
+            chk:SetScript("OnClick", function(cb)
+                local on = cb:GetChecked() and true or false
+                RC:ForceCheckboxUpdate(cb, on)
+                RC:SetSmartKeyAuto(abilityKey, on)
+                Changed()
+            end)
+            cy = cy - 26
+            Line(RCL["Ticked, nothing needs linking or making: every button on your bars that holds this - the spell or item itself, or a macro of yours that only casts it - is linked for you, and a button you add later is too. A macro that also casts something else is left alone."],
+                grayC)
+        end
+
+        -- BAR BUTTONS: the bars as they are; a click links a button, a
+        -- second click unlinks it
+        Line(RCL["Your bars - click a button to link it, click it again to unlink:"], RC:GetColor("text", "normal"), 11)
+        cy = cy + 2
+        local h = RC:BuildBarPreview(card, 15, cy, {
+            key = "link",
+            lit = function(slot)
+                local mac = RC:SmartKeyEntryOnSlot(slot)
+                return mac ~= nil and mac.ability == abilityKey
+            end,
+            tip = function(slot)
+                local mac = RC:SmartKeyEntryOnSlot(slot)
+                if mac and mac.ability == abilityKey and mac.auto and autoOn then
+                    return RCL["Found automatically. Untick Automatic to pick by hand."]
+                end
+                if mac and mac.ability == abilityKey then return RCL["Linked. Click to unlink (what it held is put back)."] end
+                local other = mac and TrimStr(mac.ability) or ""
+                if other ~= "" then return RCL["Linked to "] .. AbilityName(other) .. RCL[". Click to link it here instead."] end
+                return RCL["Click to link this button."]
+            end,
+            onPick = LinkSlot,
+        })
+        cy = cy - h - 8
+        local realBtn = Btn(card, RCL["Click a button on my bars"], 210, 22)
+        realBtn:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy)
+        realBtn:SetScript("OnClick", function()
+            RC:PickActionSlot(function(slot)
+                if not slot then return end
+                local mac = RC:SmartKeyEntryOnSlot(slot)
+                if mac and mac.ability == abilityKey then return end
+                LinkSlot(slot)
+            end)
+        end)
+        cy = cy - 32
+
+        -- MACROS: the ones linked, and the game's macros to link another
+        Line(RCL["Macros:"], RC:GetColor("text", "normal"), 11)
+        cy = cy + 2
+        for _, mac in ipairs(linkedMacros) do
+            local cap = mac
+            local fs = MakeFS(card, 11, EntryLabel(mac))
+            fs:SetPoint("TOPLEFT", card, "TOPLEFT", 17, cy)
+            fs:SetPoint("TOPRIGHT", card, "TOPRIGHT", -40, cy)
+            fs:SetJustifyH("LEFT")
+            fs:SetWordWrap(false)
+            local x = RC.UI:CreateXCloseButton(card, 16, function()
+                RC:SmartKeyUnlink(cap)
+                Changed()
+            end)
+            x:SetPoint("TOPRIGHT", card, "TOPRIGHT", -12, cy + 2)
+            cy = cy - 20
+        end
+        if #linkedMacros > 0 then cy = cy - 4 end
+        local dd = RC.UI:CreateScrollableDropdown(card, 260, RCL["Link one of your macros..."], 10)
+        dd:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy + 2)
+        dd:SetItems(RC:SmartKeyMacroChoices(), function(name)
+            if type(name) ~= "string" or name == "" then return end
+            RC:SmartKeyLinkMacro(name, abilityKey, false)
+            Changed()
+        end)
+        cy = cy - 30
+    end
+
+    card:SetContentHeight(math.abs(cy))
+    return yPos - card:GetHeight() - 15
+end
+
 -- preserveScroll: true from in-place edits (dropdowns, up/down, add/delete
 -- condition or rule) that rebuild this same page, so the sidebar doesn't
 -- jump to the top. Back/list-navigation callers omit it.
@@ -188,7 +713,12 @@ function RC:ShowSidebarSmartMacro(frame, preserveScroll)
 
     if SM_Editor.selectedId then
         local mac = RC:GetSmartMacroById(SM_Editor.selectedId)
-        if mac then
+        if mac and IsSlotEntry(mac) and not RC.smartKeys then
+            SM_Editor.selectedId = nil
+            SM_RenderList(frame)
+        elseif mac and IsSlotEntry(mac) then
+            SM_RenderSlotEdit(frame, mac)
+        elseif mac then
             SM_RenderEdit(frame, mac)
         else
             SM_Editor.selectedId = nil
@@ -238,9 +768,26 @@ function SM_RenderList(frame)
         SM_Editor.selectedId = mac.id
         RC:ShowSidebarSmartMacro(frame)
     end)
+    -- a slot of the action bars instead of a macro (0: none picked yet)
+    local keysOn = RC.smartKeys
+    if keysOn then
+        local addSlotBtn = Btn(parent, "+ Add Bar Slot", 140, 26)
+        addSlotBtn:SetPoint("LEFT", addBtn, "RIGHT", 8, 0)
+        addSlotBtn:SetScript("OnClick", function()
+            local mac = RC:CreateSmartMacro()
+            mac.slot = 0
+            RC:SaveConfigurationToProfile()
+            SM_Editor.selectedId = mac.id
+            RC:ShowSidebarSmartMacro(frame)
+        end)
+    end
     yPos = yPos - 38
 
-    local macros = RC.db.smartMacros
+    -- (with the switch off a bar slot entry is not listed: it does nothing)
+    local macros = {}
+    for _, mac in ipairs(RC.db.smartMacros) do
+        if keysOn or not IsSlotEntry(mac) then macros[#macros + 1] = mac end
+    end
     if #macros == 0 then
         local none = MakeFS(parent, 11,
             RCL["No smart macros configured yet. Click '+ Add Smart Macro' above."])
@@ -249,26 +796,48 @@ function SM_RenderList(frame)
         yPos = yPos - 24
     else
         for _, mac in ipairs(macros) do
+            local isSlot = IsSlotEntry(mac)
             local ruleCount = #mac.rules
-            local isUnnamed = (mac.macroName == "")
+            local isUnnamed = (not isSlot and mac.macroName == "") or (isSlot and not SlotNumber(mac.slot))
             local card = RC:CreateSettingsCard(parent, yPos,
-                isUnnamed and RCL["(unnamed)"] or mac.macroName)
+                isSlot and (SlotNumber(mac.slot) and (RCL["Bar slot "] .. mac.slot) or RCL["Bar slot (none picked)"])
+                or (isUnnamed and RCL["(unnamed)"] or mac.macroName))
             local dimC = RC:GetColor("text", "disabled")
             if isUnnamed and card.title then
                 card.title:SetTextColor(dimC.r, dimC.g, dimC.b, 1)
             end
             -- Rule count as its own dim label after the title, in place of
-            -- an inline colour code inside the title string.
-            local countFS = MakeFS(card, 10,
-                "- " .. ruleCount .. RCL[" rule"] .. (ruleCount ~= 1 and "s" or ""))
+            -- an inline colour code inside the title string. (A bar slot:
+            -- what it holds.)
+            local countText = "- " .. ruleCount .. RCL[" rule"] .. (ruleCount ~= 1 and "s" or "")
+            if isSlot then
+                local holds = SlotNumber(mac.slot) and RC:ActionSlotHolds(mac.slot) or nil
+                countText = SlotNumber(mac.slot) and ("- " .. (holds or RCL["empty"])) or ""
+            end
+            local countFS = MakeFS(card, 10, countText)
             if card.title then
                 countFS:SetPoint("LEFT", card.title, "RIGHT", 6, 0)
             else
                 countFS:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -9)
             end
             countFS:SetTextColor(dimC.r, dimC.g, dimC.b, 1)
+            -- its group, if it has one (what a raid page can swap together)
+            if keysOn and TrimStr(mac.group) ~= "" then
+                local grpFS = MakeFS(card, 10, RCL["group: "] .. TrimStr(mac.group))
+                grpFS:SetPoint("LEFT", countFS, "RIGHT", 10, 0)
+                local gc = RC:GetColor("ui", "accentGold")
+                if gc then grpFS:SetTextColor(gc.r, gc.g, gc.b, 0.9) end
+            end
 
             local cardY = -34
+            -- linked to a boss ability: only live on bosses with it on
+            if keysOn and TrimStr(mac.ability) ~= "" then
+                local linkFS = MakeFS(card, 10, RCL["Only on bosses with: "] .. AbilityName(mac.ability)
+                    .. (mac.auto and RCL["  (found automatically)"] or ""))
+                linkFS:SetPoint("TOPLEFT", card, "TOPLEFT", 90, cardY)
+                local gc = RC:GetColor("ui", "accentGold")
+                if gc then linkFS:SetTextColor(gc.r, gc.g, gc.b, 0.9) end
+            end
             local statC = mac.enabled
                 and RC:GetColor("text", "success") or RC:GetColor("text", "disabled")
             local statFS = MakeFS(card, 10, mac.enabled and "Enabled" or "Disabled")
@@ -333,7 +902,7 @@ function SM_RenderList(frame)
             local delBtn = RC.UI:CreateXCloseButton(card, 22, function()
                 RC.UI:CreateConfirmDialog(
                     RCL["Delete Smart Macro"],
-                    RCL["Delete '"] .. (mac.macroName ~= "" and mac.macroName or "unnamed") .. RCL["'?\n\nThis cannot be undone."],
+                    RCL["Delete '"] .. EntryLabel(mac) .. RCL["'?\n\nThis cannot be undone."],
                     function()
                         RC:DeleteSmartMacro(capId)
                         if SM_Editor.selectedId == capId then SM_Editor.selectedId = nil end
@@ -376,6 +945,27 @@ function SM_RenderList(frame)
     CardText("6. Use 'Active in' to scope a macro to one raid (and optionally one raid " ..
         "profile). To make the SAME in-game macro do different things per raid config, add " ..
         "several Smart Macros with the same name, each scoped to a different raid/profile.")
+    if keysOn then
+    CardText("7. ONE ITEM FOR A BOSS OR A ROUTE STEP. A boss's page in Raid Config (the Macros " ..
+        "tile) and a route step (Add action) can hand a macro one item: while that boss is " ..
+        "your target, or the route is on that step, the macro uses it whatever its rules say. " ..
+        "Give macros the same Group and one line swaps them all - every potion key becomes the " ..
+        "same potion. When the boss or step is over the rules decide again, and a macro with " ..
+        "no matching rule gets back the text it had.")
+    CardText("8. ONLY ON BOSSES WHERE IT IS SWITCHED ON. Under an ability on a boss's page (Death Wish, " ..
+        "Recklessness, Potion...) link the buttons that use it - click them in the preview of your bars, or tick " ..
+        "Automatic and they are found for you. A linked button gets a small macro in place of its spell or item " ..
+        "(same key, same icon); nothing is taken off your bars. On a boss that is set up but has the ability off, " ..
+        "that macro does nothing; on a boss with nothing set up, and everywhere else, the key is as you made it. " ..
+        "A key linked to Potion or Utility uses the boss's item where the boss has exactly one set up.")
+    CardText("9. BAR SLOTS. '+ Add Bar Slot' adds one slot of your action bars instead of a macro, for a group: " ..
+        "a boss's page or a route step can hand the slot - or its whole group - one item. Pick it by clicking " ..
+        "its button, in the preview of your bars or on the bars themselves. It works with any bar addon; what " ..
+        "the slot held is put back afterwards, and a slot is never emptied.")
+    CardText("10. WAIT. A key linked to a boss ability cannot be locked until the ability's reminder " ..
+        "goes off - the game lets no addon change a macro or a bar slot in a fight. Its button on " ..
+        "your bars is dimmed and reads WAIT on the boss instead, until the reminder has gone off.")
+    end
 
     local goldC = RC:GetColor("ui", "accentGold")
     local noteFS = MakeFS(infoCard, 10,
@@ -393,6 +983,136 @@ function SM_RenderList(frame)
 
     yPos = yPos - 20
     RC:UpdateSidebarScrollbar(RC.sidebarConfigFrame, math.abs(yPos) + 40)
+end
+
+------------------------------------------------------------------------
+-- The fields a macro and a bar slot share on their edit pages. Each takes
+-- the setup card and the y to start at, and returns the y below it.
+------------------------------------------------------------------------
+-- GROUP (2026-11-16): entries that share one can be handed the same item
+-- together from a boss's page or a route step. LINK: the boss ability
+-- the entry follows (only live on bosses where it is switched on).
+local function SetupGroupAndLink(setupCard, scY, mac, groupOnly)
+    local TEXT  = RC.UI and RC.UI.TEXT or {}
+    local grayC = RC:GetColor("text", "disabled")
+    do
+        local grpLbl = MakeFS(setupCard, 11, "Group:")
+        grpLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
+        grpLbl:SetWidth(LBL_W)
+        if TEXT.light then grpLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
+        local grpEB = RC.UI:CreateStyledEditBox(setupCard, { height = 24, width = 200, maxLetters = 40 })
+        grpEB:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14 + LBL_W + 6, scY)
+        grpEB.editBox:SetText(mac.group or "")
+        local function SaveGroup(self)
+            local g = TrimStr(self:GetText())
+            local was = mac.group
+            mac.group = (g ~= "" and g) or nil
+            if mac.group ~= was then
+                RC:SaveConfigurationToProfile()
+                if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+            end
+        end
+        grpEB.editBox:SetScript("OnEnterPressed", function(self) SaveGroup(self) self:ClearFocus() end)
+        grpEB.editBox:SetScript("OnEditFocusLost", function(self) SaveGroup(self) end)
+        scY = scY - ROW_H
+
+        local inUse, seenG = {}, {}
+        for _, other in ipairs(RC.db.smartMacros or {}) do
+            local g = TrimStr(other.group)
+            if g ~= "" and not seenG[g:lower()] then
+                seenG[g:lower()] = true
+                inUse[#inUse + 1] = g
+            end
+        end
+        table.sort(inUse, function(a, b) return a:lower() < b:lower() end)
+        local grpHint = MakeFS(setupCard, 10,
+            "Optional. Macros and bar slots with the same group can be given one item together from a boss's page or a route step - "
+            .. "put every potion key in \"Potions\" and a boss can make them all the same potion."
+            .. (#inUse > 0 and ("  Groups in use: " .. table.concat(inUse, ", ") .. ".") or ""))
+        grpHint:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14 + LBL_W + 6, scY + 4)
+        grpHint:SetJustifyH("LEFT")
+        grpHint:SetWordWrap(true)
+        if grayC then grpHint:SetTextColor(grayC.r, grayC.g, grayC.b, 0.8) end
+        local cw = setupCard:GetWidth() or 0
+        grpHint:SetWidth(cw > 300 and (cw - (14 + LBL_W + 6) - 14) or 300)
+        scY = scY - math.max(20, (grpHint:GetStringHeight() or 14) + 8)
+    end
+    -- (a bar slot is linked through a macro on it: a boss's page does that)
+    if groupOnly then return scY end
+
+    local linkLbl = MakeFS(setupCard, 11, "Only on bosses with:")
+    linkLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
+    linkLbl:SetWidth(130)
+    if TEXT.light then linkLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
+    local items = { { text = RCL["Every boss (not linked)"], value = "" } }
+    for _, a in ipairs(RC:SmartMacroLinkAbilities()) do
+        items[#items + 1] = { text = a.name, value = a.key, icon = a.icon }
+    end
+    MakeDrop(setupCard, 150, scY, 220, items, mac.ability or "", function(val)
+        mac.ability = (val ~= "" and val) or nil
+        RC:SaveConfigurationToProfile()
+        if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+    end)
+    scY = scY - ROW_H
+    local linkHint = MakeFS(setupCard, 10,
+        "Optional. Linked, it is only live on bosses where that ability is switched on in Raid Config: on a boss "
+        .. "that is set up but has it off, the macro does nothing from the moment you target the boss until you target "
+        .. "another enemy. A boss with nothing set up leaves it alone. Linked to Potion or Utility, it uses the boss's "
+        .. "item where the boss has exactly one.")
+    linkHint:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 150, scY + 4)
+    linkHint:SetJustifyH("LEFT")
+    linkHint:SetWordWrap(true)
+    if grayC then linkHint:SetTextColor(grayC.r, grayC.g, grayC.b, 0.8) end
+    local lw = setupCard:GetWidth() or 0
+    linkHint:SetWidth(lw > 300 and (lw - 150 - 14) or 300)
+    scY = scY - math.max(20, (linkHint:GetStringHeight() or 14) + 8)
+    return scY
+end
+
+-- ENABLED, and the raid / raid profile the entry is active in
+local function SetupEnabledAndScope(frame, setupCard, scY, mac)
+    local TEXT = RC.UI and RC.UI.TEXT or {}
+    local enableChk = RC.UI:CreateCheckbox(setupCard, RCL["Enabled"], mac.enabled)
+    enableChk:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
+    enableChk:SetScript("OnClick", function(cb)
+        mac.enabled = cb:GetChecked()
+        RC:ForceCheckboxUpdate(cb, mac.enabled)
+        RC:SaveConfigurationToProfile()
+        if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+    end)
+    scY = scY - ROW_H
+
+    local raidLbl = MakeFS(setupCard, 10, "Active in:")
+    raidLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
+    raidLbl:SetWidth(70)
+    if TEXT.light then raidLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
+    local capMacRaid = mac
+    MakeDrop(setupCard, 88, scY, 200, GetRuleRaidScopeItems(), mac.raidFilter or "any",
+        function(val)
+            capMacRaid.raidFilter = val
+            if val == "any" then capMacRaid.profileFilter = "any" end
+            RC:SaveConfigurationToProfile()
+            -- deferred: rebuilding the page synchronously from inside the
+            -- dropdown's own onChange callback would tear down the dropdown
+            -- widget while it's still closing itself.
+            C_Timer.After(0, function() RC:ShowSidebarSmartMacro(frame, true) end)
+        end)
+    scY = scY - ROW_H
+
+    local macRaid = mac.raidFilter or "any"
+    if macRaid ~= "any" and macRaid ~= "" then
+        local profLbl = MakeFS(setupCard, 10, "Profile:")
+        profLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
+        profLbl:SetWidth(70)
+        if TEXT.light then profLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
+        MakeDrop(setupCard, 88, scY, 200, GetRuleProfileItems(macRaid), mac.profileFilter or "any",
+            function(val)
+                capMacRaid.profileFilter = val
+                RC:SaveConfigurationToProfile()
+            end)
+        scY = scY - ROW_H
+    end
+    return scY
 end
 
 function SM_RenderEdit(frame, mac)
@@ -438,6 +1158,22 @@ function SM_RenderEdit(frame, mac)
         mac.macroName = self:GetText():match("^%s*(.-)%s*$") or ""
         RC:SaveConfigurationToProfile()
     end)
+    -- or picked from the game's macros
+    if RC.smartKeys then
+        local dd = RC.UI:CreateScrollableDropdown(setupCard, 230, RCL["Pick one of your macros..."], 12)
+        dd:SetPoint("LEFT", nameEB, "RIGHT", 8, 0)
+        if dd.menu then
+            dd.menu:SetFrameStrata("TOOLTIP")
+            dd.menu:SetFrameLevel(200)
+        end
+        dd:SetItems(RC:SmartKeyMacroChoices(), function(name)
+            if type(name) ~= "string" or name == "" then return end
+            mac.macroName = name
+            RC:SaveConfigurationToProfile()
+            if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+            C_Timer.After(0, function() RC:ShowSidebarSmartMacro(frame, true) end)
+        end)
+    end
     scY = scY - ROW_H
 
     local nameHint = MakeFS(setupCard, 10,
@@ -448,45 +1184,8 @@ function SM_RenderEdit(frame, mac)
     if grayC then nameHint:SetTextColor(grayC.r, grayC.g, grayC.b, 0.8) end
     scY = scY - 20
 
-    local enableChk = RC.UI:CreateCheckbox(setupCard, RCL["Enabled"], mac.enabled)
-    enableChk:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
-    enableChk:SetScript("OnClick", function(cb)
-        mac.enabled = cb:GetChecked()
-        RC:ForceCheckboxUpdate(cb, mac.enabled)
-        RC:SaveConfigurationToProfile()
-    end)
-    scY = scY - ROW_H
-
-    local raidLbl = MakeFS(setupCard, 10, "Active in:")
-    raidLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
-    raidLbl:SetWidth(70)
-    if TEXT.light then raidLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
-    local capMacRaid = mac
-    MakeDrop(setupCard, 88, scY, 200, GetRuleRaidScopeItems(), mac.raidFilter or "any",
-        function(val)
-            capMacRaid.raidFilter = val
-            if val == "any" then capMacRaid.profileFilter = "any" end
-            RC:SaveConfigurationToProfile()
-            -- deferred: rebuilding the page synchronously from inside the
-            -- dropdown's own onChange callback would tear down the dropdown
-            -- widget while it's still closing itself.
-            C_Timer.After(0, function() RC:ShowSidebarSmartMacro(frame, true) end)
-        end)
-    scY = scY - ROW_H
-
-    local macRaid = mac.raidFilter or "any"
-    if macRaid ~= "any" and macRaid ~= "" then
-        local profLbl = MakeFS(setupCard, 10, "Profile:")
-        profLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
-        profLbl:SetWidth(70)
-        if TEXT.light then profLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
-        MakeDrop(setupCard, 88, scY, 200, GetRuleProfileItems(macRaid), mac.profileFilter or "any",
-            function(val)
-                capMacRaid.profileFilter = val
-                RC:SaveConfigurationToProfile()
-            end)
-        scY = scY - ROW_H
-    end
+    if RC.smartKeys then scY = SetupGroupAndLink(setupCard, scY, mac) end
+    scY = SetupEnabledAndScope(frame, setupCard, scY, mac)
 
     -- Same key, second macro: this macro's key also runs the one picked
     -- here, through a hidden secure button (SmartMacro.lua, SyncChains).
@@ -1014,6 +1713,160 @@ function SM_RenderEdit(frame, mac)
             RCL["Delete Smart Macro"],
             RCL["Delete '"] .. (mac.macroName ~= "" and mac.macroName or "unnamed") .. RCL["'?\n\nThis cannot be undone."],
             function()
+                RC:DeleteSmartMacro(delMacId)
+                SM_Editor.selectedId = nil
+                RC:ShowSidebarSmartMacro(frame)
+            end,
+            nil, RCL["Delete"], true
+        )
+    end)
+    yPos = yPos - 38
+
+    RC:UpdateSidebarScrollbar(RC.sidebarConfigFrame, math.abs(yPos) + 40)
+end
+
+------------------------------------------------------------------------
+-- A BAR SLOT'S PAGE (2026-11-16, Zac: "i want to be able to link like
+-- specific slots on my action bar as well should work with action bar
+-- addons and zui"): which slot, its group, the boss ability it follows.
+-- A slot has no rules: it is told what to hold by a boss's page, a route
+-- step or its link, and holds what you put there the rest of the time.
+------------------------------------------------------------------------
+function SM_RenderSlotEdit(frame, mac)
+    local parent = frame.scrollChild
+    local yPos   = -20
+    local TEXT   = RC.UI and RC.UI.TEXT or {}
+    local grayC  = RC:GetColor("text", "disabled")
+    local goldC  = RC:GetColor("ui", "accentGold")
+
+    local backBtn = RC.UI:CreateBackButton(parent, "< All Smart Macros", 165, 24)
+    backBtn:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, yPos)
+    backBtn:SetScript("OnClick", function()
+        RC:StopPickingActionSlot(nil)
+        SM_Editor.selectedId = nil
+        RC:ShowSidebarSmartMacro(frame)
+    end)
+    yPos = yPos - 34
+
+    local _, newY = RC:CreateSettingsPageHeader(
+        parent, yPos,
+        RCL["Bar Slot"],
+        RCL["One slot of your action bars, told what to hold by your raid configs"],
+        "Interface\\Icons\\INV_Scroll_03"
+    )
+    yPos = newY - 10
+
+    local setupCard = RC:CreateSettingsCard(parent, yPos, RCL["Slot setup"])
+    local scY = -34
+
+    local slotLbl = MakeFS(setupCard, 11, "Slot:")
+    slotLbl:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY)
+    slotLbl:SetWidth(LBL_W)
+    if TEXT.light then slotLbl:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
+
+    -- the slot changed: what the old one was told to hold is undone first
+    local function SetSlot(n)
+        n = SlotNumber(n) or 0
+        if n == mac.slot then return end
+        if RC.SmartMacro then RC.SmartMacro:Release(mac) end
+        mac.swapBack = nil
+        mac.slot = n
+        RC:SaveConfigurationToProfile()
+        if RC.SmartMacro then RC.SmartMacro:RequestEvaluate() end
+        C_Timer.After(0, function() RC:ShowSidebarSmartMacro(frame, true) end)
+    end
+
+    local slotEB = RC.UI:CreateStyledEditBox(setupCard, { height = 24, width = 54, maxLetters = 3 })
+    slotEB:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14 + LBL_W + 6, scY)
+    slotEB.editBox:SetNumeric(true)
+    slotEB.editBox:SetText(SlotNumber(mac.slot) and tostring(mac.slot) or "")
+    local function Typed(self)
+        SetSlot(self:GetText())
+        self:SetText(SlotNumber(mac.slot) and tostring(mac.slot) or "")
+    end
+    slotEB.editBox:SetScript("OnEnterPressed", function(self) Typed(self) self:ClearFocus() end)
+    slotEB.editBox:SetScript("OnEditFocusLost", function(self) Typed(self) end)
+
+    local pickBtn = Btn(setupCard, RCL["Click a button on my bars"], 210, 24)
+    pickBtn:SetPoint("LEFT", slotEB, "RIGHT", 8, 0)
+    pickBtn:SetScript("OnClick", function()
+        RC:PickActionSlot(function(slot) if slot then SetSlot(slot) end end)
+    end)
+    scY = scY - ROW_H
+
+    -- what the slot holds
+    do
+        local n = SlotNumber(mac.slot)
+        local holdsFS = MakeFS(setupCard, 11, n and (RCL["holds: "] .. (RC:ActionSlotHolds(n) or RCL["nothing (empty)"]))
+            or RCL["no slot picked yet - click its button below, or on your bars"])
+        holdsFS:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14 + LBL_W + 6, scY + 4)
+        holdsFS:SetJustifyH("LEFT")
+        holdsFS:SetWordWrap(true)
+        local cw = setupCard:GetWidth() or 0
+        holdsFS:SetWidth(cw > 300 and (cw - (14 + LBL_W + 6) - 14) or 300)
+        local c = n and grayC or goldC
+        if c then holdsFS:SetTextColor(c.r, c.g, c.b, 1) end
+        scY = scY - math.max(18, (holdsFS:GetStringHeight() or 14) + 6)
+    end
+
+    -- the bars as they are: a click picks the slot
+    scY = scY - RC:BuildBarPreview(setupCard, 14, scY, {
+        key = "slot",
+        lit = function(slot) return slot == mac.slot end,
+        tip = function(slot)
+            if slot == mac.slot then return RCL["This is the slot."] end
+            return RCL["Click to pick this button."]
+        end,
+        onPick = SetSlot,
+    }) - 10
+
+    local slotHint = MakeFS(setupCard, 10,
+        "The action bars have 120 slots and every bar addon shows the same ones, so this works with any of them. "
+        .. "A bar that changes with your stance or form has a slot per stance: pick the button in each stance and give them one group.")
+    slotHint:SetPoint("TOPLEFT", setupCard, "TOPLEFT", 14, scY + 4)
+    slotHint:SetJustifyH("LEFT")
+    slotHint:SetWordWrap(true)
+    if grayC then slotHint:SetTextColor(grayC.r, grayC.g, grayC.b, 0.8) end
+    local cw = setupCard:GetWidth() or 0
+    slotHint:SetWidth(cw > 300 and (cw - 28) or 300)
+    scY = scY - math.max(20, (slotHint:GetStringHeight() or 14) + 8)
+
+    scY = SetupGroupAndLink(setupCard, scY, mac, true)
+    scY = SetupEnabledAndScope(frame, setupCard, scY, mac)
+
+    setupCard:SetContentHeight(math.abs(scY) + 6)
+    yPos = yPos - setupCard:GetHeight() - 12
+
+    local infoCard = RC:CreateSettingsCard(parent, yPos, RCL["How a bar slot behaves"])
+    local icY = -34
+    for _, line in ipairs({
+        "A bar slot has no rules of its own. It holds what you put on it until a boss's page (the Macros tile) or a route step hands it - or its whole group - one item: the slot holds that item.",
+        "When that is over the slot gets back what it held. A slot you changed by hand in the meantime is left as you made it.",
+        "A slot cannot change in a fight: target the boss before the pull. A slot is never emptied: if the item cannot be put on the bar (you carry none), the slot is left as it is.",
+        "To switch a button off on some bosses, link it under the ability on a boss's page instead: that puts a macro on the button and takes nothing off the bar.",
+    }) do
+        local fs = MakeFS(infoCard, 10, line)
+        fs:SetPoint("TOPLEFT", infoCard, "TOPLEFT", 14, icY)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+        local iw = infoCard:GetWidth() or 0
+        fs:SetWidth(iw > 300 and (iw - 28) or 420)
+        if TEXT.light then fs:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3]) end
+        icY = icY - math.max(14, (fs:GetStringHeight() or 12)) - 6
+    end
+    infoCard:SetContentHeight(math.abs(icY) + 6)
+    yPos = yPos - infoCard:GetHeight() - 12
+
+    local delMacId = mac.id
+    local delBtn = Btn(parent, "Delete This Bar Slot", 200, 26)
+    delBtn:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, yPos)
+    do local _c = RC:GetColor("text", "red"); if delBtn.text then delBtn.text:SetTextColor(_c.r, _c.g, _c.b, 1) end end
+    delBtn:SetScript("OnClick", function()
+        RC.UI:CreateConfirmDialog(
+            RCL["Delete Bar Slot"],
+            RCL["Delete '"] .. EntryLabel(mac) .. RCL["'?\n\nWhat the slot holds is not touched."],
+            function()
+                RC:StopPickingActionSlot(nil)
                 RC:DeleteSmartMacro(delMacId)
                 SM_Editor.selectedId = nil
                 RC:ShowSidebarSmartMacro(frame)

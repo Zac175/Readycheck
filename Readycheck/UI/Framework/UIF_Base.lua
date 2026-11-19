@@ -571,19 +571,34 @@ local _uif = RC._uif
         SL_TRACK_A = 0.22, SL_FILL_A = 0.75, SL_INPUT_A = 0.40, SL_INPUT_BRD_A = 0.12,
         TG_OFF_A = 0.65, TG_ON_A = 0.75, KNOB_OFF_A = 0.5,
         CB_BRD_A = 0.05, CB_ACT_BRD_A = 0.15, CB_REST = 0.8,
-        BTN_BG_A = 0.6, BTN_BG_HA = 0.65, BTN_BRD_A = 0.30, BTN_BRD_HA = 0.45, BTN_TXT_A = 0.55, BTN_TXT_HA = 0.70,
-        FOOT_BG_A = 0.92, FOOT_BRD_A = 0.4, FOOT_BRD_HA = 0.6, FOOT_TXT_A = 0.5, FOOT_TXT_HA = 0.7, CLOSE_A = 0.7,
+        BTN_BG_HA = 0.65, BTN_BRD_A = 0.30, BTN_TXT_A = 0.55,
         -- (2026-11-16, Zac: "in both uis the buttons and sidebar stuff needs
         -- to be emphisized more") THE PLATES' STRENGTHS, in one place - the
         -- same as ZacUI's (UI.PL). A button: its lift and top line at rest
         -- and under the mouse, the shadow under its foot. A sidebar row: a
         -- quieter plate. CTA: how dark the accent (or the red) is on the
         -- face of the button a window wants pressed.
-        PL_LIFT = 0.13, PL_LIFT_H = 0.19, PL_SHEEN = 0.18, PL_SHEEN_H = 0.26, PL_DROP = 0.55,
-        PL_EDGE = 0.20, PL_EDGE_H = 0.32,
+        -- (2026-11-16 12:39, Zac: "readycheck needs the same button redone
+        -- stuff ... why did you only do zui and not both addons") THE SAME
+        -- FACE AS ZACUI'S, worked out from its numbers instead of set by
+        -- eye: over the button colour the lift is PL_LIFT at the top and
+        -- PL_LIFT_LO at the foot (ZacUI's 0.250 down to 0.152 at rest),
+        -- PL_LIFT_H / PL_LIFT_LO_H under the mouse with the lift's colour
+        -- PL_WARM of the way to the accent (its 0.305 / 0.282 / 0.236 down
+        -- to 0.186); the edge PL_EDGE, going to the accent at PL_EDGE_ACC
+        -- under the mouse (PL_EDGE_H where it stays white: the corner
+        -- boxes). CTA: the face is the accent (or the red) at CTA_BOT, lit
+        -- with its own colour at CTA_LIFT at the top (ZacUI's 0.60 down to
+        -- 0.38, and 0.74 down to 0.48 under the mouse).
+        PL_LIFT = 0.107, PL_LIFT_LO = 0, PL_LIFT_H = 0.20, PL_LIFT_LO_H = 0.03, PL_WARM = 0.6,
+        PL_SHEEN = 0.18, PL_SHEEN_H = 0.26, PL_DROP = 0.55,
+        PL_EDGE = 0.26, PL_EDGE_H = 0.32, PL_EDGE_ACC = 0.80, PL_TXT = 0.86,
         NAV_PL_LIFT = 0.085, NAV_PL_SHEEN = 0.09, NAV_PL_EDGE = 0.16,
         NAV_PL_LIFT_H = 0.13, NAV_PL_SHEEN_H = 0.13, NAV_PL_EDGE_H = 0.62, NAV_PL_DROP = 0.40,
-        CTA_FACE = 0.42, CTA_FACE_H = 0.52,
+        CTA_BOT = 0.38, CTA_BOT_H = 0.48, CTA_LIFT = 0.355, CTA_LIFT_H = 0.50,
+        -- (a plate painted with no foot value of its own - a sidebar row -
+        -- has this share of its lift at its foot)
+        PL_LO_SHARE = 0.35,
         DD_BG_A = 0.9, DD_BG_HA = 0.98, DD_BRD_A = 0.20, DD_BRD_HA = 0.30, DD_TXT_A = 0.50, DD_TXT_HA = 0.60,
         DD_HL_A = 0.08, DD_SEL_A = 0.04,
         SCROLL_TRACK_A = 0.02, SCROLL_THUMB_A = 0.27, SCROLL_W = 4,
@@ -712,16 +727,236 @@ local _uif = RC._uif
         end
     end
 
+    -- THE LOOK'S CHOICES (2026-11-18, Zac, of looks he had picked from
+    -- mocks: "users should be able to pick just use my choice as
+    -- default"). The window finish, the buttons' depth, the main button's
+    -- face and the wheel are settings, the same ones ZacUI has on its Style
+    -- page. Beside ZacUI Readycheck's windows wear ZacUI's (so the two
+    -- match) unless "Use Readycheck's own" is ticked; on its own, or with
+    -- that tick, they are read from the character's profile
+    -- (db.fontSettings, the appearance table - nothing saved is what ships):
+    --   lookOwn       true: Readycheck's own settings even beside ZacUI
+    --   finishDepth   how much of the shading is drawn, 0 .. 1 (nil = 1)
+    --   finishKind    nil / "depth", "bands", "plain" (UIF_Finish)
+    --   finishRule    true: an accent line under a window's title bar
+    --   finishGrain   how much of a ground texture, 0 .. 2 (nil = none)
+    --   finishTex     which texture (nil = brushed metal)
+    --   buttonDepth   0 .. 1.5 (nil = 1)
+    --   mainButton    "plain" (nil: the main button's face is the accent)
+    --   wheelSpeed    0.25 .. 4 (nil = 1)
+    --   wheelSmooth   false: a notch jumps
+    -- RC.UI:Look() -> the values in force (one table, refilled on every
+    -- call: read it, do not keep it), and "zacui" or "own".
+    RC.UI.LOOK_KEYS = { "finishDepth", "finishKind", "finishRule", "finishGrain", "finishTex",
+                        "buttonDepth", "mainButton", "wheelSpeed", "wheelSmooth" }
+    RC.UI.FINISH_KINDS = { depth = true, bands = true, plain = true }
+    RC.UI.FINISH_TEXTURES = {
+        { id = "brushed", label = RCL["Brushed metal"],  file = "brushed" },
+        { id = "stone",   label = RCL["Stone grain"],    file = "ground_stone" },
+        { id = "fine",    label = RCL["Fine grain"],     file = "ground_fine" },
+        { id = "leather", label = RCL["Leather"],        file = "ground_leather" },
+        { id = "iron",    label = RCL["Hammered iron"],  file = "ground_iron" },
+        { id = "linen",   label = RCL["Linen"],          file = "ground_linen" },
+        { id = "slate",   label = RCL["Slate"],          file = "ground_slate" },
+        { id = "veined",  label = RCL["Veined stone"],   file = "ground_veined" },
+        { id = "fibre",   label = RCL["Paper fibre"],    file = "ground_fibre" },
+    }
+    local TEX_KNOWN = {}
+    for _, t in ipairs(RC.UI.FINISH_TEXTURES) do TEX_KNOWN[t.id] = t.file end
+    RC.UI.FINISH_TEX_FILE = TEX_KNOWN
+    local look = {}
+    local function Num(v, default, lo, hi)
+        v = tonumber(v)
+        if not v or v ~= v then return default end
+        if v < lo then return lo end
+        if v > hi then return hi end
+        return v
+    end
+    -- Whether ZacUI is there to follow, and whether it is being followed.
+    function RC.UI:LookFollows()
+        local Z = _G.ZacUI
+        local F = type(Z) == "table" and Z.Finish or nil
+        if type(F) ~= "table" then return false, false end
+        local fs = RC.db and RC.db.fontSettings
+        return true, not (fs and fs.lookOwn == true)
+    end
+    function RC.UI:Look()
+        local there, following = self:LookFollows()
+        if following then
+            local F = _G.ZacUI.Finish
+            if type(F.Look) == "function" then
+                local ok, L = pcall(F.Look)
+                if ok and type(L) == "table" then
+                    look.depth = Num(L.depth, 1, 0, 2)
+                    look.kind = RC.UI.FINISH_KINDS[L.kind] and L.kind or "depth"
+                    look.rule = L.rule == true
+                    look.grain = Num(L.grain, 0, 0, 2)
+                    look.texture = TEX_KNOWN[L.texture] and L.texture or "brushed"
+                    look.buttons = Num(L.buttons, 1, 0, 1.5)
+                    look.mainPlain = L.mainPlain == true
+                    look.wheel = Num(L.wheel, 1, 0.25, 4)
+                    look.smooth = L.smooth ~= false
+                    return look, "zacui"
+                end
+            end
+            -- (a ZacUI from before the choices: its strength, the rest as shipped)
+            local v = type(F.Strength) == "function" and tonumber(F.Strength()) or nil
+            look.depth = Num(v, 1, 0, 2)
+            look.kind, look.rule, look.grain, look.texture = "depth", false, 0, "brushed"
+            look.buttons, look.mainPlain, look.wheel, look.smooth = 1, false, 1, true
+            return look, "zacui"
+        end
+        local fs = (RC.db and RC.db.fontSettings) or look   -- (no profile yet: every read is nil)
+        look.depth = Num(fs.finishDepth, 1, 0, 2)
+        look.kind = RC.UI.FINISH_KINDS[fs.finishKind] and fs.finishKind or "depth"
+        look.rule = fs.finishRule == true
+        look.grain = Num(fs.finishGrain, 0, 0, 2)
+        look.texture = TEX_KNOWN[fs.finishTex] and fs.finishTex or "brushed"
+        look.buttons = Num(fs.buttonDepth, 1, 0, 1.5)
+        look.mainPlain = fs.mainButton == "plain"
+        look.wheel = Num(fs.wheelSpeed, 1, 0.25, 4)
+        look.smooth = fs.wheelSmooth ~= false
+        return look, "own"
+    end
+    -- everything of the look in one string (FontSystem's ZacUI signature:
+    -- a change there re-dresses Readycheck's windows)
+    function RC.UI:LookSignature()
+        local L = self:Look()
+        return string.format("%.2f|%s|%s|%.2f|%s|%.2f|%s", L.depth, L.kind, tostring(L.rule), L.grain, L.texture,
+            L.buttons, tostring(L.mainPlain))
+    end
+
+    -- THE MOCKED FINISHES, AS PRESETS for Readycheck's own settings: values
+    -- for the four finish keys; one a preset does not name is unset.
+    RC.UI.FINISH_PRESET_KEYS = { "finishDepth", "finishKind", "finishRule", "finishGrain" }
+    RC.UI.FINISH_PRESETS = {
+        { id = "depth",     label = RCL["Soft depth"],                     set = {} },
+        { id = "flat",      label = RCL["Flat"],                           set = { finishDepth = 0 } },
+        { id = "bands",     label = RCL["Dark bands"],                     set = { finishKind = "bands" } },
+        { id = "rule",      label = RCL["Flat with an accent line"],       set = { finishKind = "plain", finishRule = true } },
+        { id = "bandsrule", label = RCL["Dark bands with an accent line"], set = { finishKind = "bands", finishRule = true } },
+        { id = "textured",  label = RCL["Soft depth, textured"],           set = { finishGrain = 1 } },
+    }
+    -- the preset Readycheck's own saved values match: id, label - or
+    -- "custom", RCL["Custom"]
+    function RC.UI:FinishPresetNow()
+        local fs = (RC.db and RC.db.fontSettings) or {}
+        local k = math.min(1, Num(fs.finishDepth, 1, 0, 2))
+        local kind = RC.UI.FINISH_KINDS[fs.finishKind] and fs.finishKind or "depth"
+        local rule, g = fs.finishRule == true, Num(fs.finishGrain, 0, 0, 2)
+        for _, p in ipairs(RC.UI.FINISH_PRESETS) do
+            local set = p.set
+            if math.abs((set.finishDepth or 1) - k) < 0.001 and (set.finishKind or "depth") == kind
+                and (set.finishRule == true) == rule and math.abs((set.finishGrain or 0) - g) < 0.001 then
+                return p.id, p.label
+            end
+        end
+        return "custom", RCL["Custom"]
+    end
+    -- One of Readycheck's own look settings (nil = as shipped), applied at once.
+    function RC.UI:SetLook(key, value)
+        if not (RC.db and key) then return end
+        if type(RC.db.fontSettings) ~= "table" then RC.db.fontSettings = {} end
+        RC.db.fontSettings[key] = value
+        self:LookChanged()
+    end
+    function RC.UI:SetFinishPreset(id)
+        if not RC.db then return false end
+        for _, p in ipairs(RC.UI.FINISH_PRESETS) do
+            if p.id == id then
+                if type(RC.db.fontSettings) ~= "table" then RC.db.fontSettings = {} end
+                for _, key in ipairs(RC.UI.FINISH_PRESET_KEYS) do RC.db.fontSettings[key] = p.set[key] end
+                self:LookChanged()
+                return true
+            end
+        end
+        return false
+    end
+
+    -- BUTTON DEPTH. The plate numbers in S above are what ships (100%).
+    -- The depth moves each between the flat plate - one shade top to foot,
+    -- a faint edge, no top line, no shadow - and the shipped one, and on
+    -- past it (ZacUI's rule, UIF_Controls PlateSync: the same faces at
+    -- every setting). S is rewritten in place; everything reads it when it
+    -- paints.
+    local S0 = {}
+    for _, key in ipairs({ "PL_LIFT", "PL_LIFT_LO", "PL_LIFT_H", "PL_LIFT_LO_H", "PL_SHEEN", "PL_SHEEN_H", "PL_DROP", "PL_EDGE",
+                           "NAV_PL_LIFT", "NAV_PL_SHEEN", "NAV_PL_EDGE", "NAV_PL_LIFT_H", "NAV_PL_SHEEN_H", "NAV_PL_DROP",
+                           "CTA_BOT", "CTA_BOT_H", "CTA_LIFT", "CTA_LIFT_H", "PL_LO_SHARE" }) do
+        S0[key] = S[key]
+    end
+    RC.UI.PLATE_SHIPPED = S0
+    local EDGE_FLAT, NAV_EDGE_FLAT = 0.13, 0.085
+    RC.UI._plated = setmetatable({}, { __mode = "k" })
+    local plK
+    function RC.UI:PlateSync()
+        local k = self:Look().buttons
+        if plK == k then return end
+        plK = k
+        if k == 1 then
+            for key, v in pairs(S0) do S[key] = v end
+            return
+        end
+        local function At(flat, shipped) return math.max(0, math.min(1, flat + (shipped - flat) * k)) end
+        -- a face's lift at its top and at its foot: both move away from
+        -- (or onto) their middle
+        local function Pair(top, bot)
+            local mid = (S0[top] + S0[bot]) / 2
+            S[top], S[bot] = At(mid, S0[top]), At(mid, S0[bot])
+        end
+        Pair("PL_LIFT", "PL_LIFT_LO")
+        Pair("PL_LIFT_H", "PL_LIFT_LO_H")
+        S.PL_SHEEN, S.PL_SHEEN_H, S.PL_DROP = At(0, S0.PL_SHEEN), At(0, S0.PL_SHEEN_H), At(0, S0.PL_DROP)
+        S.PL_EDGE = At(EDGE_FLAT, S0.PL_EDGE)
+        -- a sidebar row's foot is a share of its lift
+        local share0 = S0.PL_LO_SHARE
+        local mid = (1 + share0) / 2
+        local topK, footK = At(mid, 1), At(mid, share0)
+        S.NAV_PL_LIFT, S.NAV_PL_LIFT_H = S0.NAV_PL_LIFT * topK, S0.NAV_PL_LIFT_H * topK
+        S.PL_LO_SHARE = (topK > 0) and (footK / topK) or 1
+        S.NAV_PL_SHEEN, S.NAV_PL_SHEEN_H, S.NAV_PL_DROP = At(0, S0.NAV_PL_SHEEN), At(0, S0.NAV_PL_SHEEN_H), At(0, S0.NAV_PL_DROP)
+        S.NAV_PL_EDGE = At(NAV_EDGE_FLAT, S0.NAV_PL_EDGE)
+        -- the main button: the accent at CTA_BOT, lit with itself at
+        -- CTA_LIFT at the top (so its top is bot + (1 - bot) * lift)
+        local function Cta(botKey, liftKey)
+            local bot0 = S0[botKey]
+            local top0 = bot0 + (1 - bot0) * S0[liftKey]
+            local m = (top0 + bot0) / 2
+            local top, bot = At(m, top0), At(m, bot0)
+            S[botKey] = bot
+            S[liftKey] = (bot < 1) and math.max(0, (top - bot) / (1 - bot)) or 0
+        end
+        Cta("CTA_BOT", "CTA_LIFT")
+        Cta("CTA_BOT_H", "CTA_LIFT_H")
+    end
+    -- Every plate repaints from its frame's own painter (a look change).
+    function RC.UI:RepaintPlates()
+        self:PlateSync()
+        for f in pairs(self._plated) do
+            if type(f.Repaint) == "function" then pcall(f.Repaint, f) end
+        end
+    end
+    -- After a look setting changed: buttons, window finishes, popups.
+    function RC.UI:LookChanged()
+        self:RepaintPlates()
+        if self.FinishRefresh then self:FinishRefresh() end
+        if RC.RefreshUIColors then RC:RefreshUIColors() end
+    end
+
     -- THE PLATE (2026-11-09: buttons that look like buttons). A raised
     -- face on a settings control: a pale lift fading down from its top, a
     -- pale line along the inside of its top and, with edges = true, a
     -- one-pixel edge all round. Inset l / r / t / b from the frame (or laid
     -- on `over`, a texture). Made once per frame (frame._rcPlate).
-    -- :Paint(liftA, sheenA, edgeColor, edgeA, dropA) colours it from the theme;
+    -- :Paint(liftA, sheenA, edgeColor, edgeA, dropA, liftLo, liftColor) colours
+    -- it from the theme (liftLo: the lift at the foot, default a third of
+    -- liftA; liftColor: default the window's text colour);
     -- :SetShown hides all of it. p.box is the area it covers.
     function RC.UI:Plate(f, l, r, t, b, edges, over)
         local p = f._rcPlate
         if p then return p end
+        RC.UI:PlateSync()
+        RC.UI._plated[f] = true
         p = { parts = {} }
         local function T(layer, sub)
             local x = f:CreateTexture(nil, layer, nil, sub)
@@ -768,19 +1003,20 @@ local _uif = RC._uif
         p.drop:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0)
         p.drop:SetVertexColor(0, 0, 0, 0)
         -- dropA: the shadow's strength (nil = none)
-        function p:Paint(liftA, sheenA, edgeColor, edgeA, dropA)
+        function p:Paint(liftA, sheenA, edgeColor, edgeA, dropA, liftLo, liftColor)
             local c = RC:GetColor("settings", "text")
             local sh = RC:GetColor("settings", "shade")
             self.drop:SetVertexColor(sh.r, sh.g, sh.b, dropA or 0)
-            local lo = (liftA or 0) * 0.35
+            local lc = liftColor or c
+            local lo = liftLo or (liftA or 0) * S.PL_LO_SHARE
             if CreateColor and self.lift.SetGradient then
                 self.lift:SetVertexColor(1, 1, 1, 1)
-                self.lift:SetGradient("VERTICAL", CreateColor(c.r, c.g, c.b, lo), CreateColor(c.r, c.g, c.b, liftA or 0))
+                self.lift:SetGradient("VERTICAL", CreateColor(lc.r, lc.g, lc.b, lo), CreateColor(lc.r, lc.g, lc.b, liftA or 0))
             elseif self.lift.SetGradientAlpha then
                 self.lift:SetVertexColor(1, 1, 1, 1)
-                self.lift:SetGradientAlpha("VERTICAL", c.r, c.g, c.b, lo, c.r, c.g, c.b, liftA or 0)
+                self.lift:SetGradientAlpha("VERTICAL", lc.r, lc.g, lc.b, lo, lc.r, lc.g, lc.b, liftA or 0)
             else
-                self.lift:SetVertexColor(c.r, c.g, c.b, ((liftA or 0) + lo) / 2)
+                self.lift:SetVertexColor(lc.r, lc.g, lc.b, ((liftA or 0) + lo) / 2)
             end
             self.sheen:SetVertexColor(c.r, c.g, c.b, sheenA or 0)
             if self.edges and edgeColor then
@@ -792,6 +1028,19 @@ local _uif = RC._uif
         end
         f._rcPlate = p
         return p
+    end
+
+    -- A BUTTON'S FACE at hover t (0 at rest .. 1 under the mouse), for
+    -- p:Paint over the button colour: the lift at the top, the lift at the
+    -- foot and the lift's colour (S.PL_*, ZacUI's face).
+    function RC.UI:ButtonFace(t)
+        t = t or 0
+        RC.UI:PlateSync()
+        local c = RC:GetColor("settings", "text")
+        local A = RC.UI:SAccent()
+        local w = S.PL_WARM * t
+        return S.PL_LIFT + (S.PL_LIFT_H - S.PL_LIFT) * t, S.PL_LIFT_LO + (S.PL_LIFT_LO_H - S.PL_LIFT_LO) * t,
+            { r = c.r + (A.r - c.r) * w, g = c.g + (A.g - c.g) * w, b = c.b + (A.b - c.b) * w }
     end
 
     _uif.S = S

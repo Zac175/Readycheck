@@ -754,8 +754,7 @@ end
     if RC.db.weaponsBar.showCount == nil then
         RC.db.weaponsBar.showCount = true
     end
-    -- Horde Mode is read through RC:IsHordeMode (below), never stored as
-    -- one flag: see there.
+    -- (whether the main hand has a button is RC:IsMainHandHidden, below)
     if RC.db.weaponsBar.showEquippedWeapons == nil then
         RC.db.weaponsBar.showEquippedWeapons = true
     end
@@ -821,6 +820,8 @@ end
     if RC.db.consumablesHelper.showBagWeapons == nil then
         RC.db.consumablesHelper.showBagWeapons = false
     end
+    -- (weaponStones, the one switch for the bar's weapon buttons, is not
+    -- filled in: unset reads as on, only a choice is saved)
     -- 18262 = Elemental Sharpening Stone, the default weapon enchant choice.
     if RC.db.consumablesHelper.selectedStoneType == nil then
         RC.db.consumablesHelper.selectedStoneType = 18262
@@ -841,37 +842,51 @@ end
 end
 
 ------------------------------------------------------------------------
--- HORDE MODE - hides the main-hand stone and oil buttons (Horde warriors
--- run Windfury Totem on the main hand). Kept PER BAR ("weaponsBar",
--- "consumablesHelper") and PER FACTION: db[bar].hordeByFaction =
--- { Horde = true|false, Alliance = true|false }, unset meaning "on for
--- Horde, off for Alliance". It used to be one flag; settings travel
--- between characters (sync, copy, import), so a Horde character's "on"
--- reached Alliance characters and stuck there. Now each faction's choice
--- only ever applies to that faction, and each bar's only to that bar.
+-- THE MAIN HAND BUTTON (2026-11-16, Zac: "for era i want alliance
+-- warriors ... to always show weapon stones for main hand off hand and
+-- bag where horde i only want offhand and bag ... anni and forever have
+-- windfury on both sides ... its just era that doesnt"; then "there
+-- shouldnt be an option anymore"). Nothing to switch on: a Horde
+-- character on Classic Era starts without the main-hand stone and oil
+-- buttons (Windfury Totem is on the main hand there), everyone else with
+-- them. A bar's "Main hand" tick in its weapon list says otherwise. Kept
+-- PER BAR ("weaponsBar", "consumablesHelper") and PER FACTION, only where
+-- it differs from that start:
+--   db[bar].hordeByFaction = { Horde = true|false, Alliance = true|false }
+-- (true: hidden. The name is the old "Horde mode" option's, whose saved
+-- answers these are. Per faction because settings travel between
+-- characters - sync, copy, import - and one faction's answer must never
+-- reach the other's characters.)
 ------------------------------------------------------------------------
 local function PlayerFaction()
     local f = UnitFactionGroup and UnitFactionGroup("player")
     if f == "Horde" or f == "Alliance" then return f end
     return nil
 end
+local function MainHandStartsHidden(self)
+    return self:Flavor() == "era" and PlayerFaction() == "Horde"
+end
 
-function WRF:IsHordeMode(barKey)
-    -- (2026-11-09) not on TBC: both factions have Windfury Totem there
-    if self.Flavor and self:Flavor() == "tbc" then return false end
+function WRF:IsMainHandHidden(barKey)
     local faction = PlayerFaction()
     local db = self.db and self.db[barKey]
     local set = db and type(db.hordeByFaction) == "table" and db.hordeByFaction or nil
     local v = set and faction and set[faction]
-    if v == nil then return faction == "Horde" end
+    if v == nil then return MainHandStartsHidden(self) end
     return v and true or false
 end
 
-function WRF:SetHordeMode(barKey, on)
+function WRF:SetMainHandShown(barKey, shown)
     if not self.db then return end
+    local faction = PlayerFaction()
+    if not faction then return end
     self.db[barKey] = self.db[barKey] or {}
     local db = self.db[barKey]
     if type(db.hordeByFaction) ~= "table" then db.hordeByFaction = {} end
-    local faction = PlayerFaction()
-    if faction then db.hordeByFaction[faction] = on and true or false end
+    local hide = not shown
+    if hide == MainHandStartsHidden(self) then
+        db.hordeByFaction[faction] = nil
+    else
+        db.hordeByFaction[faction] = hide
+    end
 end

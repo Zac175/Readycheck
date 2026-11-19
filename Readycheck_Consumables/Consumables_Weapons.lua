@@ -235,10 +235,10 @@ WRF._chInit[#WRF._chInit + 1] = function()
         local displayStone   = self:GetValidStoneType()
         local stoneCount     = itemCountCache[displayStone] or 0
 
-        local hordeMode = self:IsHordeMode("weaponsBar")
+        local mainHandHidden = self:IsMainHandHidden("weaponsBar")
         local mhTexture = GetInventoryItemTexture("player", 16)
         local mhItemId = GetInventoryItemID("player", 16)
-        if config.showEquippedWeapons and mhTexture and not hordeMode and not (config.hiddenWeapons and mhItemId and config.hiddenWeapons[mhItemId]) then
+        if config.showEquippedWeapons and mhTexture and not mainHandHidden and not (config.hiddenWeapons and mhItemId and config.hiddenWeapons[mhItemId]) then
             local mhLink = GetInventoryItemLink("player", 16)
             -- itemClassID 2 = Weapon (GetItemInfo numeric class). Subtype
             -- string match, not itemId, so this works for every sword/axe/

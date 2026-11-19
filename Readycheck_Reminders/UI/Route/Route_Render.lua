@@ -158,6 +158,13 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
             if not isRemoteRoute and RR.SyncHolds then RR:SyncHolds(true) end
             Save()
         end
+        -- a step's smart macro swaps: the macros follow the edit at once
+        local function SaveMacro()
+            if not isRemoteRoute and RC.SmartMacro then
+                RC.SmartMacro:RequestEvaluate()
+            end
+            Save()
+        end
 
         local editIdx = nil
         if frame._routeEdit and frame._routeEdit.raid == raidName then
@@ -1121,6 +1128,16 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                     if isDisabled then mi:SetAlpha(0.45) end
                     px = px - 16
                 end
+                -- (a smart macro swap: the item its macros are given)
+                if a.macros and RC.smartKeys then
+                    for _, m in ipairs(a.macros) do
+                        if m.item or m.itemId then
+                            local tex = m.itemId and ItemIcon(m.itemId) or nil
+                            if not tex and m.item then tex = select(10, GetItemInfo(m.item)) end
+                            MiniIcon(tex or "Interface\\AddOns\\Readycheck\\Media\\Icons\\smartmacro")
+                        end
+                    end
+                end
                 if a.reminders then
                     for _, r in ipairs(a.reminders) do
                         if r.text and r.text ~= "" then MiniIcon(r.icon or ICON_QUESTION) end
@@ -1554,6 +1571,9 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                 local hasRem   = (a.reminders ~= nil and #a.reminders > 0)
                               or (remFilter ~= nil)
                 local hasHold  = (a.holds ~= nil and #a.holds > 0)
+                -- (smart macro swaps: switched on by RC.smartKeys -
+                -- Readycheck_Features' SmartKeys.lua)
+                local hasMacro = RC.smartKeys and (a.macros ~= nil and #a.macros > 0)
 
                 local addItems = {}
                 if not hasGear  then addItems[#addItems + 1] = { text = RCL["Gear set"],  value = "gear" } end
@@ -1565,11 +1585,22 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                 addItems[#addItems + 1] = { text = RCL["Reminder: custom text"], value = "rem_all" }
                 addItems[#addItems + 1] = { text = RCL["Standing reminder: hold potion"], value = "hold_potion" }
                 addItems[#addItems + 1] = { text = RCL["Standing reminder: custom text"], value = "hold_text" }
+                if RC.smartKeys then
+                    addItems[#addItems + 1] = { text = RCL["Smart macro: use one item"], value = "macro" }
+                end
                 if #addItems > 0 then
                     FieldLabel("Add action:")
                     local addDD = self.UI:CreateScrollableDropdown(row, 220, RCL["Add action..."], 8)
                     addDD:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey + 4)
                     addDD:SetItems(addItems, function(value)
+                        if value == "macro" then
+                            a.macros = a.macros or {}
+                            a.macros[#a.macros + 1] = {}
+                            frame._routeFlash = revealKey .. "macro"
+                            SaveMacro()
+                            Rerender()
+                            return
+                        end
                         if value == "hold_potion" or value == "hold_text" then
                             a.holds = a.holds or {}
                             if value == "hold_potion" then
@@ -2060,6 +2091,87 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                     holdNote:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 58, ey - 3)
                     holdNote:SetText(RCL["On the tracker while you are on these steps"])
                     holdNote:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
+                    ey = ey - 30
+                end
+
+                -- SMART MACRO SWAPS: a macro, or every macro of a group,
+                -- uses one item from the moment this step is the one you
+                -- are on until the step picked under each is done
+                -- (RR:ActiveMacroSwaps; RC.SmartMacro writes the macros)
+                if hasMacro then
+                    SectionLabel("Macros:", "macro", function()
+                        a.macros = nil
+                        if not isRemoteRoute and RC.SmartMacro then
+                            RC.SmartMacro:RequestEvaluate()
+                        end
+                    end)
+                    local macros = a.macros
+                    local firstRow = true
+                    -- (the item box takes what the row has to spare, so a
+                    -- long potion name reads whole on a wide window)
+                    local rowW = row:GetWidth() or 0
+                    local itemW = (rowW > 0) and math.max(110, math.min(190, rowW - FLD_X - 112 - 52 - 12 - 34)) or 110
+                    for mi = 1, #macros do
+                        local m = macros[mi]
+                        if not firstRow then FieldLabel("") end
+                        firstRow = false
+
+                        RC:BuildSmartMacroSwapRow(row, FLD_X, ey, m, {
+                            targetW = 112, itemW = itemW, pickW = 52, all = isRemoteRoute,
+                            onChange = function(_, typed)
+                                Save()
+                                if not typed then Rerender() end
+                            end,
+                        })
+                        local mx = self.UI:CreateXCloseButton(row, 12, function()
+                            table.remove(macros, mi)
+                            if #macros == 0 then a.macros = nil end
+                            SaveMacro()
+                            Rerender()
+                        end)
+                        mx:SetPoint("TOPRIGHT", row, "TOPRIGHT", -8, ey + 1)
+                        ey = ey - 26
+
+                        -- how long the macro keeps the item
+                        local uLbl = self:CreateFontString(row, "OVERLAY", nil, 9)
+                        uLbl:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey - 3)
+                        uLbl:SetText(RCL["until"])
+                        uLbl:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
+                        local endIdx = RR:HoldEndIndex(steps, i, m)
+                        local function EndLabel(k)
+                            if k <= i then return RCL["this step is done"] end
+                            return k .. ". " .. StepSummary(steps[k])
+                        end
+                        local untilDD = self.UI:CreateScrollableDropdown(row, 226, EndLabel(endIdx), 10)
+                        untilDD:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 30, ey + 4)
+                        local untilItems = { { text = EndLabel(i), value = i } }
+                        for k = i + 1, math.min(#steps, i + 60) do
+                            local sk = steps[k]
+                            if type(sk) == "table" and sk.enabled ~= false
+                               and not (sk.type == "encounter" and sk.when == "wipe") then
+                                untilItems[#untilItems + 1] = { text = EndLabel(k), value = k }
+                            end
+                        end
+                        untilDD:SetItems(untilItems, function(value)
+                            RR:SetHoldEnd(steps, i, m, value)
+                            SaveMacro()
+                            Rerender()
+                        end)
+                        untilDD:SetSelectedValue(endIdx, EndLabel(endIdx))
+                        ey = ey - 30
+                    end
+
+                    local addMacroBtn = self.UI:CreateStyledButton(row, RCL["+ Macro"], 62, 20)
+                    addMacroBtn:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X, ey + 2)
+                    addMacroBtn:SetScript("OnClick", function()
+                        macros[#macros + 1] = {}
+                        SaveMacro()
+                        Rerender()
+                    end)
+                    local macroNote = self:CreateFontString(row, "OVERLAY", nil, 9)
+                    macroNote:SetPoint("TOPLEFT", row, "TOPLEFT", FLD_X + 70, ey - 3)
+                    macroNote:SetText(RCL["The macro uses this item while you are on these steps"])
+                    macroNote:SetTextColor(T_GRAY[1], T_GRAY[2], T_GRAY[3])
                     ey = ey - 30
                 end
 

@@ -259,6 +259,9 @@ local function InitializeRaidProfiles()
             self.RaidRoute:SyncBossStepsFromConfig(raidName)
         end
 
+        -- (the damage meter with a config: MeterHold.lua)
+        if self.SyncMeterHold then self:SyncMeterHold() end
+
         return true
     end
 
@@ -328,6 +331,10 @@ local function InitializeRaidProfiles()
         end
 
         self:SaveConfigurationToProfile()
+
+        -- (the picked config may have changed: the damage meter with a
+        -- config, MeterHold.lua)
+        if not isRemote and self.SyncMeterHold then self:SyncMeterHold() end
 
         return true
     end
@@ -540,6 +547,9 @@ local function InitializeRaidProfiles()
             timestamp = time(),
             data = RC.DeepCopy(profile)
         }
+        -- (what a config does to YOUR damage meter is yours: a string you
+        -- hand to someone else does not carry it - MeterHold.lua)
+        if type(exportData.data) == "table" then exportData.data.meterHide = nil end
 
         local serialized = self:SerializeTableForRaid(exportData)
 
@@ -733,6 +743,8 @@ local function InitializeRaidProfiles()
             local p = structure.profiles[profileName]
             if type(p.bosses) ~= "table" then p.bosses = {} end
             if type(p.trash) ~= "table" then p.trash = {} end
+            -- (nor does one that comes in decide about this meter)
+            p.meterHide = nil
         end
         do
             local scrubbed = self:ScrubUnknownGearSets(structure.profiles[profileName])
@@ -1393,8 +1405,12 @@ local function InitializeRaidProfiles()
     zoneFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     zoneFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     zoneFrame:SetScript("OnEvent", function()
+        -- (the damage meter with a config: MeterHold.lua)
+        if RC.SyncMeterHoldSoon then RC:SyncMeterHoldSoon() end
         OnZoneChanged()
     end)
+    -- (a meter that loaded after this file: asked once more after login)
+    if RC.SyncMeterHoldSoon then RC:SyncMeterHoldSoon(2) end
 
     RC:DebugPrint("Raid Profiles System initialized", "config")
 end

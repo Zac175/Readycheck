@@ -141,6 +141,7 @@ RC.SETTINGS = {
     -- Smart Macros
     { key = "smartMacros", cat = "smartMacros", label = RCL["Smart macros"] },
     { key = "smartMacrosNextId", cat = "smartMacros", label = RCL["Smart macro id counter"] },
+    { key = "smartKeysAuto", cat = "smartMacros", label = RCL["Smart macros: abilities found on the bars automatically"] },
     -- Battle Shout
     { key = "battleShoutReminder", cat = "battleShout", label = RCL["Battle Shout reminder"] },
     -- Battle Shout Party Tracker
@@ -225,7 +226,9 @@ RC.NONSYNCED_SETTINGS = {
     -- their values from before (Core_CVar); ReadycheckDB.account.setupHints - the
     -- one-time hints shown (Core_Hints); ReadycheckDB.account.setupPending -
     -- characters whose profile /rc resetprofile reset, so the setup opens once
-    -- after the reload (PM_Cleanup, Core_Scan))
+    -- after the reload (PM_Cleanup, Core_Scan); ReadycheckDB.account.meterHeld -
+    -- the damage meter windows a raid config closed, per character, to put
+    -- back when it is no longer in force (MeterHold.lua))
     spikeLogger = "Profiler capture buffer - debug data, not a setting",
     debugMode   = "Removed setting, cleaned up by ProfileManager",
     autoDetectedTrinkets = "Per-character detection cache - rebuilt from bags, not a setting",
@@ -297,6 +300,7 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["worldBuffTimers.mapPins"]         = RCL["World map pins"],
     ["worldBuffTimers.minimapPins"]     = RCL["Minimap songflower pins"],
     ["worldBuffTimers.meshSync"]        = RCL["Carry timers over mesh"],
+    ["worldBuffTimers.dropsMinLevel"]   = RCL["World buff drops: lowest level listed"],
     -- Sync transfer bar
     ["meshProgressBar.x"] = RCL["Horizontal position"],
     ["meshProgressBar.y"] = RCL["Vertical position"],
@@ -471,8 +475,9 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["potionsBar.hideWhenActive"]        = RCL["Hide while the buff is active"],
     ["potionsBar.showBeforeExpiry"]      = RCL["Show before expiry (seconds)"],
     ["weaponsBar.showItemNames"]         = RCL["Show item names"],
-    ["weaponsBar.hordeByFaction"]        = RCL["Horde mode (per faction)"],
-    ["consumablesHelper.hordeByFaction"] = RCL["Horde mode (per faction)"],
+    ["weaponsBar.hordeByFaction"]        = RCL["Main hand button (per faction)"],
+    ["consumablesHelper.hordeByFaction"] = RCL["Main hand button (per faction)"],
+    ["consumablesHelper.weaponStones"]   = RCL["Weapon stones on the bar"],
     ["weaponsBar.showEquippedWeapons"]   = RCL["Show equipped weapons"],
     ["weaponsBar.showBagWeapons"]        = RCL["Show bag weapons"],
     ["weaponsBar.hiddenWeapons"]         = RCL["Hidden weapons"],
@@ -521,6 +526,9 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["boonReminder.disabledBosses"] = RCL["Bosses with the reminder off"],
     ["boonReminder.afterRaid"]      = RCL["World buff window after a raid"],
     ["boonReminder.afterRaidPos"]   = RCL["After-raid window position"],
+    ["boonReminder.afterRaidRow"]   = RCL["After-raid window: buffs not on you"],
+    ["boonReminder.afterRaidDim"]   = RCL["After-raid window: how dim a missing buff is"],
+    ["boonReminder.afterRaidCdLock"] = RCL["After-raid window: button waits on the Chronoboon cooldown"],
     -- Fast weapon reminder
     ["fastWeaponReminder.enabled"]           = RCL["Reminder enabled"],
     ["fastWeaponReminder.showIcon"]          = RCL["Show icon"],
@@ -594,6 +602,16 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["fontSettings.fontSize"]            = RCL["Base font size"],
     ["fontSettings.fontOutline"]         = RCL["Font outline"],
     ["fontSettings.mainWindowBgOpacity"] = RCL["Main window opacity"],
+    ["fontSettings.lookOwn"]        = RCL["Window look: Readycheck's own beside ZacUI"],
+    ["fontSettings.finishDepth"]    = RCL["Window finish: depth"],
+    ["fontSettings.finishKind"]     = RCL["Window finish: surfaces"],
+    ["fontSettings.finishRule"]     = RCL["Window finish: accent line under title bars"],
+    ["fontSettings.finishGrain"]    = RCL["Window finish: texture strength"],
+    ["fontSettings.finishTex"]      = RCL["Window finish: texture"],
+    ["fontSettings.buttonDepth"]    = RCL["Button depth"],
+    ["fontSettings.mainButton"]     = RCL["Main button style"],
+    ["fontSettings.wheelSpeed"]     = RCL["Scroll wheel speed"],
+    ["fontSettings.wheelSmooth"]    = RCL["Smooth scrolling"],
     -- Minimap button
     ["minimapButton.hide"]       = RCL["Hide minimap button"],
     ["minimapButton.position"]   = RCL["Button angle"],
@@ -775,6 +793,7 @@ RC.SETTING_OPAQUE_PATHS = RC.SETTING_OPAQUE_PATHS or {
     gearPinnedButtons    = true,
     speedSwapTargets     = true,
     smartMacros          = true,
+    smartKeysAuto        = true,
     raidProfiles         = true,   -- raid & boss configs
     statsBarPosition     = true,   -- one saved position
     statsBarStats        = true,   -- ordered list of shown stats

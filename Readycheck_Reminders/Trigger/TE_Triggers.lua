@@ -1250,6 +1250,8 @@ end
             end
             local message = RCL["Use Abilities Now!"]
             self:ShowReminder(message, abilitiesToShow)
+            -- smart keys (Readycheck_Features), when loaded (no-op otherwise)
+            if self.SmartKeysReminderFired then self:SmartKeysReminderFired(abilitiesToShow) end
         end
 
         if RC.Profiler then RC.Profiler:StopTiming("TriggerEngine") end

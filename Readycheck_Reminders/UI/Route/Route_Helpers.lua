@@ -462,6 +462,16 @@ local _srr = RC._srr
                 }
             end
         end
+        -- smart macro swaps, with their lengths
+        if a.macros then
+            na.macros = {}
+            for _, m in ipairs(a.macros) do
+                na.macros[#na.macros + 1] = {
+                    group = m.group, macro = m.macro, item = m.item, itemId = m.itemId,
+                    span = m.span, untilFp = m.untilFp,
+                }
+            end
+        end
         return n
     end
 

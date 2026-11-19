@@ -97,6 +97,169 @@ local ColorPreviews = _sbs.ColorPreviews
         return yPos
     end
 
+    -- THE WINDOW LOOK (2026-11-18; UIF_Base RC.UI:Look): the finish of
+    -- Readycheck's windows, the depth of its buttons, the main button's
+    -- face and the wheel. Beside ZacUI these follow ZacUI's Style page
+    -- until "Use Readycheck's own" is ticked; nothing saved is what ships.
+    local function BuildLookCard(self, parent, yPos, frame)
+        if IsSearching() then return yPos end
+        if not (RC.UI.Look and RC.UI.SetLook) then return yPos end
+        local UI = self.UI
+        local card = self:CreateSettingsCard(parent, yPos, RCL["Window look"])
+        local y = -32
+        local norm = self:GetColor("text", "normal")
+        if not self.db.fontSettings then self.db.fontSettings = {} end
+        local fs = self.db.fontSettings
+        local saveTimer
+        local function Save()
+            if saveTimer then saveTimer:Cancel() end
+            saveTimer = C_Timer.NewTimer(0.3, function() RC:SaveConfigurationToProfile() end)
+        end
+        local function Rebuild() self:ShowSidebarFontSettings(frame, true) end
+        local function Label(text)
+            local l = self:CreateFontString(card, "OVERLAY", nil, 11)
+            l:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
+            l:SetText(text)
+            l:SetTextColor(norm.r, norm.g, norm.b)
+            y = y - 18
+            return l
+        end
+        local function Help(text) y = UI:CreateHelpLine(card, 14, y, text) end
+        local function Check(label, on, set, help)
+            local cb = UI:CreateSettingCheckbox(card, y, label, on and true or false, function(box)
+                local v = box:GetChecked() and true or false
+                set(v)
+                RC:ForceCheckboxUpdate(box, v)
+                Save()
+            end)
+            y = y - 24
+            if help then Help(help) end
+            return cb
+        end
+        -- a percent slider: get() the saved share, set(share) stores it
+        local function Slider(label, lo, hi, step, shown, set)
+            Label(label)
+            local s = UI:CreateSlider(card, lo, hi, shown, step)
+            s:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
+            s.Text:SetText(shown .. "%")
+            s:HookScript("OnValueChanged", function(slider, value)
+                value = math.floor(value + 0.5)
+                slider.Text:SetText(value .. "%")
+                set(value)
+                Save()
+            end)
+            y = y - 34
+            return s
+        end
+        local function Menu(label, width, items, value, onPick)
+            Label(label)
+            local function TextOf(v)
+                for _, it in ipairs(items) do if it.value == v then return it.text end end
+                return items[1] and items[1].text or ""
+            end
+            local dd = UI:CreateScrollableDropdown(card, width, TextOf(value), 10)
+            dd:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
+            dd:SetItems(items, function(v)
+                onPick(v)
+                Save()
+            end)
+            dd:SetSelectedValue(value, TextOf(value))
+            y = y - 34
+            return dd, TextOf
+        end
+
+        local there, following = UI:LookFollows()
+        if there then
+            Check(RCL["Use Readycheck's own look beside ZacUI"], not following, function(v)
+                fs.lookOwn = v and true or nil
+                UI:LookChanged()
+                Rebuild()
+            end, RCL["Unticked, Readycheck's windows wear what is picked on ZacUI's Style page, so the two addons match."])
+        end
+        if following then
+            Help(RCL["Following ZacUI: the window finish, button depth, main button and wheel are set on /zui > Appearance > Style."])
+        else
+            local L = UI:Look()
+            -- the finish: a preset, then its parts
+            local presets = {}
+            for _, p in ipairs(UI.FINISH_PRESETS) do presets[#presets + 1] = { text = p.label, value = p.id } end
+            local function PresetText()
+                local id, label = UI:FinishPresetNow()
+                return id == "custom" and RCL["Custom (your own settings)"] or label
+            end
+            Label(RCL["How Readycheck's windows are drawn"])
+            local presetDD = UI:CreateScrollableDropdown(card, 260, PresetText(), 10)
+            presetDD:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
+            presetDD:SetItems(presets, function(v)
+                UI:SetFinishPreset(v)
+                Save()
+                Rebuild()
+            end)
+            presetDD:SetSelectedValue((UI:FinishPresetNow()), PresetText())
+            y = y - 34
+            Help(RCL["Soft depth is how it ships. Pick another, or change anything below to make your own."])
+            local function Named()
+                presetDD:SetSelectedValue((UI:FinishPresetNow()), PresetText())
+            end
+            Menu(RCL["Surfaces"], 260, {
+                { text = RCL["Shaded, with raised title bars"], value = "depth" },
+                { text = RCL["Flat, with darker bars and cards"], value = "bands" },
+                { text = RCL["Flat, bars a step lighter"], value = "plain" },
+            }, L.kind, function(v)
+                UI:SetLook("finishKind", (v ~= "depth") and v or nil)
+                Named()
+            end)
+            Slider(RCL["Depth"], 0, 100, 5, math.min(100, math.floor(L.depth * 100 + 0.5)), function(v)
+                UI:SetLook("finishDepth", (v ~= 100) and (v / 100) or nil)
+                Named()
+            end)
+            Check(RCL["Accent line under title bars"], L.rule, function(v)
+                UI:SetLook("finishRule", v and true or nil)
+                Named()
+            end)
+            local hadTexture = L.grain > 0
+            Slider(RCL["Texture"], 0, 200, 10, math.floor(L.grain * 100 + 0.5), function(v)
+                UI:SetLook("finishGrain", (v > 0) and (v / 100) or nil)
+                Named()
+                -- (the texture menu comes and goes with it)
+                if hadTexture ~= (v > 0) then
+                    hadTexture = v > 0
+                    Rebuild()
+                end
+            end)
+            if L.grain > 0 then
+                local texes = {}
+                for _, t in ipairs(UI.FINISH_TEXTURES) do texes[#texes + 1] = { text = t.label, value = t.id } end
+                Menu(RCL["Which texture"], 220, texes, L.texture, function(v)
+                    UI:SetLook("finishTex", (v ~= "brushed") and v or nil)
+                end)
+            end
+            Help(RCL["A faint texture on window grounds. 0% is none, as it ships."])
+            -- buttons
+            Slider(RCL["Button depth"], 0, 150, 5, math.floor(L.buttons * 100 + 0.5), function(v)
+                UI:SetLook("buttonDepth", (v ~= 100) and (v / 100) or nil)
+            end)
+            Help(RCL["How far buttons and the sidebar's rows stand out. 100% is how it ships; 0% is a flat button."])
+            Menu(RCL["A window's main button"], 260, {
+                { text = RCL["Its face is the accent colour"], value = "accent" },
+                { text = RCL["Like the other buttons, accent edge"], value = "plain" },
+            }, L.mainPlain and "plain" or "accent", function(v)
+                UI:SetLook("mainButton", (v == "plain") and "plain" or nil)
+            end)
+            -- the wheel
+            Slider(RCL["Wheel speed"], 50, 300, 10, math.floor(L.wheel * 100 + 0.5), function(v)
+                UI:SetLook("wheelSpeed", (v ~= 100) and (v / 100) or nil)
+            end)
+            Check(RCL["Smooth scrolling"], L.smooth, function(v)
+                if v then UI:SetLook("wheelSmooth", nil) else UI:SetLook("wheelSmooth", false) end
+            end, RCL["Off, a notch of the wheel jumps straight to its place."])
+        end
+
+        card:SetContentHeight(math.abs(y))
+        yPos = yPos - card:GetHeight() - 14
+        return yPos
+    end
+
     -- Four grouped cards over the `text` category. Their previews live in
     -- the preview pane (the window miniature and its Text mode).
     local function BuildTextCards(self, parent, yPos, frame)
@@ -388,6 +551,7 @@ local ColorPreviews = _sbs.ColorPreviews
     local COLOR_MANIFEST = {
         core = {
             { custom = BuildOpacityCard },
+            { custom = BuildLookCard },
             { cat = "ui", label = RCL["Windows & panels"],
               desc = RCL["Window backgrounds, card fills, borders and the gold accent used across the addon."] },
             { cat = "buttons", label = RCL["Buttons"],

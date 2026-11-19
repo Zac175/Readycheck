@@ -789,6 +789,9 @@ local function ZacUISignature()
             parts[#parts + 1] = c and string.format("%s=%.3f,%.3f,%.3f", key, c.r, c.g, c.b) or (key .. "=-")
         end
     end
+    -- (the finish, button depth and main button followed from ZacUI:
+    -- UIF_Base RC.UI:Look)
+    if RC.UI and RC.UI.LookSignature then parts[#parts + 1] = RC.UI:LookSignature() end
     return table.concat(parts, "|")
 end
 
@@ -806,6 +809,7 @@ function RC:FollowZacUI()
     -- was dressed with it already)
     if first then return false end
     if wasFace ~= self._zacuiFace and self.UpdateAllFonts then self:UpdateAllFonts() end
+    if self.UI and self.UI.RepaintPlates then self.UI:RepaintPlates() end
     if self.RefreshUIColors then self:RefreshUIColors() end
     self:DebugPrint("ZacUI's look changed: windows re-dressed", "ui")
     return true

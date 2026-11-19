@@ -431,7 +431,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
             -- position that no longer resolves.
             if itemId == 999901 then
                 local mhTexture = GetInventoryItemTexture("player", 16)
-                if not mhTexture or self:IsHordeMode("consumablesHelper") then
+                if not mhTexture or self:IsMainHandHidden("consumablesHelper") then
                     button:SetParent(nil)
                     self.consumablesHelper.buttons[itemId] = nil
                 end
@@ -521,13 +521,18 @@ WRF._chInit[#WRF._chInit + 1] = function()
             return preferredItem or priority[1], "noneAvailable"
         end
 
-        -- 999901: the mainhand weapon-enchant slot button. Suppressed for
-        -- Horde (no stone vendor path) and when the equipped mainhand takes
-        -- no stone. No class gate applies.
-        local hordeMode = self:IsHordeMode("consumablesHelper")
+        -- The bar's weapon buttons - main hand, off hand, bag weapons - have
+        -- one switch (weaponStones); the item list's weapon rows pick among
+        -- them.
+        -- 999901: the mainhand weapon-enchant slot button. Not there where
+        -- the main hand is hidden (RC:IsMainHandHidden: a Horde character
+        -- on Classic Era unless ticked) and when the equipped mainhand
+        -- takes no stone. No class gate applies.
+        local weaponStones = config.weaponStones ~= false
+        local mainHandHidden = self:IsMainHandHidden("consumablesHelper")
         local mhTexture = GetInventoryItemTexture("player", 16)
         local mhInvItemId = GetInventoryItemID("player", 16)
-        if mhTexture and not hordeMode
+        if weaponStones and mhTexture and not mainHandHidden
             and not (self.db.consumablesHelper.hiddenItems and self.db.consumablesHelper.hiddenItems[999901])
             and not (config.hiddenWeapons and mhInvItemId and config.hiddenWeapons[mhInvItemId]) then
             local mhLink = GetInventoryItemLink("player", 16)
@@ -573,7 +578,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
 
         local ohTexture = GetInventoryItemTexture("player", 17)
         local ohInvItemId = GetInventoryItemID("player", 17)
-        if ohTexture
+        if weaponStones and ohTexture
             and not (self.db.consumablesHelper.hiddenItems and self.db.consumablesHelper.hiddenItems[999902])
             and not (config.hiddenWeapons and ohInvItemId and config.hiddenWeapons[ohInvItemId]) then
             local ohLink = GetInventoryItemLink("player", 17)
@@ -678,7 +683,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
             local categoryKey = entry.categoryKey
             local countItemId = entry.countItemId
 
-            if not hiddenItems[itemId] and not (itemData.enchantId and (hiddenItems[999901] or hordeMode)) then
+            if not hiddenItems[itemId] and not (itemData.enchantId and (hiddenItems[999901] or mainHandHidden)) then
                 local count = GetCachedItemCount(countItemId)
 
                 local buffId = self:GetConsumableBuffId(countItemId)
@@ -779,7 +784,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
             end
         end
 
-        if config.showBagWeapons then
+        if weaponStones and config.showBagWeapons then
             local bagWeapons = self:ScanBagWeapons()
             local selectedStone = self:GetValidStoneType()
             local displayStone = selectedStone

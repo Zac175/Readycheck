@@ -215,6 +215,17 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
 
             -- Widen the tiles to use the row rather than leaving a gutter,
             -- and only wrap when even the narrowest tile will not fit.
+            -- (rows of tiles at least `base` wide, the row's slack shared out)
+            local function Rows(base)
+                local tw = base
+                local pr = math.max(1, math.floor((avail + TILE_GAP) / (tw + TILE_GAP)))
+                local slack = avail - (pr * tw + (pr - 1) * TILE_GAP)
+                if slack > 0 then
+                    tw = tw + math.floor(slack / pr)
+                    if tw > TILE_MAX_W then tw = TILE_MAX_W end
+                end
+                return tw, pr
+            end
             local tileW, perRow = TILE_W, nTiles
             if nTiles > 0 then
                 local fitAll = math.floor((avail + TILE_GAP) / (TILE_W + TILE_GAP))
@@ -224,15 +235,23 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                     if tileW > TILE_MAX_W then tileW = TILE_MAX_W end
                     if tileW < TILE_W then tileW = TILE_W end
                 else
-                    tileW = TILE_MIN_W
-                    perRow = math.max(1, math.floor((avail + TILE_GAP) / (tileW + TILE_GAP)))
-                    local used = perRow * tileW + (perRow - 1) * TILE_GAP
-                    local slack = avail - used
-                    if perRow > 0 and slack > 0 then
-                        tileW = tileW + math.floor(slack / perRow)
-                        if tileW > TILE_MAX_W then tileW = TILE_MAX_W end
+                    tileW, perRow = Rows(TILE_MIN_W)
+                end
+                -- No tile narrower than its caption (2026-11-16: a ninth
+                -- tile on a narrow window with a large font cut "Death
+                -- Wish" short by two pixels). Where the tiles as laid out
+                -- above would cut the widest caption, they take that
+                -- caption's width and wrap to another row instead.
+                local needW = 0
+                for _, e in ipairs(elements) do
+                    local l = (not e.divider) and e.obj.tileLabel
+                    if l then
+                        local sw = (l.GetUnboundedStringWidth and l:GetUnboundedStringWidth()) or l:GetStringWidth() or 0
+                        if sw + 2 > needW then needW = math.ceil(sw) + 2 end
                     end
                 end
+                if needW > TILE_MAX_W then needW = TILE_MAX_W end
+                if tileW < needW then tileW, perRow = Rows(needW) end
             end
 
             local iconSz = math.min(TILE_ICON, math.max(18, tileW - 12))
@@ -782,40 +801,9 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
         -- "trinkets"/"defensives"/"potion"/"utility" are grid-tile pseudo
         -- keys, not real ability storage keys - each is enabled if ANY of
         -- the underlying abilities.* entries it groups is enabled.
+        -- (RC:EncounterAbilityOn, RaidLookup: the smart macros read it too)
         local function IsAbilityEnabled(abilityKey)
-            if abilityKey == "trinkets" then
-                local t1 = encounterSettings.abilities["trinket1"]
-                local t2 = encounterSettings.abilities["trinket2"]
-                local bc = encounterSettings.abilities["battleChicken"]
-                local ad = encounterSettings.abilities["arcaniteDragonling"]
-                return (t1 and t1.enabled) or (t2 and t2.enabled) or (bc and bc.enabled) or (ad and ad.enabled)
-            elseif abilityKey == "defensives" then
-                local ls = encounterSettings.abilities["laststand"]
-                local sw = encounterSettings.abilities["shieldwall"]
-                return (ls and ls.enabled) or (sw and sw.enabled)
-            elseif abilityKey == "potion" then
-                for key, cfg in pairs(encounterSettings.abilities) do
-                    if type(key) == "string" and (key == "potion" or key:lower():find("potion")) and cfg and cfg.enabled then
-                        return true
-                    end
-                end
-                return false
-            elseif abilityKey == "utility" then
-                for key, cfg in pairs(encounterSettings.abilities) do
-                    if tonumber(key) and RC.utilityItems and RC.utilityItems[tonumber(key)] and cfg and cfg.enabled then
-                        return true
-                    end
-                end
-                if encounterSettings.postDeathConsumables then
-                    if next(encounterSettings.postDeathConsumables) then
-                        return true
-                    end
-                end
-                return false
-            else
-                local cfg = encounterSettings.abilities[abilityKey]
-                return cfg and cfg.enabled
-            end
+            return RC:EncounterAbilityOn(encounterSettings, abilityKey)
         end
 
         -- Racial tiles only show for races that can cast them: the local
@@ -865,7 +853,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
         -- Strip/panel state. frame.bossPageTab[encounterName] names the
         -- open panel: "abilities" (an ability tile - or nothing - is open;
         -- frame._expandedAbility[settingsKey] says which) or one of the
-        -- page tiles "gear" / "fungal" / "horsemen" / "history". Opening a
+        -- page tiles "gear" / "macros" / "fungal" / "horsemen" / "history". Opening a
         -- page tile clears the expanded ability; clicking an ability tile
         -- puts the tab back on "abilities".
         frame.bossPageTab = frame.bossPageTab or {}
@@ -1173,6 +1161,16 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                     enabled = gearOn, tipTitle = RCL["Gear swap"], tipLine = RCL["Engage / after-death gear swaps"],
                 }
             end
+            -- smart macro swaps: one item for a macro (or a group of them)
+            -- while this boss is the target (switched on by RC.smartKeys:
+            -- Readycheck_Features' SmartKeys.lua)
+            if RC.smartKeys then
+                pageTiles[#pageTiles + 1] = {
+                    key = "macros", label = RCL["Macros"], icon = "Interface\\AddOns\\Readycheck\\Media\\Icons\\smartmacro",
+                    enabled = RC:EncounterHasMacroSwaps(encounterSettings),
+                    tipTitle = RCL["Smart macros"], tipLine = RCL["Make a macro, or a whole group of them, use one item on this boss"],
+                }
+            end
             if encounterName == "Loatheb" then
                 local fb = encounterSettings.fungalBloom
                 pageTiles[#pageTiles + 1] = {
@@ -1384,6 +1382,15 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
             if activeTab == "abilities" then
                 if expandedKey then
                     yPos = RenderAbilityPanel(yPos)
+                    -- the macros and bar slots that follow this ability
+                    -- (this character's own keys: not while editing
+                    -- someone else's raid)
+                    if RC.smartKeys and not isRemoteRaid then
+                        yPos = RC:BuildSmartMacroLinkCard(parent, yPos, expandedKey, AbilityDisplayName(expandedKey),
+                            encounterSettings, { onRerender = function()
+                                RC:ShowInlineAbilityConfig(frame, raidName, encounterName, encounterType, raidSettings, true)
+                            end })
+                    end
                 else
                     yPos = RenderEmptyPanelHint(yPos)
                 end
@@ -2297,6 +2304,16 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
 
                 RebuildTabContent()
                 yPos = yPos - bgsCard:GetHeight() - 15
+
+            elseif activeTab == "macros" and RC.smartKeys then
+                -- (the pickers list this character's smart macros and bags;
+                -- editing someone else's raid offers the whole item list)
+                yPos = RC:BuildSmartMacroSwapCard(parent, yPos, encounterSettings, {
+                    all = isRemoteRaid,
+                    onRerender = function()
+                        RC:ShowInlineAbilityConfig(frame, raidName, encounterName, encounterType, raidSettings, true)
+                    end,
+                })
 
             elseif activeTab == "fungal" and encounterName == "Loatheb" then
                 -- Loatheb-only: swaps gear on Fungal Bloom (spell 29232)

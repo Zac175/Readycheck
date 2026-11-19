@@ -61,6 +61,73 @@ if not RC then return end
         return false
     end
 
+    -- The Macros page alone: a smart macro swap that names both what it
+    -- changes and the item (a row just added, still empty, is not one).
+    function RC:EncounterHasMacroSwaps(cfg)
+        if type(cfg) ~= "table" or type(cfg.macroSwaps) ~= "table" then return false end
+        for _, e in ipairs(cfg.macroSwaps) do
+            if type(e) == "table" and (e.macro or e.group or e.slot) and (e.item or e.itemId) then return true end
+        end
+        return false
+    end
+
+    -- Is one of an encounter page's ability tiles switched on? `key` is a
+    -- tile's key (RC:GetAvailableAbilities). Four tiles stand for several
+    -- stored abilities and are on when any of theirs is: "trinkets",
+    -- "defensives", "potion" (every key naming a potion) and "utility"
+    -- (the utility items, and anything to use after a death).
+    function RC:EncounterAbilityOn(cfg, key)
+        local abilities = type(cfg) == "table" and cfg.abilities
+        if type(abilities) ~= "table" then abilities = {} end
+        local function On(k) local a = abilities[k] return (type(a) == "table" and a.enabled) and true or false end
+        if key == "trinkets" then
+            return On("trinket1") or On("trinket2") or On("battleChicken") or On("arcaniteDragonling")
+        elseif key == "defensives" then
+            return On("laststand") or On("shieldwall")
+        elseif key == "potion" then
+            for k in pairs(abilities) do
+                if type(k) == "string" and (k == "potion" or k:lower():find("potion")) and On(k) then return true end
+            end
+            return false
+        elseif key == "utility" then
+            for k in pairs(abilities) do
+                if tonumber(k) and self.utilityItems and self.utilityItems[tonumber(k)] and On(k) then return true end
+            end
+            return type(cfg) == "table" and type(cfg.postDeathConsumables) == "table"
+                and next(cfg.postDeathConsumables) ~= nil
+        end
+        return On(key)
+    end
+
+    -- The one item a tile's abilities name on this encounter, where there
+    -- is exactly one: the potion of its "potion" tile, the item of its
+    -- "utility" tile. Nil for every other tile, with none switched on, or
+    -- with several (which of them a key should use is not ours to say).
+    function RC:EncounterAbilityItem(cfg, key)
+        local abilities = type(cfg) == "table" and cfg.abilities
+        if type(abilities) ~= "table" then return nil end
+        local found, n = nil, 0
+        local function Add(id)
+            if id and id ~= found then found, n = id, n + 1 end
+        end
+        if key == "potion" then
+            local potions = self.potionData and self.potionData.potions or {}
+            for k, a in pairs(abilities) do
+                if type(k) == "string" and (k == "potion" or k:lower():find("potion")) and type(a) == "table" and a.enabled then
+                    local p = potions[a.potionType or k]
+                    Add(type(p) == "table" and tonumber(p.itemId) or nil)
+                end
+            end
+        elseif key == "utility" then
+            for k, a in pairs(abilities) do
+                local id = tonumber(k)
+                if id and self.utilityItems and self.utilityItems[id] and type(a) == "table" and a.enabled then Add(id) end
+            end
+        end
+        if n == 1 then return found end
+        return nil
+    end
+
     function RC:EncounterHasConfig(cfg)
         if type(cfg) ~= "table" then return false end
         if cfg.enabled then return true end
@@ -71,6 +138,7 @@ if not RC then return end
         end
         if HasItems(cfg.postDeathConsumables) then return true end
         if type(cfg.fungalBloom) == "table" and cfg.fungalBloom.enabled then return true end
+        if self:EncounterHasMacroSwaps(cfg) then return true end
         return self:EncounterHasGearConfig(cfg)
     end
 
@@ -242,6 +310,21 @@ if not RC then return end
         return bossName
     end
 
+    -- Is this name - as GetEncounterNameForBoss gives it - one of the
+    -- raid's bosses, whether or not anything is set up on it?
+    function RC:IsRaidBossName(raidName, name)
+        if not raidName or not name then return false end
+        local rd = self.raidData and self.raidData[raidName]
+        if rd and type(rd.bosses) == "table" then
+            local n = norm(name)
+            for _, b in ipairs(rd.bosses) do
+                if type(b) == "string" and norm(b) == n then return true end
+            end
+        end
+        local enc = self.encounterAddPhases and self.encounterAddPhases[name]
+        return (type(enc) == "table" and enc.zone == raidName) and true or false
+    end
+
     function RC:GetDirectBossMatch(raidName, name)
         if not raidName or not name then return nil end
         local resolved = self:GetEncounterNameForBoss(raidName, name)
@@ -340,18 +423,11 @@ if not RC then return end
 
         return nil
     end
-    function RC:GetEffectiveRaidName()
-        if self.activeSimulation and self.activeSimulation.raidName then
-            return self.activeSimulation.raidName
-        end
-
-        -- executeCalculator and activeSimulation are both owned by
-        -- Readycheck_Reminders, so neither exists when that addon is off.
-        local calc = self.executeCalculator
-        if calc and calc.testMode and calc.testMode.enabled then
-            return calc.testMode.testRaidName
-        end
-
+    -- THE RAID YOU ARE STANDING IN, by zone / instance / subzone (and, for
+    -- another game version's raids, the instance id): nil anywhere else.
+    -- No simulation, no test mode, no target - RC:GetEffectiveRaidName
+    -- below adds those round it.
+    function RC:GetZoneRaidName()
         -- the configured raids are this game version's (RaidFlavor.lua):
         -- on a version with none listed no zone counts as one (Core_Flavor)
         if self.FeatureOn and not self:FeatureOn("raid_configs") then return nil end
@@ -383,6 +459,28 @@ if not RC then return end
                 end
             end
         end
+        return nil
+    end
+
+    function RC:GetEffectiveRaidName()
+        if self.activeSimulation and self.activeSimulation.raidName then
+            return self.activeSimulation.raidName
+        end
+
+        -- executeCalculator and activeSimulation are both owned by
+        -- Readycheck_Reminders, so neither exists when that addon is off.
+        local calc = self.executeCalculator
+        if calc and calc.testMode and calc.testMode.enabled then
+            return calc.testMode.testRaidName
+        end
+
+        -- the configured raids are this game version's (RaidFlavor.lua):
+        -- on a version with none listed no zone counts as one (Core_Flavor)
+        if self.FeatureOn and not self:FeatureOn("raid_configs") then return nil end
+
+        -- where you are standing (RC:GetZoneRaidName, above)
+        local here = self:GetZoneRaidName()
+        if here then return here end
 
         local targetName = Readycheck.SafeName("target")
         if targetName and self.encounterAddPhases then

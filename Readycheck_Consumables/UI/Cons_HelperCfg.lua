@@ -464,26 +464,29 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 cardY = cardY - 28
             end
 
-            local hordeCheck = self.UI:CreateSettingCheckbox(behaviorCard, cardY, "Horde mode: hide main-hand stone and oil buttons", RC:IsHordeMode("consumablesHelper"), function(cb)
-                local newState = cb:GetChecked()
-                RC:SetHordeMode("consumablesHelper", newState)
+            -- One switch for the bar's weapon buttons (2026-11-16, Zac: "it
+            -- should just be enable weapon stones on the consumables bar ...
+            -- and then a filter to hide weapons and stuff"): the filter is
+            -- the item list's weapon rows, under Utilities.
+            local stonesCheck = self.UI:CreateSettingCheckbox(behaviorCard, cardY, "Weapon stones on this bar", self.db.consumablesHelper.weaponStones ~= false, function(cb)
+                local newState = cb:GetChecked() and true or false
+                RC.db.consumablesHelper.weaponStones = newState
                 RC:ForceCheckboxUpdate(cb, newState)
                 if RC.ForceRebuildWeaponButtons then RC:ForceRebuildWeaponButtons() end
                 RC:UpdateConsumablesButtons()
                 RC:SaveConfigurationToProfile()
             end)
-            hordeCheck:SetScript("OnEnter", function(self)
+            stonesCheck:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 local gold, norm, gray = RC:GetColor("text", "gold"), RC:GetColor("text", "normal"), RC:GetColor("text", "gray")
-                GameTooltip:SetText(RCL["Horde Mode"], gold.r, gold.g, gold.b)
-                GameTooltip:AddLine(RCL["Hides the main-hand stone and oil buttons on this bar. The weapons bar has its own switch."], norm.r, norm.g, norm.b, true)
-                GameTooltip:AddLine(RCL["Remembered for this character's faction only: on for Horde and off for Alliance until you change it."], norm.r, norm.g, norm.b, true)
+                GameTooltip:SetText(RCL["Weapon stones"], gold.r, gold.g, gold.b)
+                GameTooltip:AddLine(RCL["Buttons that put your stone or oil on your main hand, your off hand and the weapons in your bags."], norm.r, norm.g, norm.b, true)
+                GameTooltip:AddLine(RCL["The item list's weapon rows (under Utilities) pick which of them, and which weapons."], norm.r, norm.g, norm.b, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(RCL["Horde warriors use Windfury Totem on their main-hand,"], gray.r, gray.g, gray.b, true)
-                GameTooltip:AddLine(RCL["so only the off-hand needs a sharpening stone."], gray.r, gray.g, gray.b, true)
+                GameTooltip:AddLine(RCL["The main hand starts off for Horde on Classic Era: Windfury Totem is on it there."], gray.r, gray.g, gray.b, true)
                 GameTooltip:Show()
             end)
-            hordeCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            stonesCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
             cardY = cardY - 28
 
 
@@ -495,8 +498,6 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 RC:SaveConfigurationToProfile()
             end)
             cardY = cardY - 26
-            -- (2026-11-09) not offered on TBC
-            if RC.Flavor and RC:Flavor() == "tbc" then hordeCheck:Hide() cardY = cardY + 26 end
 
             local hideActiveCheck = self.UI:CreateSettingCheckbox(behaviorCard, cardY, "Hide when buff active", self.db.consumablesHelper.hideWhenActive, function(cb)
                 local newState = cb:GetChecked()
@@ -1204,6 +1205,10 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                                     local checked
                                     if row.key == "bagWeapons" then
                                         checked = RC.db.consumablesHelper.showBagWeapons ~= false
+                                    elseif row.key == 999901 then
+                                        -- (hidden in this list, or - until ticked - for a Horde
+                                        -- character on Classic Era: RC:IsMainHandHidden)
+                                        checked = not hiddenItems[row.key] and not RC:IsMainHandHidden("consumablesHelper")
                                     else
                                         checked = not hiddenItems[row.key]
                                     end
@@ -1217,6 +1222,13 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                                             RC.db.consumablesHelper.showBagWeapons = newState
                                             RC:RefreshWeaponButtons()
                                             if RC.ShowSidebarConsumablesHelperConfig then RC:ShowSidebarConsumablesHelperConfig(frame, true) end
+                                        elseif rowKey == 999901 then
+                                            -- the main hand's tick is kept for this faction; an
+                                            -- old "hidden" from this list no longer stands in its way
+                                            RC:SetMainHandShown("consumablesHelper", newState)
+                                            RC.db.consumablesHelper.hiddenItems[rowKey] = nil
+                                            RC:RefreshWeaponButtons()
+                                            RC:UpdateConsumablesButtons()
                                         else
                                             if newState then
                                                 RC.db.consumablesHelper.hiddenItems[rowKey] = nil

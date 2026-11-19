@@ -11,6 +11,10 @@ TrinketScanner.lua
 BossNotes.lua
 PolarityMode.lua
 SmartMacro.lua
+# Smart keys: the bar preview, the click-a-button slot picker, the macros
+# made for linked buttons, Automatic, the WAIT mark - and the switch
+# (RC.smartKeys) the pages and SmartMacro.lua ask. After SmartMacro.lua.
+SmartKeys.lua
 NameplateAuras.lua
 
 # The consumable bars and the raid checker moved to

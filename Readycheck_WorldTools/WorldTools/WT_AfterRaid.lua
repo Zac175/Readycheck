@@ -19,6 +19,20 @@
 -- the window's spot live in the character profile, in db.boonReminder
 -- (afterRaid, afterRaidPos), so they travel with that category.
 --
+-- THE ROW KEEPS ITS PLACES. A world buff that is not on the player is
+-- drawn dimmed in its own place instead of being left out, so a click
+-- that cancels one buff does not slide the next one under the mouse
+-- (2026-11-18, Zac: "i want it to not hide buffs that i dont have so it
+-- doesnt move icons around"). Which buffs keep a place is a choice
+-- (db.boonReminder.afterRaidRow; unset = "all"):
+--   "all"     every world buff this character can carry, always
+--   "opened"  the buffs that were running when the window opened
+--   "live"    only the buffs still running (the icons close up)
+-- How dim a kept place is drawn is a setting too (afterRaidDim, 0.1 to 1;
+-- unset = 0.3), and so is whether the Boon button waits while the
+-- Chronoboon is on cooldown (afterRaidCdLock = false: it stays live; the
+-- time left is shown either way).
+--
 -- COMBAT. The Boon button uses an item, so it is a secure button, and a
 -- window with a secure button in it cannot be shown, hidden, moved or
 -- sized by an addon in combat. The window therefore only ever opens,
@@ -52,6 +66,10 @@ local ITEM_EMPTY, ITEM_FULL = 184937, 184938    -- Chronoboon Displacer / Superc
 -- Battle Shout sits in the tracked catalogue for the summon trigger; it
 -- is not a world buff anyone cancels or boons after a raid
 local NOT_SHOWN = { BS = true }
+-- Warchief's Blessing is handed out in Orgrimmar: an Alliance character
+-- only carries it after a mind control, so it gets no standing place
+-- there (it still shows, at the row's end, when it is on the player)
+local HORDE_ONLY = { Rend = true }
 
 local W_MIN, PAD = 372, 24
 local HEADER_H, FOOTER_H = 44, 50
@@ -107,6 +125,36 @@ local function PosStore()
     if not s then return nil end
     if type(s.afterRaidPos) ~= "table" then s.afterRaidPos = {} end
     return s.afterRaidPos
+end
+
+-- Which buffs keep a place in the row (see the head of this file).
+local ROW_DEFAULT = "all"
+AR.ROW_MODES = {
+    { value = "all",    label = RCL["Keep a place for every world buff"] },
+    { value = "opened", label = RCL["Keep the place of a buff that goes"] },
+    { value = "live",   label = RCL["Hide them (the icons close up)"] },
+}
+local ROW_KNOWN = { all = true, opened = true, live = true }
+
+function AR.RowMode()
+    local s = Settings()
+    local v = s and s.afterRaidRow
+    return (v and ROW_KNOWN[v]) and v or ROW_DEFAULT
+end
+
+-- How strongly a buff that is not on the player is drawn, 0.1 .. 1.
+local MISSING_ALPHA = 0.3
+AR.MISSING_ALPHA = MISSING_ALPHA
+function AR.MissingAlpha()
+    local s = Settings()
+    local v = s and tonumber(s.afterRaidDim)
+    if not v or v ~= v then return MISSING_ALPHA end
+    return math_max(0.1, math.min(1, v))
+end
+-- Whether the Boon / Unboon button waits while its Chronoboon is on cooldown.
+function AR.CooldownLocks()
+    local s = Settings()
+    return not (s and s.afterRaidCdLock == false)
 end
 
 ------------------------------------------------------------------------
@@ -173,6 +221,29 @@ local function Have(itemId)
     return ((GetItemCount and GetItemCount(itemId)) or 0) > 0
 end
 
+-- The world buffs this character can carry, in the board's order: the
+-- places an "all" row always has.
+local function StandingPlaces()
+    local places = {}
+    local catalogue = WT:GetTrackedAuraList()
+    local _, class = UnitClass("player")
+    local alliance = UnitFactionGroup and UnitFactionGroup("player") == "Alliance"
+    for _, slot in ipairs(WT.AURA_DISPLAY_ORDER or {}) do
+        local entry = catalogue[slot]
+        if entry and not NOT_SHOWN[entry.short] and not entry.optional
+            and (not entry.requiredClasses or entry.requiredClasses[class])
+            and not (alliance and HORDE_ONLY[entry.short]) then
+            local option = entry.options[1]
+            if option then
+                places[#places + 1] = {
+                    key = slot, slot = slot, spellId = option.id, name = option.label, icon = option.icon,
+                }
+            end
+        end
+    end
+    return places
+end
+
 -- "1h 12m", "31m", "45s"; nothing for a buff with no end
 function AR.TimeText(seconds)
     seconds = tonumber(seconds)
@@ -184,6 +255,30 @@ function AR.TimeText(seconds)
         return string_format("%dm", math_floor(seconds / 60))
     end
     return string_format("%ds", seconds)
+end
+
+-- Seconds until the Chronoboon the button would use can be used again
+-- (nil: it is ready, or none is carried). The cooldown is read off the
+-- item in the bags; one of a few seconds is the global cooldown, not
+-- the item's own. A cooldown that began before the computer was started
+-- comes with a start time one turn of the client's 32-bit millisecond
+-- clock ahead: that turn is taken off. An answer that still makes no
+-- sense (more left than the cooldown is long) is not shown.
+local CD_REAL = 10
+local CLOCK_TURN = 4294967.296
+function AR.CooldownLeft(itemId)
+    if not (itemId and RC.Bags and RC.Bags.Cooldown) then return nil end
+    local start, duration = RC.Bags:Cooldown(itemId)
+    if not (start and start > 0 and duration and duration > CD_REAL) then return nil end
+    local now = GetTime()
+    if start > now + 1 then start = start - CLOCK_TURN end
+    local left = start + duration - now
+    if left <= 0 or left > duration then return nil end
+    return left
+end
+
+local function CooldownText(left)
+    return string_format(RCL["Chronoboon cooldown: %s"], AR.TimeText(left))
 end
 
 local function LeftOf(buff)
@@ -199,11 +294,57 @@ local frame
 local state = { open = false, sample = false, shown = {}, kept = {}, sig = "" }
 AR.state = state
 
+-- The row for the buffs running now: one cell per place, in an order
+-- that does not change while the window is open. A cell is the running
+-- buff itself, or - for a place whose buff is not on the player - a
+-- stand-in { missing = true } that is drawn dimmed and takes no click.
+-- state.row remembers the places (and the last buff seen in each); a
+-- buff with no place yet gets one at the end - the one way the row
+-- grows while the window is open.
+function AR.Cells(live)
+    local mode = AR.RowMode()
+    if mode == "live" then
+        state.row = nil
+        return live
+    end
+    if not state.row or state.rowMode ~= mode then
+        state.row = (mode == "all") and StandingPlaces() or {}
+        state.rowMode = mode
+    end
+    local row = state.row
+    local byKey, taken = {}, {}
+    for _, place in ipairs(row) do byKey[place.key] = place end
+    for _, buff in ipairs(live) do
+        local key = buff.slot
+        if taken[key] then
+            -- a second buff of one slot (two of Sayge's fortunes never
+            -- run together, but nothing here depends on that)
+            key = tostring(buff.slot) .. ":" .. tostring(buff.spellId or buff.name)
+        end
+        local place = byKey[key]
+        if not place then
+            place = { key = key, slot = buff.slot }
+            row[#row + 1] = place
+            byKey[key] = place
+        end
+        taken[key] = buff
+        place.spellId, place.name, place.icon = buff.spellId, buff.name, buff.icon
+    end
+    local cells = {}
+    for i, place in ipairs(row) do
+        cells[i] = taken[place.key] or {
+            slot = place.slot, spellId = place.spellId, name = place.name, icon = place.icon,
+            missing = true,
+        }
+    end
+    return cells
+end
+
 local function Red() return RC:GetColor("text", "red") end
 
 local function PaintIcon(b, hot)
     local accent = RC.UI:SAccent()
-    local lit = hot and b.buff and not b.buff.sample and not b.stored
+    local lit = hot and b.buff and not b.buff.sample and not b.buff.missing and not b.stored
     if lit then
         RC.UI:UpdateBorderColor(b.border, Red(), 1)
     else
@@ -222,6 +363,8 @@ local function ShowBuffTip(b)
     local gray = RC:GetColor("text", "gray")
     if b.stored then
         GameTooltip:AddLine(RCL["Stored in your Chronoboon"], gray.r, gray.g, gray.b)
+    elseif buff.missing then
+        GameTooltip:AddLine(RCL["Not on you"], gray.r, gray.g, gray.b)
     elseif buff.sample then
         GameTooltip:AddLine(RCL["A sample - nothing to cancel"], gray.r, gray.g, gray.b)
     else
@@ -237,7 +380,7 @@ end
 -- Cancels the buff an icon stands for. Read afresh at the click: the
 -- buff's place in the list moves whenever another buff comes or goes.
 function AR.Cancel(buff)
-    if not buff or buff.sample then return false end
+    if not buff or buff.sample or buff.missing then return false end
     if InCombatLockdown() then
         RC:DebugPrint("AfterRaid: cancel refused in combat", "worldbuffs")
         return false
@@ -276,7 +419,7 @@ local function AcquireIcon(i)
         onLeave = function(self) PaintIcon(self, false) GameTooltip:Hide() end,
     })
     b:SetScript("OnClick", function(self)
-        if self.stored or not self.buff then return end
+        if self.stored or not self.buff or self.buff.missing then return end
         if AR.Cancel(self.buff) then
             GameTooltip:Hide()
             AR.Refresh()
@@ -287,6 +430,7 @@ local function AcquireIcon(i)
 end
 
 -- One row of icons, centred (the live buffs) or from the left (stored).
+-- A cell whose buff is not on the player is dimmed and has no time.
 local function LayIcons(list, size, gap, top, stored)
     local f = frame
     local n = #list
@@ -298,14 +442,15 @@ local function LayIcons(list, size, gap, top, stored)
         b:SetSize(size, size)
         b:ClearAllPoints()
         b:SetPoint("TOPLEFT", f.body, "TOPLEFT", x0 + (i - 1) * (size + gap), top)
+        local missing = buff.missing and true or false
         b.tex:SetTexture(buff.icon)
-        b.tex:SetDesaturated(stored and true or false)
-        b.tex:SetAlpha(stored and 0.45 or 1)
+        b.tex:SetDesaturated((stored or missing) and true or false)
+        b.tex:SetAlpha(stored and 0.45 or (missing and AR.MissingAlpha()) or 1)
         local red = Red()
         b.cross:SetSize(size / 2, size / 2)
         b.cross:SetVertexColor(red.r, red.g, red.b, 1)
-        b.time:SetShown(not stored)
-        b.time:SetText(stored and "" or AR.TimeText(LeftOf(buff)))
+        b.time:SetShown(not stored and not missing)
+        b.time:SetText((stored or missing) and "" or AR.TimeText(LeftOf(buff)))
         PaintIcon(b, (not stored) and b:IsMouseOver() or false)
         b:Show()
     end
@@ -317,8 +462,18 @@ local function LayIcons(list, size, gap, top, stored)
 end
 
 -- The Boon / Unboon button: what a click uses (nil = nothing to use).
+-- While that Chronoboon is on cooldown the button waits and the footer
+-- shows the time left in place of its usual line (2026-11-18, Zac: "can
+-- we show chrono cd if its not up"); the ticker counts it down and lays
+-- the window out again when it is over.
 local function SetAction(label, itemId)
     local f = frame
+    local left = itemId and AR.CooldownLeft(itemId) or nil
+    state.cdItem = left and itemId or nil
+    if left then
+        f.status:SetText(CooldownText(left))
+        if AR.CooldownLocks() then itemId = nil end
+    end
     RC.UI:SetButtonText(f.primary, label)
     f.primary:SetEnabled(itemId ~= nil)
     f.primary:Repaint()
@@ -336,7 +491,8 @@ end
 -- What the window is showing, as one string: it is only laid out again
 -- when this changes (the ticker asks every second).
 local function Signature(live, stored)
-    local parts = { stored and "S" or "-", Have(ITEM_EMPTY) and "E" or "-", Have(ITEM_FULL) and "F" or "-" }
+    local parts = { stored and "S" or "-", Have(ITEM_EMPTY) and "E" or "-", Have(ITEM_FULL) and "F" or "-",
+        AR.CooldownLeft(ITEM_EMPTY) and "e" or "-", AR.CooldownLeft(ITEM_FULL) and "f" or "-" }
     for _, buff in ipairs(live) do parts[#parts + 1] = tostring(buff.spellId or buff.name) end
     return table.concat(parts, ",")
 end
@@ -344,14 +500,18 @@ end
 local function Layout(live, stored)
     local f = frame
     local nLive = #live
+    local shown = live
     if nLive > 0 then
         -- buffs still running
         local boonable = 0
         for _, buff in ipairs(live) do if buff.boonable then boonable = boonable + 1 end end
+        -- the row: the running buffs, and the places kept for the others
+        local cells = state.sample and live or AR.Cells(live)
+        shown = cells
         f.titleText:SetText(RCL["World buffs still on you"])
         f.hint:SetText(state.sample and RCL["Preview: sample buffs."] or RCL["Click a buff to cancel it."])
-        SizeTo(nLive, 4 + HINT_H + 12 + ICON + 4 + TIME_H + 10)
-        LayIcons(live, ICON, GAP, -(4 + HINT_H + 12), false)
+        SizeTo(#cells, 4 + HINT_H + 12 + ICON + 4 + TIME_H + 10)
+        LayIcons(cells, ICON, GAP, -(4 + HINT_H + 12), false)
         RC.UI:SetButtonText(f.second, RCL["Keep them"])
         if state.sample then
             f.status:SetText("")
@@ -394,7 +554,7 @@ local function Layout(live, stored)
         RC.UI:SetButtonText(f.second, RCL["Close"])
         SetAction(RCL["Unboon"], Have(ITEM_FULL) and ITEM_FULL or nil)
     end
-    state.shown = live
+    state.shown = shown
 end
 
 local function StopTicker()
@@ -416,6 +576,10 @@ local function Tick()
     for i, buff in ipairs(state.shown) do
         local b = f.icons[i]
         if b and b.buff == buff and not b.stored then b.time:SetText(AR.TimeText(LeftOf(buff))) end
+    end
+    if state.cdItem then
+        local left = AR.CooldownLeft(state.cdItem)
+        if left then f.status:SetText(CooldownText(left)) end
     end
 end
 
@@ -572,6 +736,33 @@ function AR.Refresh()
     Layout(live, stored)
 end
 
+-- The row choice, from the settings page. An open window is laid out
+-- again at once (out of combat; in a fight it follows when it comes back).
+function AR.SetRowMode(mode)
+    local s = Settings()
+    if not s then return end
+    s.afterRaidRow = (ROW_KNOWN[mode] and mode ~= ROW_DEFAULT) and mode or nil
+    if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
+    state.row = nil
+    if state.open then AR.Refresh() end
+end
+
+function AR.SetMissingAlpha(v)
+    local s = Settings()
+    if not s then return end
+    v = tonumber(v)
+    s.afterRaidDim = (v and math.abs(v - MISSING_ALPHA) > 0.001) and math_max(0.1, math.min(1, v)) or nil
+    if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
+    if state.open then AR.Refresh() end
+end
+function AR.SetCooldownLocks(on)
+    local s = Settings()
+    if not s then return end
+    if on then s.afterRaidCdLock = nil else s.afterRaidCdLock = false end
+    if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
+    if state.open then AR.Refresh() end
+end
+
 -- Opens the window. reason: "boss" (the raid's last boss died), "raid"
 -- (left a raid instance) or "manual" (the settings page's button, which
 -- shows samples when no world buff is running). In combat it waits for
@@ -594,6 +785,7 @@ function AR.Open(reason)
     local f = AR.Ensure()
     if not f then return false end
     state.open, state.sample = true, sample
+    state.row = nil          -- the places are worked out afresh for each window
     if not sample then state.kept = {} end
     AR.Refresh()
     if not state.open then return false end
@@ -610,6 +802,8 @@ end
 function AR.Closed()
     state.open, state.sample, state.pending = false, false, nil
     state.shown = {}
+    state.row = nil
+    state.cdItem = nil
     state.hiddenForCombat, state.graceUntil, state.graceFor = nil, nil, nil
     StopTicker()
     WatchAuras(false)

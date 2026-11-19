@@ -443,6 +443,7 @@ local TEXT = _sbs.TEXT
                 .. (alerts and RCL["alerts on"] or RCL["alerts off"])
         end }
     OT.wt_automation  = { desc = RCL["Auto-accept summons, click through gossip, common turn-ins."] }
+    OT.wt_wbdrops     = { desc = RCL["Which of your toons can still hand in a head or heart."] }
     OT.wt_buffnetwork = { desc = RCL["Share world buff timers with your guild."],
         -- off by default (WBT_Core SETTINGS_DEFAULTS.enabled = false)
         status = EnabledOf("worldBuffTimers") }

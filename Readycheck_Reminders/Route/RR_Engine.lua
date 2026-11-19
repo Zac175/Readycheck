@@ -214,6 +214,39 @@ local _rrs = RC._rrs
         return out
     end
 
+    -- SMART MACRO SWAPS (2026-11-16, Zac: "if i set mrp for this boss or
+    -- route step and i have a smart macro for potions it will change my
+    -- macro to that"). A step's actions.macros hand a smart macro, or a
+    -- group of them, one item for as long as the route is on that step, or
+    -- from it through a later one - the same lengths a standing reminder
+    -- has (span / untilFp), worked out from the active step the same way.
+    --   m = { group | macro, item, itemId, span, untilFp }
+    -- Unlike a standing reminder a swap stays through its last step's
+    -- wait on an item: that item is the one the macro is there to use.
+    -- In step order, so a later step's swap for the same macro wins
+    -- (RC.SmartMacro reads the list; nothing here touches a macro).
+    function RR:ActiveMacroSwaps()
+        local out = {}
+        local settings = self:GetSettings()
+        if not (settings and settings.enabled) or self.finished then return out end
+        local steps = self:GetSteps()
+        local act = self.active
+        if type(steps) ~= "table" or not act or not steps[act] then return out end
+        for j = 1, act do
+            local st = steps[j]
+            local ms = type(st) == "table" and st.enabled ~= false
+                and type(st.actions) == "table" and st.actions.macros
+            if type(ms) == "table" then
+                for _, m in ipairs(ms) do
+                    if type(m) == "table" and act <= self:HoldEndIndex(steps, j, m) then
+                        out[#out + 1] = m
+                    end
+                end
+            end
+        end
+        return out
+    end
+
     -- which steps of a list a standing reminder covers, for the route
     -- page's rail: [index] = { warn = any of them is a warning, and the
     -- lines' texts as the array part }
@@ -607,6 +640,7 @@ local _rrs = RC._rrs
             or (a.slots and next(a.slots))
             or (a.reminders and #a.reminders > 0)
             or (a.holds and #a.holds > 0)
+            or (a.macros and #a.macros > 0)
             or (a.reminderText and a.reminderText ~= "")) and true or false
     end
     local function MobKey(st)
@@ -1252,6 +1286,9 @@ local _rrs = RC._rrs
                 adoptedRealRaid = true
                 restored = self:TryRestoreRuntime(raidName)
             end
+            -- (another raid, or none: the steps' smart macro swaps go
+            -- with the route they belonged to)
+            if RC.SmartMacro then RC.SmartMacro:RouteChanged() end
         end
 
         local steps = self:GetSteps()

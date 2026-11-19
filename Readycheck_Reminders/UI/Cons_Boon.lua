@@ -315,6 +315,58 @@ local TEXT = _sbc.TEXT
                     end)
                 arY = arY - 24
                 arY = K.Desc(arCard, arY, RCL["Opens when the raid's last boss dies or when you leave the raid. Shows each world buff still running with the time it has left: click a buff to cancel it, or boon what is left with one button; once they are stored the button becomes Unboon. It never opens in combat."])
+
+                -- which buffs keep a place in the row (AR.ROW_MODES)
+                if AR.ROW_MODES and AR.RowMode and AR.SetRowMode then
+                    local rowL = self:CreateFontString(arCard, "OVERLAY", nil, 11)
+                    rowL:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                    rowL:SetText(RCL["World buffs that are not on you:"])
+                    rowL:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3])
+                    arY = arY - 22
+                    local function RowLabel(v)
+                        for _, o in ipairs(AR.ROW_MODES) do if o.value == v then return o.label end end
+                        return AR.ROW_MODES[1].label
+                    end
+                    local rowDD = self.UI:CreateScrollableDropdown(arCard, 300, RowLabel(AR.RowMode()), 8)
+                    rowDD:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                    local rowItems = {}
+                    for _, o in ipairs(AR.ROW_MODES) do
+                        rowItems[#rowItems + 1] = { text = o.label, value = o.value }
+                    end
+                    rowDD:SetItems(rowItems, function(value) AR.SetRowMode(value) end)
+                    rowDD:SetSelectedValue(AR.RowMode(), RowLabel(AR.RowMode()))
+                    arY = arY - 34
+                    arY = K.Desc(arCard, arY, RCL["A buff that keeps its place is drawn dimmed and takes no click, so cancelling one buff never slides another under the mouse."])
+                    -- (not tied to the tick above: "Show the window" opens it either way)
+                    if AR.MissingAlpha and AR.SetMissingAlpha then
+                        local dimL = self:CreateFontString(arCard, "OVERLAY", nil, 11)
+                        dimL:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                        dimL:SetText(RCL["How strongly a buff that is not on you is drawn:"])
+                        dimL:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3])
+                        arY = arY - 18
+                        local dimPct = math.floor(AR.MissingAlpha() * 100 + 0.5)
+                        local dimS = self.UI:CreateSlider(arCard, 10, 100, dimPct, 5)
+                        dimS:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                        dimS.Text:SetText(dimPct .. "%")
+                        dimS:HookScript("OnValueChanged", function(slider, value)
+                            value = math.floor(value + 0.5)
+                            slider.Text:SetText(value .. "%")
+                            AR.SetMissingAlpha(value / 100)
+                        end)
+                        arY = arY - 36
+                    end
+                end
+                if AR.CooldownLocks and AR.SetCooldownLocks then
+                    self.UI:CreateSettingCheckbox(arCard, arY,
+                        RCL["The Boon button waits while the Chronoboon is on cooldown"], AR.CooldownLocks(),
+                        function(cb)
+                            local on = cb:GetChecked() and true or false
+                            AR.SetCooldownLocks(on)
+                            RC:ForceCheckboxUpdate(cb, on)
+                        end)
+                    arY = arY - 24
+                    arY = K.Desc(arCard, arY, RCL["The time left is shown either way. Unticked, the button stays live during the cooldown."])
+                end
                 local showBtn = self.UI:CreateStyledButton(arCard, RCL["Show the window"], 140, 24)
                 showBtn:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
                 showBtn:SetScript("OnClick", function()

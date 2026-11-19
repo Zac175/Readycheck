@@ -254,7 +254,7 @@ local function Missing()
     for _, w in ipairs({ { key = "mh", slot = "mainhand", inv = 16, label = "MH" },
                          { key = "oh", slot = "offhand", inv = 17, label = "OH" } }) do
         if d.items[w.key] and Sharpenable(w.inv)
-            and not (w.key == "mh" and RC.IsHordeMode and RC:IsHordeMode("consumablesHelper")) then
+            and not (w.key == "mh" and RC.IsMainHandHidden and RC:IsMainHandHidden("consumablesHelper")) then
             local has, rem = RC:HasWeaponEnchant(nil, w.slot)
             local wlead = (RC.VoiceWatchLead and RC:VoiceWatchLead(w.key)) or LEAD
             if wlead < LEAD then wlead = LEAD end

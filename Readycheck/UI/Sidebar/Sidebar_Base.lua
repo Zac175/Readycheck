@@ -355,7 +355,15 @@ local _sbs = RC._sbs
             aliases = {"extras", "extra", "macros", "macro", "smart macro", "nameplate", "nameplates", "debuff", "debuffs"},
             children = {
                 {id = "nameplate_auras", name = RCL["Nameplates"],   icon = "Interface\\Icons\\Ability_Warrior_Sunder", panel = "ShowSidebarNameplates", aliases = {"nameplate", "nameplates", "debuff", "debuffs", "sunder", "expose", "armor", "plates", "nameplate debuffs", "range", "target range"}},
-                {id = "smart_macros",    name = RCL["Smart Macros"], icon = "Interface\\Icons\\INV_Misc_Bomb_04",       panel = "ShowSidebarSmartMacro", aliases = {"smart macro", "smart macros", "dynamic macro", "target macro", "macro rewrite", "dynamite", "sapper", "holy water"}},
+                -- (2026-11-17, Zac: "i dont think and ingame icon fits this make
+                -- something custom"; "how do any of those represent a macro?")
+                -- Media\Icons\smartmacro.tga: a macro's text - "/cast" and two
+                -- more lines under it - in the window's own look ("make it match
+                -- readycheck design and zui"): flat, the button grey, the "/" and
+                -- a section's mark in the accent gold, the word in the addon's
+                -- font; 64 x 64, drawn to be shown as the game's icons are, 8 %
+                -- cropped off each side
+                {id = "smart_macros",    name = RCL["Smart Macros"], icon = "Interface\\AddOns\\Readycheck\\Media\\Icons\\smartmacro",      panel = "ShowSidebarSmartMacro", aliases = {"smart macro", "smart macros", "dynamic macro", "target macro", "macro rewrite", "dynamite", "sapper", "holy water"}},
             }
         },
         {
