@@ -152,6 +152,21 @@ function AR.MissingAlpha()
     return math_max(0.1, math.min(1, v))
 end
 -- Whether the Boon / Unboon button waits while its Chronoboon is on cooldown.
+-- How big the running buffs are drawn (afterRaidIcon, 24 to 64; nothing
+-- saved = 36). The space between two of them follows the size (a third
+-- of it: 12 at 36).
+AR.ICON_MIN, AR.ICON_MAX, AR.ICON_DEFAULT = 24, 64, ICON
+function AR.IconSize()
+    local s = Settings()
+    local v = s and tonumber(s.afterRaidIcon)
+    if not v or v ~= v then return ICON end
+    return math_max(AR.ICON_MIN, math.min(AR.ICON_MAX, math_floor(v + 0.5)))
+end
+function AR.IconGap()
+    local size = AR.IconSize()
+    if size == ICON then return GAP end
+    return math_max(4, math_floor(size / 3 + 0.5))
+end
 function AR.CooldownLocks()
     local s = Settings()
     return not (s and s.afterRaidCdLock == false)
@@ -484,7 +499,7 @@ end
 
 local function SizeTo(n, bodyH)
     local f = frame
-    local w = math_max(W_MIN, PAD * 2 + n * ICON + math_max(0, n - 1) * GAP)
+    local w = math_max(W_MIN, PAD * 2 + n * AR.IconSize() + math_max(0, n - 1) * AR.IconGap())
     f:SetSize(w, HEADER_H + bodyH + FOOTER_H + 2)
 end
 
@@ -510,8 +525,9 @@ local function Layout(live, stored)
         shown = cells
         f.titleText:SetText(RCL["World buffs still on you"])
         f.hint:SetText(state.sample and RCL["Preview: sample buffs."] or RCL["Click a buff to cancel it."])
-        SizeTo(#cells, 4 + HINT_H + 12 + ICON + 4 + TIME_H + 10)
-        LayIcons(cells, ICON, GAP, -(4 + HINT_H + 12), false)
+        local size = AR.IconSize()
+        SizeTo(#cells, 4 + HINT_H + 12 + size + 4 + TIME_H + 10)
+        LayIcons(cells, size, AR.IconGap(), -(4 + HINT_H + 12), false)
         RC.UI:SetButtonText(f.second, RCL["Keep them"])
         if state.sample then
             f.status:SetText("")
@@ -752,6 +768,15 @@ function AR.SetMissingAlpha(v)
     if not s then return end
     v = tonumber(v)
     s.afterRaidDim = (v and math.abs(v - MISSING_ALPHA) > 0.001) and math_max(0.1, math.min(1, v)) or nil
+    if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
+    if state.open then AR.Refresh() end
+end
+function AR.SetIconSize(v)
+    local s = Settings()
+    if not s then return end
+    v = tonumber(v)
+    if v then v = math_max(AR.ICON_MIN, math.min(AR.ICON_MAX, math_floor(v + 0.5))) end
+    s.afterRaidIcon = (v and v ~= ICON) and v or nil
     if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
     if state.open then AR.Refresh() end
 end

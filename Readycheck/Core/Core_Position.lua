@@ -371,6 +371,8 @@ function P.SetScaleKeepingPoint(frame, scale, noPersist)
     local x, y = s and s[b.xKey], s and s[b.yKey]
     local canon = s and type(x) == "number" and type(y) == "number" and not IsLegacy(s, b)
     frame:SetScale(scale)
+    -- (its edges are whole screen pixels at the new size: UIF_Widgets, RC.Pixel)
+    if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
     if canon then
         local r = old / scale
         Write(s, b, x * r, y * r)

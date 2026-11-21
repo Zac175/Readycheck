@@ -274,7 +274,7 @@ WRF._cckInit[#WRF._cckInit + 1] = function()
         local headerAccent = headerBar:CreateTexture(nil, "ARTWORK")
         headerAccent:SetPoint("BOTTOMLEFT", headerBar, "BOTTOMLEFT", 0, 0)
         headerAccent:SetPoint("BOTTOMRIGHT", headerBar, "BOTTOMRIGHT", 0, 0)
-        headerAccent:SetHeight(1)
+        Readycheck.Line(headerAccent, "H", 1)
         headerAccent:SetTexture(FLAT)
         headerAccent:SetVertexColor(accentCol.r, accentCol.g, accentCol.b, 0.6)
         frame.headerAccent = headerAccent

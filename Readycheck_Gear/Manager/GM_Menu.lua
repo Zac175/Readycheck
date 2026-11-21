@@ -137,7 +137,13 @@ function GM:AddMenuHideTooltip(btn, countOnly)
         end
         return
     end
-    if btn.isHiddenEntry then
+    if btn.isScopedOut then
+        -- (left out because of what it is for, not hidden by hand)
+        local sc = btn.setName and self:GetMenuScope("set", btn.setName)
+            or (btn.itemData and btn.itemData.itemLink and self:GetMenuScope("item", (self:MenuItemKey(btn.itemData.itemLink))))
+        GameTooltip:AddLine(string.format(RCL["Left out here: it is for %s. Change that under Gear Manager > %s."],
+            self:MenuScopeText(sc), RC.GearSpecTabName and RC:GearSpecTabName() or RCL["Spec & Stance"]), 0.8, 0.8, 0.8, true)
+    elseif btn.isHiddenEntry then
         GameTooltip:AddLine("|cFFFFFF00" .. self:MenuUnhideComboLabel() .. "|r" .. RCL[" to show it in this menu again"], 0.8, 0.8, 0.8)
     else
         GameTooltip:AddLine(RCL["|cFFFFFF00Ctrl+Right-click|r to hide it from this menu"], 0.8, 0.8, 0.8)
@@ -152,6 +158,17 @@ end
 -- Returns true when the click was a hide/unhide.
 local hideHintShown = false
 function GM:ToggleMenuEntryHidden(btn)
+    -- an entry that is only here because the reveal key is held, left out for
+    -- what it is for (not hidden by hand): the click says where that is changed
+    if btn.isScopedOut then
+        local hiddenToo = (btn.setName and self:IsMenuSetHidden(btn.setName))
+            or (btn.itemData and btn.itemData.itemLink and self:IsMenuItemHidden(btn.itemData.itemLink))
+        if not hiddenToo then
+            self:Print(string.format(RCL["That one is left out because of what it is for. Change it under Gear Manager > %s."],
+                RC.GearSpecTabName and RC:GearSpecTabName() or RCL["Spec & Stance"]))
+            return true
+        end
+    end
     if btn.setName then
         local now = not self:IsMenuSetHidden(btn.setName)
         self:SetMenuSetHidden(btn.setName, now)
@@ -410,7 +427,8 @@ function GM:ShowMenu(slot, anchor)
         if hides then
             local kept = {}
             for _, n in ipairs(setNames) do
-                if self:IsMenuSetHidden(n) then
+                -- (hidden by hand, or for another spec / stance: GM_AutoSets.lua)
+                if self:IsMenuSetHidden(n) or (self.IsMenuSetScopedOut and self:IsMenuSetScopedOut(n)) then
                     self.menuHiddenCount = self.menuHiddenCount + 1
                     if reveal then kept[#kept + 1] = n end
                 else
@@ -474,7 +492,8 @@ function GM:ShowMenu(slot, anchor)
 
             btn.setName = setName
             btn.itemData = nil
-            StyleHiddenTile(btn, hides and self:IsMenuSetHidden(setName))
+            btn.isScopedOut = (hides and self.IsMenuSetScopedOut and self:IsMenuSetScopedOut(setName)) or nil
+            StyleHiddenTile(btn, hides and (self:IsMenuSetHidden(setName) or btn.isScopedOut))
             btn:Show()
         end
 
@@ -520,7 +539,8 @@ function GM:ShowMenu(slot, anchor)
     if hides then
         local kept = {}
         for _, it in ipairs(items) do
-            if not it.isEmpty and self:IsMenuItemHidden(it.itemLink) then
+            if not it.isEmpty and (self:IsMenuItemHidden(it.itemLink)
+               or (self.IsMenuItemScopedOut and self:IsMenuItemScopedOut(it.itemLink))) then
                 self.menuHiddenCount = self.menuHiddenCount + 1
                 if reveal then kept[#kept + 1] = it end
             else
@@ -602,7 +622,9 @@ function GM:ShowMenu(slot, anchor)
             end
         end
 
-        StyleHiddenTile(btn, hides and not itemData.isEmpty and self:IsMenuItemHidden(itemData.itemLink))
+        btn.isScopedOut = (hides and not itemData.isEmpty and self.IsMenuItemScopedOut
+            and self:IsMenuItemScopedOut(itemData.itemLink)) or nil
+        StyleHiddenTile(btn, hides and not itemData.isEmpty and (self:IsMenuItemHidden(itemData.itemLink) or btn.isScopedOut))
         btn:Show()
     end
 

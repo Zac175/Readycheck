@@ -96,7 +96,7 @@ if not RC then return end
         nav.bg = Flat(nav)
         nav.bg:SetAllPoints()
         nav.rule = Flat(nav, "OVERLAY")
-        nav.rule:SetWidth(1)
+        RC.Line(nav.rule, "V", 1)
         nav.rule:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
         nav.rule:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, 0)
         nav.rows = {}

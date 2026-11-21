@@ -215,6 +215,7 @@ RC.SETTINGS = {
     { key = "reminderPopup", cat = "general", label = RCL["Reminder popup layout"] },
     { key = "consumeRemindGlow", cat = "consumablesHelper", label = RCL["Raid consume reminder glow"] },
     { key = "consumeRemind", cat = "consumablesHelper", label = RCL["Raid consume reminders"] },
+    { key = "gearAutoSets", cat = "gearManager", label = RCL["Gear by spec and stance"] },
 }
 
 -- Settings that deliberately never export or sync, with the reason. Listed
@@ -528,6 +529,7 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["boonReminder.afterRaidPos"]   = RCL["After-raid window position"],
     ["boonReminder.afterRaidRow"]   = RCL["After-raid window: buffs not on you"],
     ["boonReminder.afterRaidDim"]   = RCL["After-raid window: how dim a missing buff is"],
+    ["boonReminder.afterRaidIcon"]  = RCL["After-raid window: icon size"],
     ["boonReminder.afterRaidCdLock"] = RCL["After-raid window: button waits on the Chronoboon cooldown"],
     -- Fast weapon reminder
     ["fastWeaponReminder.enabled"]           = RCL["Reminder enabled"],
@@ -612,11 +614,22 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["fontSettings.mainButton"]     = RCL["Main button style"],
     ["fontSettings.wheelSpeed"]     = RCL["Scroll wheel speed"],
     ["fontSettings.wheelSmooth"]    = RCL["Smooth scrolling"],
+    ["fontSettings.edgeWeight"]     = RCL["Borders and lines: weight"],
+    ["fontSettings.underMap"]       = RCL["On-screen pieces behind the open map"],
     -- Minimap button
     ["minimapButton.hide"]       = RCL["Hide minimap button"],
     ["minimapButton.position"]   = RCL["Button angle"],
     ["minimapButton.minimapPos"] = RCL["Button angle (library)"],
     ["minimapButton.lock"]       = RCL["Lock minimap button"],
+    -- Automatic gear sets (by stance / form and spec)
+    ["gearAutoSets.use"]         = RCL["Gear by spec and stance: on"],
+    ["gearAutoSets.enabled"]     = RCL["Sets that go on by themselves: on"],
+    ["gearAutoSets.rules"]       = RCL["Automatic gear set rules"],
+    ["gearAutoSets.afterCombat"] = RCL["After a fight, wear the set for the stance you end in"],
+    ["gearAutoSets.bossFirst"]   = RCL["Boss gear swaps come first"],
+    ["gearAutoSets.delay"]       = RCL["Wait before an automatic swap"],
+    ["gearAutoSets.atLogin"]     = RCL["Apply the rules at login"],
+    ["gearAutoSets.announce"]    = RCL["Say automatic swaps in chat"],
     -- Gear swap retries
     ["gearSwapRetry.attempts"] = RCL["Retry attempts"],
     ["gearSwapRetry.interval"] = RCL["Retry interval (seconds)"],
@@ -642,6 +655,9 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["gearManager.settings.trinketDockSplitClick"]      = RCL["Trinket dock split click"],
     ["gearManager.settings.hiddenMenuItems"]            = RCL["Items hidden from hover menus"],
     ["gearManager.settings.hiddenMenuSets"]             = RCL["Sets hidden from hover menus"],
+    ["gearManager.settings.menuScopeSets"]              = RCL["Which specs and stances each set is for"],
+    ["gearManager.settings.menuScopeItems"]             = RCL["Which specs and stances each item is for"],
+    ["gearManager.settings.menuScopeOn"]                = RCL["Leave out menu entries for another spec or stance"],
     ["gearManager.settings.menuRevealKey"]              = RCL["Key that shows hidden menu entries"],
     ["gearManager.settings.fungalBloomEnabled"]         = RCL["Fungal Bloom swap"],
     ["gearManager.settings.fungalBloomActiveSet"]       = RCL["Fungal Bloom active set"],
@@ -673,6 +689,7 @@ RC.SETTING_FIELD_LABELS = RC.SETTING_FIELD_LABELS or {
     ["customColors.sidebar"]    = RCL["Sidebar colors"],
     ["customColors.settings"]   = RCL["Settings window colors"],
     ["fontSettings.mainWindowScale"] = RCL["Settings window scale"],
+    ["fontSettings.pieceScale"]      = RCL["On-screen pieces scale"],
     ["fontSettings.windowLayout"]    = RCL["Settings window layout version"],
     ["customColors.checkbox"]   = RCL["Checkbox colors"],
     ["customColors.dropdown"]   = RCL["Dropdown colors"],
@@ -1005,6 +1022,8 @@ RC.SETTING_GROUP_OVERRIDES = RC.SETTING_GROUP_OVERRIDES or {
     ["gearManager.settings.slotInfo"]    = "data",
     -- the retry block is behaviour
     ["gearSwapRetry.*"]                  = "settings",
+    -- the automatic set rules are behaviour too (the sets they name are data of their own)
+    ["gearAutoSets.*"]                   = "settings",
     -- directions of growth for list frames read as layout to players
     ["raidBuffTracker.growDown"]         = "appearance",
     ["bossDebuffTracker.growDown"]       = "appearance",

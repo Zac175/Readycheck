@@ -745,10 +745,13 @@ local _uif = RC._uif
     --   mainButton    "plain" (nil: the main button's face is the accent)
     --   wheelSpeed    0.25 .. 4 (nil = 1)
     --   wheelSmooth   false: a notch jumps
+    --   edgeWeight    "scaled": borders and lines a UI unit thick (nil: one
+    --                 screen pixel - UIF_Widgets, RC.Pixel.Thin; beside
+    --                 ZacUI and following it, ZacUI's own rule)
     -- RC.UI:Look() -> the values in force (one table, refilled on every
     -- call: read it, do not keep it), and "zacui" or "own".
     RC.UI.LOOK_KEYS = { "finishDepth", "finishKind", "finishRule", "finishGrain", "finishTex",
-                        "buttonDepth", "mainButton", "wheelSpeed", "wheelSmooth" }
+                        "buttonDepth", "mainButton", "wheelSpeed", "wheelSmooth", "edgeWeight" }
     RC.UI.FINISH_KINDS = { depth = true, bands = true, plain = true }
     RC.UI.FINISH_TEXTURES = {
         { id = "brushed", label = RCL["Brushed metal"],  file = "brushed" },
@@ -938,6 +941,8 @@ local _uif = RC._uif
     end
     -- After a look setting changed: buttons, window finishes, popups.
     function RC.UI:LookChanged()
+        -- (the weight of every edge is part of the look: UIF_Widgets, RC.Pixel)
+        if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
         self:RepaintPlates()
         if self.FinishRefresh then self:FinishRefresh() end
         if RC.RefreshUIColors then RC:RefreshUIColors() end
@@ -975,21 +980,21 @@ local _uif = RC._uif
         p.lift = T("BACKGROUND", 4)
         p.lift:SetAllPoints(box)
         p.sheen = T("BORDER", 2)
-        p.sheen:SetHeight(1)
+        if RC.Line then RC.Line(p.sheen, "H", 1) else p.sheen:SetHeight(1) end
         p.sheen:SetPoint("TOPLEFT", box, "TOPLEFT", 1, -1)
         p.sheen:SetPoint("TOPRIGHT", box, "TOPRIGHT", -1, -1)
         if edges then
             p.edges = {}
             for _, side in ipairs({ "TOP", "BOTTOM" }) do
                 local e = T("BORDER", 3)
-                e:SetHeight(1)
+                if RC.Line then RC.Line(e, "H", 1) else e:SetHeight(1) end
                 e:SetPoint(side .. "LEFT", box, side .. "LEFT", 0, 0)
                 e:SetPoint(side .. "RIGHT", box, side .. "RIGHT", 0, 0)
                 p.edges[#p.edges + 1] = e
             end
             for _, side in ipairs({ "LEFT", "RIGHT" }) do
                 local e = T("BORDER", 3)
-                e:SetWidth(1)
+                if RC.Line then RC.Line(e, "V", 1) else e:SetWidth(1) end
                 e:SetPoint("TOP" .. side, box, "TOP" .. side, 0, 0)
                 e:SetPoint("BOTTOM" .. side, box, "BOTTOM" .. side, 0, 0)
                 p.edges[#p.edges + 1] = e
@@ -998,7 +1003,7 @@ local _uif = RC._uif
         -- (2026-11-16) the plate's shadow: one dark line under its foot,
         -- so it stands off the window (the window's shade colour)
         p.drop = T("BACKGROUND", -1)
-        p.drop:SetHeight(1)
+        if RC.Line then RC.Line(p.drop, "H", 1) else p.drop:SetHeight(1) end
         p.drop:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, 0)
         p.drop:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0)
         p.drop:SetVertexColor(0, 0, 0, 0)

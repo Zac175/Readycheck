@@ -850,7 +850,7 @@ local function InitializeSetupWizard()
                 b.label:SetPoint("LEFT", b.ring, "RIGHT", 7, 0)
                 b.line = stepBar:CreateTexture(nil, "ARTWORK")
                 b.line:SetTexture(FLAT)
-                b.line:SetHeight(1)
+                Readycheck.Line(b.line, "H", 1)
                 stepBar.items[i] = b
             end
             local wb = RC:GetColor("settings", "windowBackground")
@@ -982,7 +982,7 @@ local function InitializeSetupWizard()
         stepBar:SetHeight(STEPS_H)
         stepBar.items = {}
         local rule = stepBar:CreateTexture(nil, "ARTWORK")
-        rule:SetHeight(1)
+        Readycheck.Line(rule, "H", 1)
         rule:SetPoint("BOTTOMLEFT", stepBar, "BOTTOMLEFT", PAD, 0)
         rule:SetPoint("BOTTOMRIGHT", stepBar, "BOTTOMRIGHT", -PAD, 0)
         RC.UI:SkinPopup(f, { rules = { rule } })

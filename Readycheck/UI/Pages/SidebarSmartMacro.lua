@@ -1292,7 +1292,7 @@ function SM_RenderEdit(frame, mac)
                 local div = rulesCard:CreateTexture(nil, "ARTWORK")
                 div:SetPoint("TOPLEFT",  rulesCard, "TOPLEFT",  14, rcY + 4)
                 div:SetPoint("TOPRIGHT", rulesCard, "TOPRIGHT", -14, rcY + 4)
-                div:SetHeight(1)
+                RC.Line(div, "H", 1)
                 do local _bn = RC:GetColor("ui", "borderNormal"); div:SetColorTexture(_bn.r, _bn.g, _bn.b, _bn.a or 1) end
                 rcY = rcY - 10
             end

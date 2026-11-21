@@ -870,7 +870,7 @@ local function InitializeAuraTracker()
             local rule = titleBar:CreateTexture(nil, "ARTWORK")
             rule:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
             rule:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-            rule:SetHeight(1)
+            Readycheck.Line(rule, "H", 1)
             rule:SetTexture(FLAT)
             titleBar.rule = rule
             titleBar:Hide()
@@ -1087,6 +1087,13 @@ local function InitializeAuraTracker()
             if not frame then return end
             local db = self:Cfg()
             frame:SetScale(db.scale or 1)
+            -- (its Scale setting as its size in move mode: UIMover)
+            if not frame._rcSize then
+                local T = self
+                frame._rcSize = { min = 0.5, max = 2,
+                    get = function() return tonumber(T:Cfg().scale) or 1 end,
+                    set = function(v) T:SetScale(v) end }
+            end
             frame:EnableMouse(not db.locked)
             local bgC = RC:GetColor(COLOR_GROUP, "background")
             frame.bg:SetVertexColor(bgC.r, bgC.g, bgC.b, (bgC.a or 1) * (db.opacity or 0.85))

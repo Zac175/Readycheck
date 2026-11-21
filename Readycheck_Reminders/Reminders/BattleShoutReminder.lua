@@ -1183,6 +1183,14 @@ local function InitializeBattleShoutReminder()
 
         local frame = self:BuildBattleShoutTracker(UIParent, "WRBattleShoutPartyTrackerFrame")
         frame:SetScale(tonumber(db.scale) or 1)      -- the saved spot is in the frame's units
+        -- (its Scale setting as its size in move mode: UIMover)
+        frame._rcSize = { min = 0.5, max = 2,
+            get = function() return tonumber(RC.db.battleShoutPartyTracker.scale) or 1 end,
+            set = function(v)
+                RC.db.battleShoutPartyTracker.scale = v
+                if RC.Position.SetScaleKeepingPoint then RC.Position.SetScaleKeepingPoint(frame, v, true)
+                else frame:SetScale(v) end
+            end }
         RC.Position.Bind(frame, function() return self.db.battleShoutPartyTracker end, {
             point = "TOPLEFT", legacyRel = "BOTTOMLEFT",
             default = { point = "TOPLEFT", relPoint = "BOTTOMLEFT", x = 300, y = 400 },

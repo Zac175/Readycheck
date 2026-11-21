@@ -230,22 +230,22 @@ function TTK:BuildDisplayFrame(parent, name)
     f.borderTop = f:CreateTexture(nil, "BORDER")
     f.borderTop:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     f.borderTop:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-    f.borderTop:SetHeight(1)
+    Readycheck.Line(f.borderTop, "H", 1)
 
     f.borderBottom = f:CreateTexture(nil, "BORDER")
     f.borderBottom:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
     f.borderBottom:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-    f.borderBottom:SetHeight(1)
+    Readycheck.Line(f.borderBottom, "H", 1)
 
     f.borderLeft = f:CreateTexture(nil, "BORDER")
     f.borderLeft:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     f.borderLeft:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
-    f.borderLeft:SetWidth(1)
+    Readycheck.Line(f.borderLeft, "V", 1)
 
     f.borderRight = f:CreateTexture(nil, "BORDER")
     f.borderRight:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
     f.borderRight:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-    f.borderRight:SetWidth(1)
+    Readycheck.Line(f.borderRight, "V", 1)
 
     -- The title bar every Readycheck tracker wears (the route tracker, the
     -- Battle Shout tracker): the header art's gradient fill and stepped

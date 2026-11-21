@@ -355,7 +355,11 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             local pe, ue = parent:GetEffectiveScale(), UIParent:GetEffectiveScale()
             if type(pe) == "number" and type(ue) == "number" and pe > 0 and ue > 0 then v = v * ue / pe end
         end
-        if math.abs((frame:GetScale() or 1) - v) > 0.001 then frame:SetScale(v) end
+        if math.abs((frame:GetScale() or 1) - v) > 0.001 then
+            frame:SetScale(v)
+            -- (its edges are whole screen pixels at the new size: UIF_Widgets, RC.Pixel)
+            if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
+        end
     end
     -- the /rc window's scale changed: the popups on screen follow at once
     function RC.UI:RescaleShells()
@@ -434,7 +438,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         footer:SetHeight(footerH)
         local rule = footer:CreateTexture(nil, "ARTWORK")
         rule:SetTexture(FLAT)
-        rule:SetHeight(1)
+        RC.Line(rule, "H", 1)
         rule:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
         rule:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
         footer.rule = rule
@@ -528,7 +532,7 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         local accentLine = titleBar:CreateTexture(nil, "ARTWORK")
         accentLine:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
         accentLine:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-        accentLine:SetHeight(1)
+        RC.Line(accentLine, "H", 1)
         accentLine:SetTexture(FLAT)
         accentLine:SetVertexColor(accent.r, accent.g, accent.b, 0.6)
         dialog.accentLine = accentLine

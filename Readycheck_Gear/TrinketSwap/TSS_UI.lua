@@ -477,7 +477,7 @@ WRF._tssInit[#WRF._tssInit + 1] = function()
         -- exactly like a settings dropdown, so the button reads as "this
         -- opens a list" instead of as a label that happens to be clickable.
         local arrowRule = button:CreateTexture(nil, "ARTWORK")
-        arrowRule:SetWidth(1)
+        Readycheck.Line(arrowRule, "V", 1)
         arrowRule:SetPoint("TOPRIGHT",    button, "TOPRIGHT",    -15, -1)
         arrowRule:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -15,  1)
         arrowRule:SetTexture(RC.UI.FLAT)

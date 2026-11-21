@@ -178,22 +178,22 @@ if not RC.UI then return end
             Cover(t)
         elseif key == "lit" then
             t = Part(4)
-            t:SetHeight(1)
+            if RC.Line then RC.Line(t, "H", 1) else t:SetHeight(1) end
             t:SetPoint("TOPLEFT", anchor, "TOPLEFT", inset, -inset)
             t:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -inset, -inset)
         elseif key == "foot" then
             t = Part(4)
-            t:SetHeight(1)
+            if RC.Line then RC.Line(t, "H", 1) else t:SetHeight(1) end
             t:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
             t:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
         elseif key == "accent" then
             t = Part(5)
-            t:SetHeight(1)
+            if RC.Line then RC.Line(t, "H", 1) else t:SetHeight(1) end
             t:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
             t:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
         elseif key == "step" then
             t = Part(4)
-            t:SetHeight(1)
+            if RC.Line then RC.Line(t, "H", 1) else t:SetHeight(1) end
             t:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, 0)
             t:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
         elseif key == "shade" then
@@ -203,7 +203,7 @@ if not RC.UI then return end
             t:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -inset, -inset)
         elseif key == "catch" then
             t = Part(1)
-            t:SetHeight(1)
+            if RC.Line then RC.Line(t, "H", 1) else t:SetHeight(1) end
             t:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, 0)
             t:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
         end

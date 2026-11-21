@@ -68,6 +68,38 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.12",
+            date = "2026-11-20",
+            title = "Gear by spec and stance, and a size for every piece on screen",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "Gear Manager, Spec & Stance: say which specs and stances or forms each gear set and item is for, and the dockable buttons' menus list only what fits what you are doing. For every class. Off until you turn it on.",
+                        "Gear sets can go on by themselves when your stance, form or spec changes. In a fight the swap waits for the fight to end, and a rule's Macro button makes one key that changes stance and weapons together. Off until you turn it on.",
+                        "One size for everything Readycheck puts on screen: the Size slider in move mode.",
+                        "Move mode: each piece has its own size. Pick a piece to change its scale, or its width, height, icon size and spacing.",
+                        "Appearance: borders can be a hairline or grow with the UI scale.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "Borders and thin lines are one screen pixel wide at every UI scale.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "Reminders, dock buttons and other pieces could draw over the open world map. They go behind it now and come back when it closes.",
+                        { "Songflower timers could be up to ten seconds late.", feature = "world_tools" },
+                        "The reminder popup's icon size and spacing apply at once, and move mode shows the popup at its real size.",
+                        "Changing a piece's Scale on its page moved the piece. It stays in place.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.11",
             date = "2026-11-19",
             title = "Icon sizes for nameplate debuffs",
@@ -1619,7 +1651,7 @@ local function InitializeChangelog()
         local titleAccent = titleBar:CreateTexture(nil, "ARTWORK")
         titleAccent:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
         titleAccent:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-        titleAccent:SetHeight(1)
+        Readycheck.Line(titleAccent, "H", 1)
         titleAccent:SetTexture(FLAT)
         titleAccent:SetVertexColor(accentColor.r, accentColor.g, accentColor.b, 0.6)
 
@@ -1688,7 +1720,7 @@ local function InitializeChangelog()
         local footerRule = buttonArea:CreateTexture(nil, "ARTWORK")
         footerRule:SetPoint("TOPLEFT", buttonArea, "TOPLEFT", 1, 0)
         footerRule:SetPoint("TOPRIGHT", buttonArea, "TOPRIGHT", -1, 0)
-        footerRule:SetHeight(1)
+        Readycheck.Line(footerRule, "H", 1)
         local ruleCol = RC:GetColor("ui", "borderNormal")
         footerRule:SetTexture(FLAT)
         footerRule:SetVertexColor(ruleCol.r, ruleCol.g, ruleCol.b, ruleCol.a or 1)
@@ -1775,7 +1807,7 @@ local function InitializeChangelog()
         if not tex then
             tex = self.frame.content:CreateTexture(nil, "ARTWORK")
             tex:SetTexture(RC.UI.FLAT or "Interface\\Buttons\\WHITE8X8")
-            tex:SetHeight(1)
+            Readycheck.Line(tex, "H", 1)
             self.rulePool[self.ruleCount] = tex
         end
         local c = RC:GetColor("ui", "borderNormal")

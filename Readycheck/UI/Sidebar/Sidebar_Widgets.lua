@@ -77,7 +77,7 @@ local _sbs = RC._sbs
         if set then
             local rule = card:CreateTexture(nil, "BORDER")
             rule:SetTexture(FLAT)
-            rule:SetHeight(1)
+            RC.Line(rule, "H", 1)
             rule:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -S.SECTION_RULE_Y)
             rule:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, -S.SECTION_RULE_Y)
             card.rule = rule
@@ -91,7 +91,7 @@ local _sbs = RC._sbs
                 card.tick = tick
                 local line = card:CreateTexture(nil, "ARTWORK")
                 line:SetTexture(FLAT)
-                line:SetHeight(1)
+                RC.Line(line, "H", 1)
                 line:SetPoint("LEFT", card.title, "RIGHT", 10, 0)
                 line:SetPoint("RIGHT", card, "RIGHT", 0, 0)
                 card.titleLine = line
@@ -419,7 +419,7 @@ local _sbs = RC._sbs
         local line = headerFrame:CreateTexture(nil, "BORDER")
         line:SetPoint("BOTTOMLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
         line:SetPoint("BOTTOMRIGHT", headerFrame, "BOTTOMRIGHT", 0, 0)
-        line:SetHeight(1)
+        RC.Line(line, "H", 1)
         line:Hide()
         headerFrame.accentLine = line
         function headerFrame:Repaint()
@@ -475,7 +475,7 @@ local _sbs = RC._sbs
         local line = headerFrame:CreateTexture(nil, "ARTWORK")
         line:SetPoint("BOTTOMLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
         line:SetPoint("BOTTOMRIGHT", headerFrame, "BOTTOMRIGHT", 0, 0)
-        line:SetHeight(1)
+        RC.Line(line, "H", 1)
         line:SetTexture(FLAT)
         local accentColor = self:GetColor("ui", "accentGold")
         line:SetVertexColor(accentColor.r, accentColor.g, accentColor.b, 0.6)

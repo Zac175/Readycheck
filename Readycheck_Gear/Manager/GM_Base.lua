@@ -128,6 +128,12 @@ RC.GearManager = {
         hiddenMenuItems = {},    -- [itemID] = true
         hiddenMenuSets  = {},    -- [set name] = true
         menuRevealKey   = "SHIFT",
+        -- What a set or an item is FOR: the specs and stances / forms it
+        -- shows under in dockable buttons' hover menus (GM_AutoSets.lua).
+        -- No entry = everything, which is how every set and item ships.
+        menuScopeSets   = {},    -- [set name]  = { specs = { [key] = true }, forms = { [spell id] = name } }
+        menuScopeItems  = {},    -- [item key]  = the same (GM:MenuItemKey)
+        menuScopeOn     = true,  -- leave out what is for another spec or stance
         fungalBloomEnabled = false,
         fungalBloomActiveSet = "",
         fungalBloomSet = "",

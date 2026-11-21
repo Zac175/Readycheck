@@ -340,7 +340,7 @@ local TEXT = _sbc.TEXT
             titleBg:SetTexture(FLAT)
             titleBg:SetVertexColor(hdrBg.r, hdrBg.g, hdrBg.b, hdrBg.a or 1)
             local titleRule = titleBar:CreateTexture(nil, "ARTWORK")
-            titleRule:SetHeight(1)
+            RC.Line(titleRule, "H", 1)
             titleRule:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
             titleRule:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
             titleRule:SetTexture(FLAT)

@@ -335,6 +335,8 @@ do
         { pullTimerIdleOffsetX = -527, pullTimerIdleOffsetY = -323 },
         -- Screen alert anchor is measured down from the TOP of the screen.
         { alertOffsetX = 0, alertOffsetY = -180, soundChannel = "Master" },
+        -- (2026-11-19: the screen alert's text size; it was a fixed 18)
+        { alertFontSize = 18 },
         { pullTimerBarColor = { 0.2, 0.8, 0.2 }, pullTimerBarColorWarn = { 1.0, 0.8, 0.0 } },
         { pullTimerBarColorCrit = { 1.0, 0.2, 0.2 } },
     }

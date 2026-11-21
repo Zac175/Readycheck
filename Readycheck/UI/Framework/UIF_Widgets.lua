@@ -22,6 +22,163 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
       _uif.BASE, _uif.C, _uif.FLAT, _uif.CreateProfessionalFontString, _uif.GetAccentGold, _uif.GetBorderNormal, _uif.GetBorderSelected, _uif.GetButtonConfiguredBG, _uif.GetButtonConfiguredHover, _uif.GetButtonDisabledBG, _uif.GetButtonHoverBG, _uif.GetButtonNormalBG, _uif.GetButtonPressedBG, _uif.GetButtonTextConfigured, _uif.GetButtonTextDisabled, _uif.GetButtonTextNormal, _uif.GetButtonTexture, _uif.GetCheckboxBG, _uif.GetCheckboxBorder, _uif.GetCheckboxCheckmark, _uif.GetCheckboxHoverBorder, _uif.GetCloseHover, _uif.GetScrollThumb, _uif.GetScrollTrack, _uif.GetSidebarSelected, _uif.GetSidebarTextNormal, _uif.GetSidebarTextSelected, _uif.GetTextGray, _uif.GetXHover, _uif.GetXNormal, _uif.RegisterTexture
 local GetTextNormal = _uif.GetTextNormal
 local S = _uif.S
+    ------------------------------------------------------------------
+    -- EDGES ON WHOLE SCREEN PIXELS (2026-11-19, Zac: "i play on 4k so
+    -- things for me may look better than someone on 1080p or 1440p")
+    -- A border one UI unit thick is a whole number of screen pixels only
+    -- when the UI scale happens to make it so. At 1080p on the game's
+    -- default scale a unit is 1.4 pixels: the game draws each strip 1 or 2
+    -- pixels thick depending on where it lands, so a box's four sides come
+    -- out different and change as the box moves. That is the soft, uneven
+    -- edge.
+    --   RC.Pixel.Strip(tex, side, units, owner)  the strip's thickness is
+    --     `units` UI units rounded to WHOLE screen pixels (one at least),
+    --     measured on `owner` (default: the strip's parent). side "H": a
+    --     horizontal strip (its height), "V": a vertical one (its width).
+    --     From then on tex:SetHeight / tex:SetWidth on that side mean the
+    --     same thing, so code that changes a border's thickness later
+    --     needs no change. Same weight as before on every screen - one
+    --     unit is still about one unit - only never between two pixels.
+    --   RC.Pixel.Resnap()  measure every strip again, once, next frame:
+    --     after a window, a popup or the pieces' one scale changed size,
+    --     and on a UI scale or resolution change (heard here).
+    -- A strip on something that is not under UIParent (a nameplate: the
+    -- camera scales it) and a client or test stub without
+    -- GetPhysicalScreenSize keep plain units, exactly as before. Nothing
+    -- here runs per frame.
+    --
+    -- THE WEIGHT OF AN EDGE (2026-11-20, Zac, asked whether Readycheck's
+    -- borders should match ZacUI's single-pixel hairline: "yes it should
+    -- match"). A strip of N is N whole SCREEN pixels: a border is one
+    -- pixel on every screen and at every UI scale, a tab's underline two.
+    -- That is ZacUI's rule (its Core_Pixel), so the two addons' edges are
+    -- the same line side by side. It is the default and not the only
+    -- choice:
+    --   fontSettings.edgeWeight = "scaled"   N UI units rounded to whole
+    --     pixels, what it was before (heavier on a dense screen or a big
+    --     UI scale: two pixels at 4K);
+    --   beside ZacUI and wearing its look (lookOwn not ticked) the edges
+    --     are thin exactly when ZacUI's own are (its ZacUI look), so the
+    --     pair never disagree.
+    --   RC.Pixel.Thin()         -> true while a strip of N is N pixels
+    --   RC.Pixel.Px(n, owner)   -> n screen pixels in the owner's units
+    --   RC.Line(tex, side, n, owner)  a rule, divider or edge made by hand
+    --     (side "H" / "V"): the same as RC.Pixel.Strip
+    ------------------------------------------------------------------
+    local Pixel = RC.Pixel or {}
+    RC.Pixel = Pixel
+    do
+        local perfect          -- one screen pixel in 768-space (nil: unknown)
+        local function RefreshPhysical()
+            local f = _G.GetPhysicalScreenSize
+            if type(f) ~= "function" then perfect = nil return end
+            local ok, _, h = pcall(f)
+            if ok and type(h) == "number" and h > 0 and h == h
+               and not (issecretvalue ~= nil and issecretvalue(h)) then
+                perfect = 768 / h
+            end
+        end
+        RefreshPhysical()
+        function Pixel.On() return perfect ~= nil end
+
+        local function EffScale(frame)
+            if frame and frame.GetEffectiveScale then
+                local ok, es = pcall(frame.GetEffectiveScale, frame)
+                if ok and type(es) == "number" and es == es and es > 0.01 then return es end
+            end
+            local up = _G.UIParent
+            local es = up and up.GetEffectiveScale and up:GetEffectiveScale()
+            return (type(es) == "number" and es > 0.01) and es or 1
+        end
+        local function UnderUIParent(f)
+            local up, hops = _G.UIParent, 0
+            while f and hops < 40 do
+                if f == up then return true end
+                f = f.GetParent and f:GetParent() or nil
+                hops = hops + 1
+            end
+            return false
+        end
+        -- `units` as whole screen pixels, in the owner's units
+        function Pixel.Snap(units, owner)
+            if type(units) ~= "number" or units ~= units or units <= 0 or not perfect then return units end
+            if not UnderUIParent(owner) then return units end
+            local one = perfect / EffScale(owner)            -- one screen pixel in the owner's units
+            local px = math_floor(units / one + 0.5)
+            if px < 1 then px = 1 end
+            return px * one
+        end
+
+        -- `n` whole screen pixels (one at least), in the owner's units
+        function Pixel.Px(n, owner)
+            if type(n) ~= "number" or n ~= n or n <= 0 or not perfect then return n end
+            if not UnderUIParent(owner) then return n end
+            local px = math_floor(n + 0.5)
+            if px < 1 then px = 1 end
+            return px * (perfect / EffScale(owner))
+        end
+        -- which of the two weights is in force (see THE WEIGHT OF AN EDGE)
+        function Pixel.Thin()
+            local db = RC.db
+            local fs = type(db) == "table" and db.fontSettings or nil
+            if type(fs) ~= "table" then fs = nil end
+            if not (fs and fs.lookOwn == true) then
+                local Z = _G.ZacUI
+                local ZP = type(Z) == "table" and Z.Pixel or nil
+                if type(ZP) == "table" and type(ZP.On) == "function" then
+                    local ok, on = pcall(ZP.On)
+                    if ok then return on and true or false end
+                end
+            end
+            return not (fs and fs.edgeWeight == "scaled")
+        end
+
+        local strips = setmetatable({}, { __mode = "k" })     -- tex -> { side, units, owner, setH, setW }
+        local function Measure(tex, e)
+            local owner = e.owner or (tex.GetParent and tex:GetParent())
+            local t
+            if Pixel.Thin() then t = Pixel.Px(e.units, owner) else t = Pixel.Snap(e.units, owner) end
+            if e.side == "H" then e.setH(tex, t) else e.setW(tex, t) end
+        end
+        function Pixel.Strip(tex, side, units, owner)
+            if not (tex and tex.SetHeight and tex.SetWidth) then return end
+            local e = strips[tex]
+            if not e then
+                e = { setH = tex.SetHeight, setW = tex.SetWidth }
+                strips[tex] = e
+                -- the strip's own setter on that side keeps meaning "units"
+                if side == "H" then
+                    tex.SetHeight = function(self, v) e.units = v Measure(self, e) end
+                else
+                    tex.SetWidth = function(self, v) e.units = v Measure(self, e) end
+                end
+            end
+            e.side, e.units, e.owner = side, units, owner
+            Measure(tex, e)
+        end
+
+        local armed = false
+        local function ResnapNow()
+            armed = false
+            RefreshPhysical()
+            for tex, e in pairs(strips) do pcall(Measure, tex, e) end
+        end
+        function Pixel.Resnap()
+            if armed then return end
+            armed = true
+            if C_Timer and C_Timer.After then C_Timer.After(0, ResnapNow) else ResnapNow() end
+        end
+        Pixel.ResnapNow = ResnapNow
+        -- a rule, a divider or an edge a page draws by hand
+        function RC.Line(tex, side, units, owner) Pixel.Strip(tex, side, units or 1, owner) end
+
+        local ev = CreateFrame("Frame")
+        ev:RegisterEvent("UI_SCALE_CHANGED")
+        pcall(ev.RegisterEvent, ev, "DISPLAY_SIZE_CHANGED")
+        ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+        ev:SetScript("OnEvent", function() Pixel.Resnap() end)
+    end
+
     -- Returns a table of 4 edge textures (top/bottom/left/right) drawn
     -- OVERLAY on frame, colored from theme "borderNormal". Caller must
     -- keep the returned table if it wants to recolor via UpdateBorderColor.
@@ -58,25 +215,25 @@ local S = _uif.S
         borders.top:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
         borders.top:SetPoint("TOPLEFT", 0, 0)
         borders.top:SetPoint("TOPRIGHT", 0, 0)
-        borders.top:SetHeight(borderWidth)
+        Pixel.Strip(borders.top, "H", borderWidth, frame)
 
         borders.bottom = frame:CreateTexture(nil, "OVERLAY", nil, subLevel)
         borders.bottom:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
         borders.bottom:SetPoint("BOTTOMLEFT", 0, 0)
         borders.bottom:SetPoint("BOTTOMRIGHT", 0, 0)
-        borders.bottom:SetHeight(borderWidth)
+        Pixel.Strip(borders.bottom, "H", borderWidth, frame)
 
         borders.left = frame:CreateTexture(nil, "OVERLAY", nil, subLevel)
         borders.left:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
         borders.left:SetPoint("TOPLEFT", 0, 0)
         borders.left:SetPoint("BOTTOMLEFT", 0, 0)
-        borders.left:SetWidth(borderWidth)
+        Pixel.Strip(borders.left, "V", borderWidth, frame)
 
         borders.right = frame:CreateTexture(nil, "OVERLAY", nil, subLevel)
         borders.right:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
         borders.right:SetPoint("TOPRIGHT", 0, 0)
         borders.right:SetPoint("BOTTOMRIGHT", 0, 0)
-        borders.right:SetWidth(borderWidth)
+        Pixel.Strip(borders.right, "V", borderWidth, frame)
 
         return borders
     end
@@ -1313,7 +1470,7 @@ local S = _uif.S
         tab.underline = tab:CreateTexture(nil, "OVERLAY", nil, 2)
         tab.underline:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 1, 1)
         tab.underline:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, 1)
-        tab.underline:SetHeight(2)
+        RC.Line(tab.underline, "H", 2)
         tab.underline:Hide()
 
         tab.text = CreateProfessionalFontString(tab, "OVERLAY", BASE.FONT_SIZE_SMALL, "OUTLINE")
@@ -1503,7 +1660,7 @@ local S = _uif.S
             tab.underline = tab:CreateTexture(nil, "OVERLAY", nil, 2)
             tab.underline:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 1, 1)
             tab.underline:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, 1)
-            tab.underline:SetHeight(2)
+            RC.Line(tab.underline, "H", 2)
             tab.underline:Hide()
 
             tab.highlight = tab:CreateTexture(nil, "HIGHLIGHT")
@@ -2832,7 +2989,7 @@ local S = _uif.S
             fill:SetTexture(FLAT)
             local rule = bar:CreateTexture(nil, "ARTWORK", nil, 4)
             rule:SetTexture(FLAT)
-            rule:SetHeight(1)
+            RC.Line(rule, "H", 1)
             rule:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
             rule:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
             local none = bar:CreateTexture(nil, "BACKGROUND")
@@ -2871,13 +3028,13 @@ local S = _uif.S
         if cutD.SetVertexOffset then cutD:SetVertexOffset(3, 0, -STEP_Y) end
         -- 1px, like every other rule in the UI
         local ruleL, ruleR, ruleD = Tex(), Tex(), Tex()
-        ruleL:SetHeight(1)
+        RC.Line(ruleL, "H", 1)
         ruleL:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, STEP_Y)
         ruleL:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", stepX, STEP_Y)
-        ruleR:SetHeight(1)
+        RC.Line(ruleR, "H", 1)
         ruleR:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", stepX + STEP_W, 0)
         ruleR:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
-        ruleD:SetHeight(1)
+        RC.Line(ruleD, "H", 1)
         ruleD:SetWidth(math.sqrt(STEP_W * STEP_W + STEP_Y * STEP_Y) + 1)
         ruleD:SetPoint("CENTER", bar, "BOTTOMLEFT", stepX + STEP_W / 2, STEP_Y / 2 + 0.5)
         ruleD:SetRotation(-math.atan2(STEP_Y, STEP_W))
@@ -3866,7 +4023,7 @@ local S = _uif.S
                 if not rule then
                     rule = m:CreateTexture(nil, "ARTWORK")
                     rule:SetTexture(FLAT)
-                    rule:SetHeight(1)
+                    RC.Line(rule, "H", 1)
                     m.rules[sep] = rule
                 end
                 rule:ClearAllPoints()

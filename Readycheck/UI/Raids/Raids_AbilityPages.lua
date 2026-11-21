@@ -1209,7 +1209,7 @@ end
             local sep = defCard:CreateTexture(nil, "ARTWORK")
             sep:SetPoint("TOPLEFT", defCard, "TOPLEFT", 12,  cardY)
             sep:SetPoint("RIGHT",   defCard, "RIGHT",   -12, 0)
-            sep:SetHeight(1)
+            RC.Line(sep, "H", 1)
             local _ac = RC:GetColor("ui", "accentGold") or {r=0.85,g=0.65,b=0.25}
             sep:SetColorTexture(_ac.r, _ac.g, _ac.b, 0.35)
             cardY = cardY - 12
@@ -1668,7 +1668,7 @@ end
             local accentLine = headerFrame:CreateTexture(nil, "ARTWORK")
             accentLine:SetPoint("BOTTOMLEFT",  headerFrame, "BOTTOMLEFT",  0, 0)
             accentLine:SetPoint("BOTTOMRIGHT", headerFrame, "BOTTOMRIGHT", 0, 0)
-            accentLine:SetHeight(1)
+            RC.Line(accentLine, "H", 1)
             local _accent = RC:GetColor("ui", "accentGold") or {r=0.85, g=0.65, b=0.25, a=0.6}
             accentLine:SetColorTexture(_accent.r, _accent.g, _accent.b, _accent.a or 0.6)
 
@@ -1703,7 +1703,7 @@ end
             local sep = cfgCard:CreateTexture(nil, "ARTWORK")
             sep:SetPoint("TOPLEFT", cfgCard, "TOPLEFT", 12,  cardY)
             sep:SetPoint("RIGHT",   cfgCard, "RIGHT",   -12, 0)
-            sep:SetHeight(1)
+            RC.Line(sep, "H", 1)
             local _ac = RC:GetColor("ui", "accentGold") or {r=0.85,g=0.65,b=0.25}
             sep:SetColorTexture(_ac.r, _ac.g, _ac.b, 0.35)
             cardY = cardY - 12

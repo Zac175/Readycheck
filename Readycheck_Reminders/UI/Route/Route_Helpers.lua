@@ -556,7 +556,7 @@ local _srr = RC._srr
             local titleRule = titleBar:CreateTexture(nil, "ARTWORK")
             titleRule:SetPoint("BOTTOMLEFT",  titleBar, "BOTTOMLEFT",  0, 0)
             titleRule:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-            titleRule:SetHeight(1)
+            RC.Line(titleRule, "H", 1)
             titleRule:SetTexture(RC.UI.FLAT)
             titleRule:SetVertexColor(ac.r, ac.g, ac.b, 0.6)
             pop.titleBar = titleBar

@@ -553,7 +553,7 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         -- footer: rule, icons, the when-label
         local rule = f:CreateTexture(nil, "ARTWORK")
         rule:SetTexture(RC.UI.FLAT)
-        rule:SetHeight(1)
+        RC.Line(rule, "H", 1)
         rule:Hide()
         f.rule = rule
         f.icons = {}
@@ -1123,6 +1123,17 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
         -- scale, box, alignment
         local sc = tonumber(settings.trackerScale) or RR.TRACKER_SCALE
         if sc < 0.6 then sc = 0.6 elseif sc > 1.6 then sc = 1.6 end
+        -- (2026-11-20) under the pieces' one scale (RC.Screen) the live
+        -- tracker's parent carries a scale. Docked to the chat box it is
+        -- laid out in the screen's own units (the box's left, right and
+        -- top), so its parent's share is taken out again there.
+        if dockL and f == RR.trackerFrame then
+            local p = f:GetParent()
+            if p and p ~= UIParent and p.GetEffectiveScale then
+                local pe, ue = p:GetEffectiveScale(), UIParent:GetEffectiveScale()
+                if pe and ue and pe > 0 and ue > 0 then sc = sc * ue / pe end
+            end
+        end
         if math.abs((f:GetScale() or 1) - sc) > 0.001 then
             -- into or out of the chat dock the saved spot is NOT rescaled:
             -- it stays in the units of the saved scale, which is what it
@@ -1162,7 +1173,14 @@ local ShortMobName, StepConfigGear = _rrs.ShortMobName, _rrs.StepConfigGear
             for _, bb in ipairs({ f.btnPrev, f.btnNext }) do
                 if bb and not bb:IsMouseOver() then bb:SetAlpha(1) end
             end
-            nv:SetScale(f:GetScale())
+            -- (2026-11-20) the live strip lies on the screen: the size the
+            -- tracker has there, its own scale and its parent's together
+            if nv:GetParent() == UIParent and f:GetParent() ~= UIParent then
+                local fe, ue = f:GetEffectiveScale(), UIParent:GetEffectiveScale()
+                nv:SetScale((fe and ue and ue > 0) and (fe / ue) or f:GetScale())
+            else
+                nv:SetScale(f:GetScale())
+            end
             nv:ClearAllPoints()
             local mode = settings.trackerNavPos or "auto"
             if mode == "auto" then mode = alignR and "tl" or "tr" end

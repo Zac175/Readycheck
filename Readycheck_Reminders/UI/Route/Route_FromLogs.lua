@@ -51,7 +51,7 @@ local function BuildLogsWindow()
     local hd = titleBar:CreateTexture(nil, "ARTWORK")
     hd:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
     hd:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-    hd:SetHeight(1)
+    RC.Line(hd, "H", 1)
     hd:SetTexture(FLAT)
     hd:SetVertexColor(acGold.r, acGold.g, acGold.b, 0.6)
     if RC.UI.ApplyHeaderArt then

@@ -115,7 +115,7 @@ local TEXT = _sbs.TEXT
         cardY = cardY - 40
 
         local div = exportCard:CreateTexture(nil, "ARTWORK")
-        do local _bn=RC:GetColor("ui","borderNormal"); div:SetColorTexture(_bn.r,_bn.g,_bn.b,_bn.a or 1) end; div:SetHeight(1)
+        do local _bn=RC:GetColor("ui","borderNormal"); div:SetColorTexture(_bn.r,_bn.g,_bn.b,_bn.a or 1) end; RC.Line(div, "H", 1)
         div:SetPoint("TOPLEFT", exportCard, "TOPLEFT", 10, cardY)
         div:SetPoint("TOPRIGHT", exportCard, "TOPRIGHT", -10, cardY)
         cardY = cardY - 14
@@ -192,7 +192,7 @@ local TEXT = _sbs.TEXT
         local titleAccent = titleBar:CreateTexture(nil, "ARTWORK")
         titleAccent:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
         titleAccent:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-        titleAccent:SetHeight(1)
+        RC.Line(titleAccent, "H", 1)
         titleAccent:SetColorTexture(accentColor.r, accentColor.g, accentColor.b, 0.6)
         if RC.UI.ApplyHeaderArt then
             titleAccent:Hide()

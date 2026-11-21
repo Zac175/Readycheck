@@ -104,7 +104,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
         end
         if t.open then
             local ul = btn:CreateTexture(nil, "OVERLAY", nil, 1)
-            ul:SetHeight(2)
+            RC.Line(ul, "H", 2)
             ul:SetPoint("BOTTOMLEFT",  btn, "BOTTOMLEFT",  1, 1)
             ul:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 1)
             ul:SetColorTexture(gold.r, gold.g, gold.b, 1)
@@ -188,7 +188,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
         for _, t in ipairs(opts.tiles or {}) do
             if t.divider then
                 local d = strip:CreateTexture(nil, "ARTWORK")
-                d:SetSize(1, TILE_H)
+                d:SetSize(1, TILE_H) RC.Line(d, "V", 1)
                 d:SetColorTexture(bn.r, bn.g, bn.b, 1)
                 elements[#elements + 1] = { divider = true, obj = d }
             else
@@ -266,7 +266,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                         e.obj:Hide()
                     else
                         e.obj:Show()
-                        e.obj:SetSize(1, tileH)
+                        e.obj:SetSize(1, tileH) RC.Line(e.obj, "V", 1)
                         e.obj:ClearAllPoints()
                         e.obj:SetPoint("TOPLEFT", strip, "TOPLEFT",
                             tilesX0 + col * (tileW + TILE_GAP) - math.floor(TILE_GAP / 2) - 1,
@@ -547,7 +547,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                 end
                 if isCurrent then
                     local ul = ib:CreateTexture(nil, "OVERLAY", nil, 1)
-                    ul:SetHeight(2)
+                    RC.Line(ul, "H", 2)
                     ul:SetPoint("BOTTOMLEFT",  ib, "BOTTOMLEFT",  1, 1)
                     ul:SetPoint("BOTTOMRIGHT", ib, "BOTTOMRIGHT", -1, 1)
                     ul:SetColorTexture(_acGold.r, _acGold.g, _acGold.b, 1)

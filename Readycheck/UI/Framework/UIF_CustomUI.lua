@@ -1477,11 +1477,52 @@ local function RootOf(root)
     if type(root) == "function" then return root() end
     return root
 end
+-- every live frame RC:ApplyFrameCustom has dressed (weak: a frame is never kept by this)
+local customFrames = setmetatable({}, { __mode = "k" })
+
+-- (2026-11-20) THE SCALE SLIDER KEEPS THE PIECE WHERE IT IS. A placed
+-- piece's saved spot is in its own (scaled) units, so a bare SetScale slid
+-- it across the screen while the "Layer, level, scale" slider was dragged.
+-- When that slider changes framePos.scale, every placed frame dressed from
+-- the same settings is put at its old scale and moved to the new one the
+-- way the frame mover does it (Core_Position SetScaleKeepingPoint: the
+-- saved spot is rewritten for the new scale); the apply that follows then
+-- finds the frame already at its size. Not on a login or a profile switch:
+-- there the saved spot and the saved scale already belong together.
+local function KeepPlaceOnScale(t, old, new)
+    local P = RC.Position
+    if type(t) ~= "table" or not (P and P.IsBound and P.SetScaleKeepingPoint) then return end
+    for frame in pairs(customFrames) do
+        local okR, ft = pcall(RootOf, frame._rcFrameRoot)
+        local fo = frame._rcFrameOpts
+        if okR and ft == t and P.IsBound(frame) and not (type(fo) == "table" and fo.scale == false)
+            and not (InCombatLockdown and InCombatLockdown() and frame.IsProtected and frame:IsProtected()) then
+            local d = frame._rcFrameDef
+            -- its own scale (what "unset" means): the one noted when a
+            -- scale was first set, else the one it wears now
+            local base = (type(d) == "table" and frame._rcFPSet and tonumber(d.scale)) or frame:GetScale() or 1
+            local was, to = tonumber(old) or base, tonumber(new) or base
+            if was > 0 and to > 0 and math.abs(was - to) > 0.0005 then
+                -- (a piece its feature put to another scale while it was away is at the saved one first)
+                if math.abs((frame:GetScale() or 1) - was) > 0.0005 then frame:SetScale(was) end
+                -- (the apply that follows notes the frame's own scale: this one, not the new one)
+                if not frame._rcFPSet then frame._rcOwnScale = was end
+                P.SetScaleKeepingPoint(frame, to, true)
+            end
+        end
+    end
+end
+RC.UI.KeepPlaceOnScale = KeepPlaceOnScale
+
 function RC:ApplyFrameCustom(frame, root, opts)
     if not frame then return end
     opts = opts or EMPTY
     local t = RootOf(root)
     if type(t) ~= "table" then return end
+    if not opts.sample then customFrames[frame] = true end
+    -- (the frame mover reads these: a piece whose scale is framePos.scale
+    -- can be sized in move mode - UIMover, A SIZE OF ITS OWN)
+    if not opts.sample then frame._rcFrameRoot, frame._rcFrameOpts = root, opts end
     -- what "unset" puts back: the frame as the feature made it
     local d = frame._rcFrameDef
     if not d then
@@ -1497,7 +1538,8 @@ function RC:ApplyFrameCustom(frame, root, opts)
     -- (a settings preview sample takes the look only: never a layer that
     -- could draw over the settings window)
     if not opts.sample and (fp or frame._rcFPSet) then
-        if not frame._rcFPSet then d.scale = (opts.scale ~= false) and frame:GetScale() or nil end
+        if not frame._rcFPSet then d.scale = (opts.scale ~= false) and (frame._rcOwnScale or frame:GetScale()) or nil end
+        frame._rcOwnScale = nil
         local ok = RC.UI:ApplyFramePosition(frame, fp or EMPTY, d)
         if ok then
             if not (fp and fp.level) and frame._zcBaseLevel then frame:SetFrameLevel(frame._zcBaseLevel) end
@@ -1548,6 +1590,19 @@ local function FamilyAccess(root, family, apply, ensure)
         if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
         if apply then apply() end
     end)
+    if family == "framePos" then
+        -- (the Scale slider: the piece stays where it is - KeepPlaceOnScale)
+        local inner = set
+        set = function(spec)
+            local t = RootOf(root)
+            if type(t) == "table" then
+                local old = type(t.framePos) == "table" and tonumber(t.framePos.scale) or nil
+                local new = type(spec) == "table" and tonumber(spec.scale) or nil
+                if old ~= new then KeepPlaceOnScale(t, old, new) end
+            end
+            return inner(spec)
+        end
+    end
     if ensure then
         local rawSet = set
         set = function(spec)

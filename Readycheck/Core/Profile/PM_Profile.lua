@@ -313,6 +313,8 @@ RC._pms = RC._pms or {}
                 if self.UpdateAllFonts then
                     self:UpdateAllFonts()
                 end
+                -- (this profile's border weight: UIF_Widgets, RC.Pixel)
+                if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
             end
         end
 

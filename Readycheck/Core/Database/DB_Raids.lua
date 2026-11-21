@@ -1436,6 +1436,13 @@ RC.encounterAddPhases = {
             fontSize = 12,
             fontOutline = "OUTLINE",
             mainWindowBgOpacity = 1.0,
+            -- (nil-able: pieceScale - one scale for the bars, trackers and
+            -- alerts on the screen, RC.Screen in UIMover.lua, nil = 100%)
+            -- (nil-able: edgeWeight - "scaled" for borders and lines a UI
+            -- unit thick; nil = one screen pixel, RC.Pixel in UIF_Widgets)
+            -- (nil-able: underMap - false leaves the on-screen pieces over
+            -- the open world map; nil = they go behind it, RC.UnderMap in
+            -- UIMover.lua)
             -- (nil-able, set by the /rc window since 5.0: mainWindowScale -
             -- the footer's -/+ scale, nil = 100%; windowLayout - 5 once a
             -- size was saved for the 5.0 window, so an older saved size
@@ -1564,6 +1571,19 @@ RC.encounterAddPhases = {
         gearUseRevert = true,
         speedSwapTargets = {},
         gearSwapRetry = { attempts = 3, interval = 1.0, warn = true },
+        -- gear by spec and stance / form, every class
+        -- (Readycheck_Gear/Manager/GM_AutoSets.lua; Gear Manager > Spec &
+        -- Stance). use = the one switch for all of it, OFF until turned
+        -- on: with it off no menu leaves anything out and nothing is put
+        -- on by itself. It is NOT listed here: nil means not decided yet,
+        -- which AutoSets.DB() reads as off (a value here would be filled
+        -- into every saved table and switch off a setup made before the
+        -- switch existed). enabled = sets that go on by themselves (also
+        -- off until ticked); rules = { { form, formName, spec, set, on } };
+        -- afterCombat, bossFirst, delay, atLogin and announce are nil
+        -- until changed (nil = what ships: AutoSets.DEFAULTS). What each
+        -- set / item is for is in gearManager.settings.menuScope*.
+        gearAutoSets = { enabled = false, rules = {} },
         -- the after-boss gear set picker: where it sits (x, y from screen
         -- centre) and how big its buttons are (buttonWidth, rowHeight);
         -- empty until it is moved or resized

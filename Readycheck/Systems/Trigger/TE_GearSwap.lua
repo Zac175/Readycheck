@@ -515,6 +515,22 @@ local ABILITY_READY_TTL = 1.0
         f._laying = nil
     end
 
+    -- (2026-11-20) the saved button width / row height changed somewhere
+    -- else (the frame mover's size rows): the window that exists follows,
+    -- on its pinned corner
+    function RC:RelayoutGearSetPrompt()
+        local f = promptFrame
+        if not f then return end
+        local colW, rowH = PromptMetrics()
+        PlacePromptRows(f, colW, rowH)
+        f._laying = true
+        f:SetSize(PromptSize(f._cols or 1, f._perCol or 1, colW, rowH))
+        f._laying = nil
+        if RC.Position and RC.Position.IsBound and RC.Position.IsBound(f) then RC.Position.RestoreFrame(f) end
+    end
+    RC.GEAR_PROMPT_SIZES = { col = PROMPT.col, colMin = PROMPT.colMin, colMax = PROMPT.colMax,
+                             row = PROMPT.row, rowMin = PROMPT.rowMin, rowMax = PROMPT.rowMax }
+
     -- the window is w x h right now: what button size is that?
     local function PromptMetricsFor(f, w, h)
         local cols, perCol = f._cols or 1, f._perCol or 1

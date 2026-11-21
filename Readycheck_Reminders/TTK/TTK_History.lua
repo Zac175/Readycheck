@@ -533,7 +533,7 @@ local _ttk = RC._ttk
         local accentLine = titleBar:CreateTexture(nil, "ARTWORK")
         accentLine:SetPoint("BOTTOMLEFT",  titleBar, "BOTTOMLEFT",  0, 0)
         accentLine:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-        accentLine:SetHeight(1)
+        RC.Line(accentLine, "H", 1)
         accentLine:SetTexture(FLAT)
         accentLine:SetVertexColor(accent.r, accent.g, accent.b, 0.6)
         dialog.accentLine = accentLine

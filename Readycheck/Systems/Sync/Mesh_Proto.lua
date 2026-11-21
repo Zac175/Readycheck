@@ -1847,7 +1847,7 @@ local _mss = RC._mss
         end
         local rule = f:CreateTexture(nil, "ARTWORK")
         rule:SetTexture("Interface\\Buttons\\WHITE8X8")
-        rule:SetHeight(1)
+        RC.Line(rule, "H", 1)
         rule:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
         rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
         local gr, gg, gb = BarColor("ui", "accentGold", 0.85, 0.65, 0.25, 0.6)

@@ -72,7 +72,7 @@ WRF._cckInit[#WRF._cckInit + 1] = function()
         f.headerLine = f:CreateTexture(nil, "ARTWORK")
         f.headerLine:SetPoint("LEFT", f.title, "RIGHT", 6, 0)
         f.headerLine:SetPoint("RIGHT", f, "RIGHT", -6, 0)
-        f.headerLine:SetHeight(1)
+        Readycheck.Line(f.headerLine, "H", 1)
         f.headerLine:SetTexture(RC.UI.FLAT)
     end
     -- A built-in category's header text and colours ("[-] FLASKS (3)", gold).

@@ -22,6 +22,7 @@ Manager\GM_Buttons.lua
 Manager\GM_Position.lua
 Manager\GM_Sets.lua
 Manager\GM_Runtime.lua
+Manager\GM_AutoSets.lua
 Manager\GearManagerConfig.lua
 IconPicker.lua
 Hotswap.lua

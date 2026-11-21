@@ -206,6 +206,7 @@ local function BarsPreviewUpdate(canvas, P)
     end
     if mode == "alert" then
         local aw, ah = PT.ALERT_SIZE()
+        if PT.DressAlertPlate then PT.DressAlertPlate(st.alert) end
         st.alert.label:SetText(PT.SAMPLE_ALERT)
         st.alert.label:SetTextColor(1, 0.85, 0.2)
         PT.FitAlertPlate(st.alert, aw, ah)
@@ -345,6 +346,29 @@ function RC:ShowSidebarWTTimers(frame, preserveScroll)
     local alertRows = {}
     local function GateCard(c, m)
         for _, x in ipairs(RC.UI:CardSince(c, m)) do alertRows[#alertRows + 1] = x end
+    end
+    -- the screen alert's text size (2026-11-19: it was a fixed 18)
+    do
+        local wc = WHITE()
+        local lbl = RC:CreateFontString(cardA, "OVERLAY", nil, 11)
+        lbl:SetPoint("TOPLEFT", cardA, "TOPLEFT", 15, cy - 2)
+        lbl:SetTextColor(wc.r, wc.g, wc.b)
+        lbl:SetText("Screen alert text size")
+        cy = cy - 20
+        local cur = tonumber(ts.alertFontSize) or 18
+        local sl = self.UI:CreateSlider(cardA, 10, 40, cur, 1)
+        sl:SetPoint("TOPLEFT", cardA, "TOPLEFT", 15, cy)
+        sl.Text:SetText(tostring(cur))
+        sl:SetScript("OnValueChanged", function(slider, value)
+            value = math.floor(value + 0.5)
+            slider.Text:SetText(tostring(value))
+            ts.alertFontSize = value
+            if PT then
+                PT.UpdateAnchorSizes()
+                PT:RefreshPreviewLayout()
+            end
+        end)
+        cy = cy - 34
     end
     cardA:SetContentHeight(math.abs(cy))
     yPos = yPos - cardA:GetHeight() - 15

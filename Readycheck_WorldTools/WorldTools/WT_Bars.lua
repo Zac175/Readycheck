@@ -210,6 +210,7 @@ local CFG_SPEC = {
     { "soundChannel",    "soundChannel",             "Master" },
     { "alertOffX",       "alertOffsetX",             0 },
     { "alertOffY",       "alertOffsetY",             -180 },
+    { "alertFont",       "alertFontSize",            18 },
 }
 
 -- One reusable table: the animation driver reads this every frame and no
@@ -298,12 +299,24 @@ local ANCHOR_SIZING = {
     { idleAnchor, "smallW", "smallH" },
 }
 
+-- The screen alert's text size (timerSettings.alertFontSize, 10 to 40; it
+-- was a fixed 18) and the banner's height with it (18 -> 40, as before).
+local function AlertFontSize()
+    local v = tonumber(Cfg().alertFont) or 18
+    if v < 10 then v = 10 elseif v > 40 then v = 40 end
+    return v
+end
+PT.AlertFontSize = AlertFontSize
+local function AlertHeight() return AlertFontSize() + 22 end
+
 local function UpdateAnchorSizes()
     local c = Cfg()
     for i = 1, #ANCHOR_SIZING do
         local row = ANCHOR_SIZING[i]
         row[1]:SetSize(math.max(c[row[2]], 50), c[row[3]])
     end
+    -- (the banner's anchor and every plate made so far follow the text size)
+    if PT.SizeAlert then PT.SizeAlert() end
 end
 PT.UpdateAnchorSizes = UpdateAnchorSizes
 
@@ -463,7 +476,8 @@ local function NewAlertPlate(parent)
         plate.border = RC.UI:CreateSimpleBorder(plate)
     end
     local label = plate:CreateFontString(nil, "OVERLAY")
-    if RC.ApplyCustomFont then RC:ApplyCustomFont(label, 18, "OUTLINE") end
+    if RC.ApplyCustomFont then RC:ApplyCustomFont(label, AlertFontSize(), "OUTLINE") end
+    plate._rcAlertPt = AlertFontSize()
     label:SetPoint("CENTER")
     label:SetJustifyH("CENTER")
     label:SetTextColor(1, 0.85, 0.2)
@@ -484,7 +498,24 @@ PT.FitAlertPlate = FitPlate
 local alertPlate = NewAlertPlate(alertFrame)
 local alertLabel = alertPlate.label
 
+-- The text size onto a plate (the live banner's, or a preview's): only
+-- when it differs from what the plate wears.
+local function DressAlertPlate(plate)
+    local pt = AlertFontSize()
+    if plate and plate.label and plate._rcAlertPt ~= pt then
+        plate._rcAlertPt = pt
+        if RC.ApplyCustomFont then RC:ApplyCustomFont(plate.label, pt, "OUTLINE") end
+    end
+end
+PT.DressAlertPlate = DressAlertPlate
+function PT.SizeAlert()
+    alertFrame:SetHeight(AlertHeight())
+    DressAlertPlate(alertPlate)
+    if alertFrame:IsShown() then FitPlate(alertPlate, alertFrame:GetWidth() or 600, alertFrame:GetHeight() or 40) end
+end
+
 local function FitAlertPlate()
+    DressAlertPlate(alertPlate)
     FitPlate(alertPlate, alertFrame:GetWidth() or 600, alertFrame:GetHeight() or 40)
 end
 
@@ -608,6 +639,12 @@ end
 -- Ordering falls out of insertion, so no separate sort list is needed.
 local slots = {}
 local pool = {}
+-- the live bars hang on the screen, not on their anchors: each goes behind
+-- the open world map by itself (RC.UnderMap, UIMover.lua)
+RC.UnderMapProviders = RC.UnderMapProviders or {}
+table.insert(RC.UnderMapProviders, function(each)
+    for i = 1, #slots do each(slots[i].bar) end
+end)
 
 -- Late relays keep arriving after a bar finishes; a key stays shut for a
 -- minute so a stale packet cannot restart a countdown that already ran.

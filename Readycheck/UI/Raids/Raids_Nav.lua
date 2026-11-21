@@ -132,7 +132,7 @@ local _sbr = RC._sbr
         button.bg = Tex("BACKGROUND", 3) button.bg:SetAllPoints(box)
         local function Edge(side)
             local g = Tex("BORDER", 0)
-            g:SetHeight(1)
+            RC.Line(g, "H", 1)
             g:SetPoint(side .. "LEFT", box, side .. "LEFT", 0, 0)
             g:SetPoint(side .. "RIGHT", box, side .. "RIGHT", 0, 0)
             return g
@@ -168,7 +168,7 @@ local _sbr = RC._sbr
             -- the group's line: from after its name (and the +/-) to the edge
             local gl = button:CreateTexture(nil, "ARTWORK")
             gl:SetTexture(FLAT)
-            gl:SetHeight(1)
+            RC.Line(gl, "H", 1)
             gl:SetPoint("LEFT", button.text, "RIGHT", 26, 0)
             gl:SetPoint("RIGHT", button, "RIGHT", -14, 0)
             button.groupLine = gl

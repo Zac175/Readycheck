@@ -234,6 +234,8 @@ local function InitializeSidebarMeshSync()
     local function ApplyMeshLook()
         if RC.EnsureMeshProgressBar then StyleMeshBar(RC.EnsureMeshProgressBar()) end
     end
+    -- (the frame mover sizes the bar too: UIMover, SIZE_OWN.meshProgress)
+    RC.ApplyMeshLook = ApplyMeshLook
     -- At login, only when a look was ever set: a default profile gets the
     -- bar exactly as the sync code makes it, when it makes it.
     do
@@ -278,7 +280,7 @@ local function InitializeSidebarMeshSync()
         f.border = RC.UI:CreateSimpleBorder(f)
         local rule = f:CreateTexture(nil, "ARTWORK")
         rule:SetTexture(RC.UI.FLAT)
-        rule:SetHeight(1)
+        Readycheck.Line(rule, "H", 1)
         rule:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
         rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
         f._rcRule = rule

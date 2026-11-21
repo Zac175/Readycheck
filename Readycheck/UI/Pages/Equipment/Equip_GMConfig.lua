@@ -157,7 +157,8 @@ local C, GetCardBg, GetGearSetPreviewPath, TEXT = _seq.C, _seq.GetCardBg, _seq.G
         local real = GM:GetSetNames()
         local sets = {}
         for _, n in ipairs(real) do
-            if not n:match("^~") and not (GM.IsMenuSetHidden and GM:IsMenuSetHidden(n)) then sets[#sets + 1] = n end
+            if not n:match("^~") and not (GM.IsMenuSetHidden and GM:IsMenuSetHidden(n))
+               and not (GM.IsMenuSetScopedOut and GM:IsMenuSetScopedOut(n)) then sets[#sets + 1] = n end
         end
         local fake = #sets == 0
         if fake then sets = SAMPLE_SETS end
@@ -853,6 +854,8 @@ local C, GetCardBg, GetGearSetPreviewPath, TEXT = _seq.C, _seq.GetCardBg, _seq.G
         local gearManagerTabs = {
             { "settings", "Settings"          },
             { "sets",     "Sets"              },
+            -- (named in the class's own word: Equip_AutoSets.lua)
+            { "auto",     self.GearSpecTabName and self:GearSpecTabName() or "Spec & Stance" },
             { "dockable", "Dockable & Macros" },
         }
         if _meshOnGear then
@@ -865,6 +868,11 @@ local C, GetCardBg, GetGearSetPreviewPath, TEXT = _seq.C, _seq.GetCardBg, _seq.G
 
         if RC.gearManagerTab == "settings" then
         yPos = self:BuildGearManagerSettingsTab(parent, yPos, frame, GM, P)
+
+        -- gear by spec and stance / form: what the menus list, and sets that
+        -- go on by themselves - all of it in this one tab (Equip_AutoSets.lua)
+        elseif RC.gearManagerTab == "auto" then
+        if self.BuildGearAutoSetsTab then yPos = self:BuildGearAutoSetsTab(parent, yPos, frame) end
 
         elseif RC.gearManagerTab == "dockable" then
         local dockCard = self:CreateSettingsCard(parent, yPos, RCL["Dockable buttons"])
@@ -1370,7 +1378,7 @@ local C, GetCardBg, GetGearSetPreviewPath, TEXT = _seq.C, _seq.GetCardBg, _seq.G
                             local rule = titleBar:CreateTexture(nil, "ARTWORK")
                             rule:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
                             rule:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-                            rule:SetHeight(1)
+                            RC.Line(rule, "H", 1)
                             rule:SetTexture(FLAT)
                             rule:SetVertexColor(gold.r, gold.g, gold.b, 0.6)
                             if RC.UI.ApplyHeaderArt then

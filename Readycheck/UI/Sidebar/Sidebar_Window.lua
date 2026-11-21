@@ -832,7 +832,7 @@ local BACK_PANELS = {
 
         local sidebarRule = sidebar:CreateTexture(nil, "OVERLAY")
         sidebarRule:SetTexture(FLAT)
-        sidebarRule:SetWidth(1)
+        RC.Line(sidebarRule, "V", 1)
         sidebarRule:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, 0)
         sidebarRule:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
         sidebar.rule = sidebarRule
@@ -1447,6 +1447,8 @@ local BACK_PANELS = {
                 RC.db.fontSettings.mainWindowScale = (math.abs(v - 1) < 0.001) and nil or v
             end
             frame:SetScale(v)
+            -- (its edges are whole screen pixels at the new size: UIF_Widgets, RC.Pixel)
+            if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
             if scaleText then scaleText:SetText(math.floor(v * 100 + 0.5) .. "%") end
             -- the preview keeps its sample at the real, in-game size
             if RC.Preview and RC.Preview.Place then pcall(RC.Preview.Place) end

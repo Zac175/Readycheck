@@ -1331,7 +1331,7 @@ local TEXT = _sbs.TEXT
             end
 
             local insertIndicator = talentCard:CreateTexture(nil, "OVERLAY")
-            insertIndicator:SetHeight(2)
+            RC.Line(insertIndicator, "H", 2)
             do local _il=RC:GetColor("ui","insertionLine"); insertIndicator:SetColorTexture(_il.r,_il.g,_il.b,_il.a or 1) end
             insertIndicator:Hide()
             self.specDetectionDrag.indicator = insertIndicator
@@ -1663,13 +1663,37 @@ local TEXT = _sbs.TEXT
                     end
                 end
                 y = K.Desc(card, y, RCL["Measured from the top middle of the screen."])
-                y = K.Slider(card, y, RCL["Horizontal position"], -800, 800, SpecLook().x or 0, 1,
+                local xS, yS
+                y, xS = K.Slider(card, y, RCL["Horizontal position"], -800, 800, SpecLook().x or 0, 1,
                     function(v) return v .. RCL[" px"] end, function(v) SpecLook().x = v RC:SaveConfigurationToProfile() Live() end)
-                y = K.Slider(card, y, RCL["Vertical position"], -900, 0, SpecLook().y or -150, 1,
+                y, yS = K.Slider(card, y, RCL["Vertical position"], -900, 0, SpecLook().y or -150, 1,
                     function(v) return v .. RCL[" px"] end, function(v) SpecLook().y = v RC:SaveConfigurationToProfile() Live() end)
+                -- (2026-11-20) the scale keeps the popup where it is: its
+                -- spot is in its own units, so the two numbers above are
+                -- rewritten for the new scale (and shown) instead of the
+                -- popup sliding away from the top of the screen
+                local function Quiet(sl, v)
+                    if not (sl and sl.SetValue) then return end
+                    local fn = sl:GetScript("OnValueChanged")
+                    sl:SetScript("OnValueChanged", nil)
+                    sl:SetValue(math_floor(v + 0.5))
+                    sl:SetScript("OnValueChanged", fn)
+                    if sl.Text then sl.Text:SetText(math_floor(v + 0.5) .. RCL[" px"]) end
+                end
                 y = K.Slider(card, y, RCL["Scale"], 0.5, 2, SpecLook().scale or 1, 0.05,
                     function(v) return math_floor(v * 100 + 0.5) .. "%" end,
-                    function(v) SpecLook().scale = v RC:SaveConfigurationToProfile() Live() end, 100)
+                    function(v)
+                        local L = SpecLook()
+                        local old = tonumber(L.scale) or 1
+                        if old <= 0 then old = 1 end
+                        if v and v > 0 and math.abs(old - v) > 0.0005 then
+                            L.x, L.y = (tonumber(L.x) or 0) * old / v, (tonumber(L.y) or -150) * old / v
+                            Quiet(xS, L.x) Quiet(yS, L.y)
+                        end
+                        L.scale = v
+                        RC:SaveConfigurationToProfile()
+                        Live()
+                    end, 100)
                 local test = self.UI:CreateStyledButton(card, RCL["Test Display"], 100, 24)
                 test:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
                 test:SetScript("OnClick", function() RC:ShowSpecDisplay(spec) end)

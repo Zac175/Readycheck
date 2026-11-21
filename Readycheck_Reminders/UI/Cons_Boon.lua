@@ -356,6 +356,23 @@ local TEXT = _sbc.TEXT
                         arY = arY - 36
                     end
                 end
+                -- how big the running buffs are drawn
+                if AR.IconSize and AR.SetIconSize then
+                    local sizeL = self:CreateFontString(arCard, "OVERLAY", nil, 11)
+                    sizeL:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                    sizeL:SetText(RCL["Icon size:"])
+                    sizeL:SetTextColor(TEXT.light[1], TEXT.light[2], TEXT.light[3])
+                    arY = arY - 18
+                    local sizeS = self.UI:CreateSlider(arCard, AR.ICON_MIN or 24, AR.ICON_MAX or 64, AR.IconSize(), 2)
+                    sizeS:SetPoint("TOPLEFT", arCard, "TOPLEFT", 14, arY)
+                    sizeS.Text:SetText(tostring(AR.IconSize()))
+                    sizeS:HookScript("OnValueChanged", function(slider, value)
+                        value = math.floor(value + 0.5)
+                        slider.Text:SetText(tostring(value))
+                        AR.SetIconSize(value)
+                    end)
+                    arY = arY - 36
+                end
                 if AR.CooldownLocks and AR.SetCooldownLocks then
                     self.UI:CreateSettingCheckbox(arCard, arY,
                         RCL["The Boon button waits while the Chronoboon is on cooldown"], AR.CooldownLocks(),

@@ -837,7 +837,7 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
         local dragState = RC.routeStepDrag
         if not stepsCard._dragIndicator then
             local ind = stepsCard:CreateTexture(nil, "OVERLAY")
-            ind:SetHeight(2)
+            RC.Line(ind, "H", 2)
             local _ag = RC:GetColor("ui", "accentGold")
             ind:SetColorTexture(_ag.r, _ag.g, _ag.b, 0.9)
             ind:Hide()
@@ -908,7 +908,7 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
             local cov = holdCover[i]
             if cov then
                 local rail = row:CreateTexture(nil, "ARTWORK")
-                rail:SetWidth(2)
+                RC.Line(rail, "V", 2)
                 rail:SetPoint("TOPLEFT", row, "TOPLEFT", -6, holdCover[i - 1] and 2 or 0)
                 rail:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", -6, holdCover[i + 1] and -2 or 0)
                 rail:SetTexture(RC.UI.FLAT)
@@ -1034,7 +1034,7 @@ local SLOT_LIST, SLOT_NAME, ShowRouteSharePopup, SlotEnchantLabel, StepIcon, Ste
                 local edDiv = row:CreateTexture(nil, "ARTWORK")
                 edDiv:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -30)
                 edDiv:SetPoint("TOPRIGHT", row, "TOPRIGHT", -1, -30)
-                edDiv:SetHeight(1)
+                RC.Line(edDiv, "H", 1)
                 edDiv:SetColorTexture(0, 0, 0, 1)
             end
 

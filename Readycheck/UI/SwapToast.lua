@@ -237,6 +237,14 @@ function ST.BuildNotice(parent, live)
         f:SetFrameStrata("MEDIUM")
         f:SetClampedToScreen(true)
         f:SetScale(tonumber(ST:Settings().scale) or 1)   -- the saved spot is in the frame's units
+        -- (its Scale setting as its size in move mode: UIMover)
+        f._rcSize = { min = 0.6, max = 1.6,
+            get = function() return tonumber(ST:Settings().scale) or 1 end,
+            set = function(v)
+                ST:Settings().scale = v
+                if RC.Position.SetScaleKeepingPoint then RC.Position.SetScaleKeepingPoint(f, v, true)
+                else f:SetScale(v) end
+            end }
         RC.Position.Bind(f, function() return ST:Settings() end,
             { point = "TOPLEFT", pointKey = "anchorPoint", default = { point = "CENTER", relPoint = "CENTER", x = 0, y = 220 },
               -- (a fresh character: upper right of the centre, clear of the reminder text)

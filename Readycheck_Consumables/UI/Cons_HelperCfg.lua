@@ -1503,7 +1503,7 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 end
 
                 local insertIndicator = orderCard:CreateTexture(nil, "OVERLAY")
-                insertIndicator:SetHeight(2)
+                RC.Line(insertIndicator, "H", 2)
                 local ag = RC:GetColor("ui", "accentGold")
                 insertIndicator:SetColorTexture(ag.r, ag.g, ag.b, 0.9)
                 insertIndicator:Hide()

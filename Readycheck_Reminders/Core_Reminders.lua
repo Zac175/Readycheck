@@ -325,6 +325,23 @@ function RC:RefreshReminderPopupLook()
     local n = f._rpCount or 0
     if n <= 0 or not f:IsShown() then return end
     local size = self.db.iconSize or 80
+    -- (2026-11-20) an icon-size change reaches the popup that is up now,
+    -- not the next one: each icon and its dress at the new size, its label
+    -- as wide in proportion as it was
+    for i = 1, n do
+        local icon = f.abilityIcons[i]
+        local old = icon and tonumber(icon.originalSize)
+        if icon and old and old > 0 and math.abs(old - size) > 0.01 then
+            icon:SetSize(size, size)
+            icon.originalSize = size
+            if self.UI and self.UI.DressReadyIcon then self.UI:DressReadyIcon(icon, size) end
+            if icon.cooldownText then
+                local tw = icon.cooldownText:GetWidth()
+                if tw and tw > 0 then icon.cooldownText:SetWidth(tw * size / old) end
+                self:PlaceReminderIconText(icon)
+            end
+        end
+    end
     local w, h = PlaceIcons(f, f.abilityIcons, n, size, self.db.iconSpacing or 5)
     if not (RC.Motion and RC.Motion.IsPlaying(f)) then
         f:SetSize(w + 40, h + 40)
@@ -1330,7 +1347,9 @@ end
 -- Test-mode counterpart to ShowReminder above: duplicates most of its
 -- icon-building logic instead of sharing it, so a change to icon layout
 -- or fallback textures generally needs to be made in both functions.
-function RC:ShowReminderForced(message, abilities, duration)
+-- quiet (2026-11-20): no sound and nothing spoken (the frame mover's
+-- sample: the popup with icons on it to place and size, in silence).
+function RC:ShowReminderForced(message, abilities, duration, quiet)
     abilities = abilities or {}
 
     local frame = self.reminderFrame
@@ -1472,6 +1491,8 @@ function RC:ShowReminderForced(message, abilities, duration)
     if duration and duration > 0 then
         self:ScheduleTimer("HideReminder", duration)
     end
+
+    if quiet then return end
 
     if self.db.soundEnabled then
         local perAbilitySound = nil

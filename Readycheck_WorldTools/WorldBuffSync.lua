@@ -251,6 +251,47 @@ local function InitializeWorldBuffSync()
         return bestIdx
     end
 
+    -- ============================================================
+    -- THE SONGFLOWER CLOCK (2026-11-19, Zac: "readycheck songflower
+    -- timers seem to be off by like 10 seconds sometimes again")
+    -- Three things put a node's time off by seconds:
+    --   * a pick of your own was dated by the scan that noticed the buff,
+    --     and that scan rides the state broadcast, which waits out the
+    --     gap between two sends (WB_MIN_SEND_GAP): up to 8 s late. The
+    --     buff itself says when it landed - an hour long, so its age is
+    --     its length minus what is left - and it is read 0.2 s after it
+    --     lands (NoteFlowerPick);
+    --   * a relayed pick is late by its travel time, and the later of
+    --     two times for a node always won, so a pick heard back from the
+    --     guild pushed an exact time later. A node is picked once in 25
+    --     minutes: two times within a minute are one pick, and the
+    --     earlier is the truer (FlowerMerge);
+    --   * Nova World Buffs' times (and this addon's own timer store) are
+    --     on the server's clock, the board counts on this computer's,
+    --     and the two differ by seconds on many computers. They are
+    --     moved onto this computer's clock before use (ServerLead).
+    -- ============================================================
+    -- how far the server's clock runs ahead of this computer's, in whole
+    -- seconds; held until it is off by more than one (the two tick at
+    -- different moments, so the bare difference flickers by one)
+    local serverLead
+    local function ServerLead()
+        if not GetServerTime then return 0 end
+        local d = GetServerTime() - time()
+        if serverLead == nil or math.abs(d - serverLead) > 1 then serverLead = d end
+        return serverLead
+    end
+    local FLOWER_SAME = 60
+    local function FlowerMerge(have, new)
+        new = tonumber(new)
+        if not new or new <= 0 then return have end
+        have = tonumber(have)
+        if not have or have <= 0 then return new end
+        if math.abs(new - have) <= FLOWER_SAME then return (new < have) and new or have end
+        return (new > have) and new or have
+    end
+    WB.FlowerMerge, WB.ServerLead = FlowerMerge, ServerLead
+
     local function NormKey(s)
         if type(s) ~= "string" then return s end
         return string.lower(s)
@@ -857,6 +898,42 @@ local function InitializeWorldBuffSync()
     -- Same test; the heartbeat reads it under this name.
     local FeatureEnabled = MeshOn
 
+    -- When the Songflower buff on you landed, on this computer's clock
+    -- (nil without the buff), and how long ago.
+    function WB:FlowerBuffAt()
+        for i = 1, 40 do
+            local name, duration, expiration, sid = ReadBuff(i)
+            if not name then break end
+            local key = (sid and ID_TO_KEY[sid]) or NAME_TO_KEY[name]
+            if key == "songflower" then
+                local rem = (expiration and expiration > 0) and (expiration - GetTime()) or 0
+                local full = (tonumber(duration) and duration > 0) and duration or DROP_DUR.songflower
+                if rem <= 0 or rem > full + 1 then return nil end
+                local age = full - rem
+                if age < 0 then age = 0 end
+                return math_floor(time() - age + 0.5), age
+            end
+        end
+        return nil
+    end
+    -- A Songflower just picked (its buff under 20 s old, and not the pick
+    -- already noted): its node gets the buff's own landing time. Called
+    -- 0.2 s after your auras change and by every self scan.
+    local FLOWER_FRESH = 20
+    function WB:NoteFlowerPick()
+        local at, age = self:FlowerBuffAt()
+        if not at or age > FLOWER_FRESH then return false end
+        if self._flowerNoted and math.abs(at - self._flowerNoted) <= 3 then return false end
+        local idx = NearestFlowerNode()
+        if not idx then return false end
+        self._flowerNoted = at
+        self.dropLog.flowers[idx] = FlowerMerge(self.dropLog.flowers[idx], at)
+        if RC.DebugPrint then
+            RC:DebugPrint("WorldBuffSync: songflower " .. idx .. " picked " .. string.format("%.1f", age) .. "s ago", "meshsync")
+        end
+        return true
+    end
+
     function WB:RecordSelf()
         local booned, buffs, frozen = self:BuildAuraSnapshot()
 
@@ -899,10 +976,9 @@ local function InitializeWorldBuffSync()
         for _, d in ipairs(DROP_TRACK) do
             local present = (buffs[d.key] and buffs[d.key] > 0) and true or false
             if d.key == "songflower" then
-                if self._dropInit and present and not self._dropPresent[d.key] then
-                    local idx = NearestFlowerNode()
-                    if idx then self.dropLog.flowers[idx] = now end
-                end
+                -- (dated by the buff itself, and only a buff that has just
+                -- landed is a pick: one let out of a Chronoboon is not)
+                self:NoteFlowerPick()
             else
                 if self._dropInit and present and not self._dropPresent[d.key] then
                     if now > (self.dropLog[d.key] or 0) then self.dropLog[d.key] = now end
@@ -1183,8 +1259,9 @@ local function InitializeWorldBuffSync()
         if flowerAges then
             local now = time()
             for idx, age in pairs(flowerAges) do
-                local dt = now - age
-                if dt > (self.dropLog.flowers[idx] or 0) then self.dropLog.flowers[idx] = dt end
+                -- (the same pick heard again is late by its travel time:
+                -- the earlier of the two stands - FlowerMerge)
+                self.dropLog.flowers[idx] = FlowerMerge(self.dropLog.flowers[idx], now - age)
             end
         end
         if bnetId and onyAt and onyAt > GetServerTime() then
@@ -2232,16 +2309,18 @@ local function InitializeWorldBuffSync()
         local out = {}
         for _, d in ipairs(DROP_TRACK) do
             local rem, known
-            if nwb and nwb[d.key] ~= nil then
-                rem, known = nwb[d.key], true
-            elseif d.key == "songflower" then
+            if d.key == "songflower" then
+                -- (the same per-node list the node rows and the map pins
+                -- read, so the row and the pins never disagree)
                 local sfNext, sfData = nil, false
-                for _, t in pairs(self.dropLog.flowers or {}) do
+                for _, t in pairs(self:FlowerTimes()) do
                     sfData = true
                     local r = (t + d.cd) - now
                     if r > 0 and (sfNext == nil or r < sfNext) then sfNext = r end
                 end
                 if sfData then rem, known = (sfNext or 0), true end
+            elseif nwb and nwb[d.key] ~= nil then
+                rem, known = nwb[d.key], true
             else
                 local t = self.dropLog[d.key]
                 known = (t ~= nil)
@@ -2283,18 +2362,34 @@ local function InitializeWorldBuffSync()
         return out
     end
 
-    function WB:GetSongflowerNodes()
-        local now = time()
+    -- Every node's pick time this client knows, on this computer's clock:
+    -- its own log (picks of yours and relayed ones), Nova World Buffs'
+    -- saved times and this addon's own timer store (picks seen in the
+    -- combat log and heard from the guild) - the last two moved off the
+    -- server's clock. Two times within a minute are one pick: the earlier.
+    function WB:FlowerTimes()
         local best = {}
         for idx, t in pairs(self.dropLog.flowers or {}) do
-            if t and (best[idx] == nil or t > best[idx]) then best[idx] = t end
+            best[idx] = FlowerMerge(best[idx], t)
         end
+        local lead = ServerLead()
         local nd = self:ReadNWBFlowers()
         if nd then
-            for idx, t in pairs(nd) do
-                if t and (best[idx] == nil or t > best[idx]) then best[idx] = t end
+            for idx, t in pairs(nd) do best[idx] = FlowerMerge(best[idx], t - lead) end
+        end
+        local WBT = RC.WorldBuffTimers
+        if WBT and WBT.GetFlowerTimes then
+            local ok, st = pcall(WBT.GetFlowerTimes, WBT)
+            if ok and type(st) == "table" then
+                for idx, t in pairs(st) do best[idx] = FlowerMerge(best[idx], t - lead) end
             end
         end
+        return best
+    end
+
+    function WB:GetSongflowerNodes()
+        local now = time()
+        local best = self:FlowerTimes()
         local out = {}
         for idx, t in pairs(best) do
             local rem = (t + DROP_CD.songflower) - now
@@ -2353,6 +2448,9 @@ local function InitializeWorldBuffSync()
             wbWatchNames[name] = (key == "battleshout") and LONG_SHOUT_SECS or 0
         end
         RC:RegisterUnitAuraCallback("WorldBuffSync", 0.2, function()
+            -- (a Songflower just picked is dated now, from its buff: the
+            -- broadcast below may wait out its send gap)
+            WB:NoteFlowerPick()
             BroadcastIfChanged()
             -- Second look 2s later: unbooning lands the stored buffs one
             -- at a time, so the first snapshot catches only part of it.

@@ -757,7 +757,7 @@ local function InitializePolarityMode()
 
         local divider = bar:CreateTexture(nil, "ARTWORK", nil, 1)
         divider:SetTexture(flat)
-        divider:SetWidth(1)
+        Readycheck.Line(divider, "V", 1)
         divider:SetPoint("TOPLEFT", icon, "TOPRIGHT", 0, 0)
         divider:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 0, 0)
         bar.divider = divider

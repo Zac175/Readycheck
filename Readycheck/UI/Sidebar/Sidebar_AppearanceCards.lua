@@ -246,6 +246,22 @@ local ColorPreviews = _sbs.ColorPreviews
             }, L.mainPlain and "plain" or "accent", function(v)
                 UI:SetLook("mainButton", (v == "plain") and "plain" or nil)
             end)
+            -- (2026-11-20) the weight of borders and lines, everywhere
+            -- Readycheck draws one (RC.Pixel, UIF_Widgets)
+            Menu(RCL["Borders and lines"], 260, {
+                { text = RCL["One screen pixel (hairline)"], value = "pixel" },
+                { text = RCL["Scaled with the UI (heavier)"], value = "scaled" },
+            }, (fs.edgeWeight == "scaled") and "scaled" or "pixel", function(v)
+                UI:SetLook("edgeWeight", (v == "scaled") and "scaled" or nil)
+            end)
+            Help(RCL["A hairline is one pixel on every screen and is how it ships. Scaled grows with the UI scale: two pixels at 4K."])
+            -- (2026-11-20) the open world map lies over the pieces it
+            -- covers (RC.UnderMap, UIMover.lua); on unless switched off
+            if RC.UnderMap then
+                Check(RCL["On-screen pieces go behind the open map"], RC.UnderMap.On(), function(v)
+                    RC.UnderMap.Set(v and true or false)
+                end, RCL["While the map window is open, a bar, an icon or a reminder it lies over is drawn behind it and comes back when the map closes. Off, they stay on top."])
+            end
             -- the wheel
             Slider(RCL["Wheel speed"], 50, 300, 10, math.floor(L.wheel * 100 + 0.5), function(v)
                 UI:SetLook("wheelSpeed", (v ~= 100) and (v / 100) or nil)

@@ -120,7 +120,7 @@ function CS:CreateHeader(text, yOffset)
     header:Show()
 
     local line = self.panelFrame.scrollChild:CreateTexture(nil, "ARTWORK")
-    line:SetHeight(1)
+    RC.Line(line, "H", 1)
     line:SetPoint("LEFT", header, "RIGHT", 6, 0)
     line:SetPoint("RIGHT", self.panelFrame.scrollChild, "RIGHT", -5, 0)
     line:SetColorTexture(headerCol.r, headerCol.g, headerCol.b, 0.3)

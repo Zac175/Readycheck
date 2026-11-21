@@ -1,8 +1,8 @@
 ## Interface: 11509, 20506, 16001
-## Title: |cffd6a640Readycheck|r |cff999999v5.0.11|r
+## Title: |cffd6a640Readycheck|r |cff999999v5.0.12|r
 ## Notes: The Complete Character Toolkit - reminders, consumables, gear, trinket swaps, TTK modeling and more
 ## Author: Zac
-## Version: 5.0.11
+## Version: 5.0.12
 ## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
 ## SavedVariables: ReadycheckDB, WarriorReminderDB
 ## X-Category: Combat
@@ -109,6 +109,7 @@ UI\Sidebar\Sidebar_Hooks.lua
 UI\Pages\Equipment\Equip_Base.lua
 UI\Pages\Equipment\Equip_TrinketQueues.lua
 UI\Pages\Equipment\Equip_GMConfig.lua
+UI\Pages\Equipment\Equip_AutoSets.lua
 UI\Pages\Equipment\Equip_SetEditor.lua
 UI\Consumables\Cons_Base.lua
 UI\Consumables\Cons_Notes.lua

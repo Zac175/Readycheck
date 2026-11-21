@@ -332,12 +332,12 @@ local TEXT = _sbs.TEXT
 
             local szLbl=self:CreateFontString(iCard,"OVERLAY",nil,11); szLbl:SetPoint("TOPLEFT",iCard,"TOPLEFT",14,pcy); szLbl:SetText(RCL["Icon Size:"]); szLbl:SetTextColor(TEXT.light[1],TEXT.light[2],TEXT.light[3]); pcy=pcy-22
             local szS=self.UI:CreateSlider(iCard,0,256,self.db.iconSize or 80,1); szS:SetPoint("TOPLEFT",iCard,"TOPLEFT",14,pcy); szS.Text:SetText((self.db.iconSize or 80)..RCL[" px"])
-            szS:SetScript("OnValueChanged",function(s,v) v=math.floor(v); self.db.iconSize=v; s.Text:SetText(v..RCL[" px"]); if s.saveTimer then s.saveTimer:Cancel() end; s.saveTimer=C_Timer.NewTimer(0.5,function() self:SaveConfigurationToProfile() end) end)
+            szS:SetScript("OnValueChanged",function(s,v) v=math.floor(v); self.db.iconSize=v; s.Text:SetText(v..RCL[" px"]); if self.RefreshReminderPopupLook then self:RefreshReminderPopupLook() end; if s.saveTimer then s.saveTimer:Cancel() end; s.saveTimer=C_Timer.NewTimer(0.5,function() self:SaveConfigurationToProfile() end) end)
             pcy=pcy-48
 
             local spLbl=self:CreateFontString(iCard,"OVERLAY",nil,11); spLbl:SetPoint("TOPLEFT",iCard,"TOPLEFT",14,pcy); spLbl:SetText(RCL["Icon Spacing:"]); spLbl:SetTextColor(TEXT.light[1],TEXT.light[2],TEXT.light[3]); pcy=pcy-22
             local spS=self.UI:CreateSlider(iCard,0,100,self.db.iconSpacing or 5,1); spS:SetPoint("TOPLEFT",iCard,"TOPLEFT",14,pcy); spS.Text:SetText((self.db.iconSpacing or 5)..RCL[" px"])
-            spS:SetScript("OnValueChanged",function(s,v) v=math.floor(v); self.db.iconSpacing=v; s.Text:SetText(v..RCL[" px"]); if s.saveTimer then s.saveTimer:Cancel() end; s.saveTimer=C_Timer.NewTimer(0.5,function() self:SaveConfigurationToProfile() end) end)
+            spS:SetScript("OnValueChanged",function(s,v) v=math.floor(v); self.db.iconSpacing=v; s.Text:SetText(v..RCL[" px"]); if self.RefreshReminderPopupLook then self:RefreshReminderPopupLook() end; if s.saveTimer then s.saveTimer:Cancel() end; s.saveTimer=C_Timer.NewTimer(0.5,function() self:SaveConfigurationToProfile() end) end)
             pcy=pcy-48
 
             -- The look of each icon: a 1px ring on the edge (plus a black

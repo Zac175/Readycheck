@@ -213,6 +213,629 @@ local function InitializeUIMover()
         end
     end
 
+    ------------------------------------------------------------------
+    -- ONE SCALE FOR THE PIECES ON THE SCREEN (2026-11-19)
+    -- Every bar, tracker and alert has a size of its own, and a player on
+    -- a smaller screen had to go through them one by one.
+    -- fontSettings.pieceScale (0.5 to 1.5, nil = 1; kept beside the
+    -- window's own scale, so it travels with the profile) sizes them all
+    -- at once.
+    --   HOW. The pieces that sit on the screen itself (their parent is
+    --   UIParent) are moved under one plain frame, ReadycheckScreen, that
+    --   covers the screen and carries the scale. A frame's size and its
+    --   offsets are both in its own units (Core_Position's rule), so a
+    --   piece gets smaller or bigger and keeps its place in the layout.
+    --   Nothing saved is rewritten; back at 100% everything is exactly
+    --   where it was.
+    --   WHO IS LEFT ALONE. At 100% - every character until its owner
+    --   moves the slider - no frame is touched at all. Never taken: the
+    --   windows among the movable frames (the gear set picker, the spec
+    --   popup, the consumables checker, the after-raid window) and the
+    --   gear buttons docked to the character window.
+    --   (2026-11-20) The stats bar and the route tracker are taken like
+    --   the rest: the bar is as wide as its cells and placed by
+    --   Core_Position; the tracker's hover strip follows its size on the
+    --   screen, and docked to ZacUI's raid chat it is drawn in the
+    --   screen's own units whatever this scale is (RR_Tracker).
+    --   A piece that holds secure buttons is taken, and the scale
+    --   changed, only outside a fight.
+    ------------------------------------------------------------------
+    local Screen = { MIN = 0.5, MAX = 1.5 }
+    RC.Screen = Screen
+    local SCREEN_SKIP = {
+        gearSetPrompt = true, specPopup = true, consumablesChecker = true, afterRaidBuffs = true,
+    }
+    local screenHolder
+    local screenTaken = setmetatable({}, { __mode = "k" })
+    local screenWait = false
+
+    function Screen.Covers(key)
+        return type(key) == "string" and not SCREEN_SKIP[key] and not key:find("^dockGrp")
+    end
+    function Screen.Scale()
+        local fs = RC.db and RC.db.fontSettings
+        local v = type(fs) == "table" and tonumber(fs.pieceScale) or 1
+        if v ~= v then v = 1 end
+        if v < Screen.MIN then v = Screen.MIN elseif v > Screen.MAX then v = Screen.MAX end
+        if math.abs(v - 1) < 0.005 then v = 1 end
+        return v
+    end
+    function Screen.Holder() return screenHolder end
+    function Screen.Has(f) return f ~= nil and screenTaken[f] == true end
+
+    local function ScreenHolder()
+        if not screenHolder then
+            screenHolder = CreateFrame("Frame", "ReadycheckScreen", UIParent)
+            screenHolder:SetAllPoints(UIParent)
+        end
+        return screenHolder
+    end
+
+    -- one piece under the holder; false when it has to wait for the fight to end
+    local function ScreenTake(f)
+        if type(f) ~= "table" or screenTaken[f] or f == screenHolder then return true end
+        if not f.GetParent or f:GetParent() ~= UIParent then return true end
+        if InCombatLockdown() and f.IsProtected and f:IsProtected() then return false end
+        local strata = f.GetFrameStrata and f:GetFrameStrata()
+        local level = f.GetFrameLevel and f:GetFrameLevel()
+        f:SetParent(ScreenHolder())
+        -- (a new parent hands the frame its own strata and a level under it)
+        if strata and f.SetFrameStrata then f:SetFrameStrata(strata) end
+        if level and f.SetFrameLevel then f:SetFrameLevel(level) end
+        screenTaken[f] = true
+        return true
+    end
+
+    local function ScreenSweep()
+        local all = true
+        for key, data in pairs(UM.frames or {}) do
+            local f = data and data.frame
+            if f and not screenTaken[f] and Screen.Covers(key) then
+                if not ScreenTake(f) then all = false end
+            end
+        end
+        return all
+    end
+
+    -- The scale as saved, onto the screen. Safe to call at any time.
+    function Screen.Apply()
+        local k = Screen.Scale()
+        if k == 1 and not screenHolder then return true end   -- never used: nothing exists, nothing to do
+        if InCombatLockdown() then
+            screenWait = true
+            return false
+        end
+        ScreenHolder():SetScale(k)
+        local all = true
+        if k ~= 1 then all = ScreenSweep() end
+        if not all then screenWait = true end
+        -- (the pieces' edges are whole screen pixels at the new size: UIF_Widgets, RC.Pixel)
+        if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
+        -- (the route tracker's hover strip and its chat dock are sized
+        -- from where the tracker now stands: RR_Tracker)
+        do
+            local RR = RC.RaidRoute
+            if RR and RR.trackerFrame and RR.RefreshTracker and screenTaken[RR.trackerFrame] and not RR._measuring then
+                pcall(RR.RefreshTracker, RR)
+            end
+        end
+        -- pieces are made as they are first needed, and a profile switch
+        -- brings another scale: looked at again every two seconds once the
+        -- scale has been in use
+        if not Screen.ticker and RC.Profiler and RC.Profiler.TrackTicker then
+            Screen.ticker = RC.Profiler:TrackTicker("UIMover:ScreenScale", 2, function()
+                if InCombatLockdown() then return end
+                local want = Screen.Scale()
+                if screenHolder and math.abs((screenHolder:GetScale() or 1) - want) > 0.0005 then
+                    Screen.Apply()
+                elseif want ~= 1 and not ScreenSweep() then
+                    screenWait = true
+                end
+            end)
+        end
+        return all
+    end
+
+    function Screen.Set(v)
+        if not RC.db then return end
+        v = tonumber(v) or 1
+        if v < Screen.MIN then v = Screen.MIN elseif v > Screen.MAX then v = Screen.MAX end
+        RC.db.fontSettings = RC.db.fontSettings or {}
+        RC.db.fontSettings.pieceScale = (math.abs(v - 1) >= 0.005) and v or nil
+        Screen.Apply()
+        if RC.DebugPrint then RC:DebugPrint("On-screen pieces scale: " .. tostring(Screen.Scale()), "uimover") end
+    end
+
+    do
+        local ev = CreateFrame("Frame")
+        ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+        ev:SetScript("OnEvent", function()
+            if screenWait then
+                screenWait = false
+                Screen.Apply()
+            end
+        end)
+    end
+
+    ------------------------------------------------------------------
+    -- UNDER THE MAP (2026-11-20, Zac, with pictures of a reminder icon,
+    -- bar icons, a dock button's name and timer texts drawn over the open
+    -- world map: "can you fix things like this" ... "i know i pointed out
+    -- 1 thing but it needs to be fixed for all")
+    --   WHY THEY WERE ON TOP. The game's map as a window is on the MEDIUM
+    --   layer and is not a "top level" window, so its level stays low:
+    --   every piece on MEDIUM with a higher level, and every piece on HIGH
+    --   or above, is drawn over it. Raising the map is not the fix (it
+    --   would cover bags, the character window and every popup).
+    --   WHAT HAPPENS. While the map window is open every on-screen piece of
+    --   Readycheck's whose box overlaps the map's is put one layer under
+    --   the map, and put back the moment the map closes, the piece hides
+    --   or the two no longer overlap. Nothing saved is touched; a piece
+    --   beside the map is not touched; full screen the map is over every
+    --   piece already.
+    --   ALL OF THEM, NOT A LIST OF THE ONES SEEN IN A PICTURE:
+    --     1. every movable frame (UM.frames) and every frame RC.Position
+    --        places (a frame made after the mover's own pass - the weapon
+    --        reminder - is on that list only);
+    --     2. the dockable gear buttons (RC.GearManager.buttons);
+    --     3. the pieces on the dialog layer, by name (PIECE_NAMES: the
+    --        nameplate icons' host, the world-tools alert and its timer
+    --        anchors) - a layer is no test of what is a window here;
+    --     4. what a file adds for itself: RC.UnderMapProviders (a list any
+    --        file may add fn(each) to at any time, this one loaded or not
+    --        - the pull timers' live bars hang on the screen, not on
+    --        their anchor);
+    --     5. THE NET: every frame on the screen (a child of UIParent or of
+    --        the pieces' holder) that Readycheck's code made, whoever
+    --        forgot to list it. Whose it is comes from the client itself
+    --        (issecurevariable names the addon that made a global or wrote
+    --        a field), so no other addon's frame and nothing of the
+    --        game's is ever touched.
+    --   INSIDE A PIECE. A child that was put on a layer of its own (a dock
+    --   button's name and timer texts are on HIGH) does not follow its
+    --   parent down on this client: each is put under by itself and its own
+    --   layer is noted first, so it goes back to exactly that - also on a
+    --   client where the parent's change does carry it along.
+    --   BESIDE A PIECE. What hangs on the screen next to a frame goes with
+    --   it: its handle strip (RC.UI:AttachHudHandle), the route tracker's
+    --   step arrows (navHolder), and anything in frame._rcSatellites.
+    --   AT ONCE. A piece that shows, or sets its own layer again, while
+    --   the map is open is looked at in that same moment (its OnShow and
+    --   SetFrameStrata are hooked once), not at the next quarter second:
+    --   the weapon reminder puts itself on HIGH each time it shows and was
+    --   in front for an instant.
+    --   NEVER a window: a top-level frame or one on the dialog layers that
+    --   is not named a piece, the mover's own windows (SCREEN_SKIP), the
+    --   after-boss set picker, the stats panel on the character window,
+    --   the key-picking covers; and never a frame that fills the screen
+    --   (a holder, not a piece).
+    --   IN A FIGHT a secure frame cannot change layer: it is left as it is
+    --   and looked at again when the fight ends (its texts, which are not
+    --   secure, still go under).
+    --   WHEN IT STARTS. This file starts a second after the login, so the
+    --   map is hooked the moment this runs (the first version waited for
+    --   a login event already past and never hooked anything).
+    --   fontSettings.underMap = false switches it off (Appearance >
+    --   Window look). The same thing ZacUI does for its own pieces.
+    --   Cost: nothing while the map is closed (two script hooks, and one
+    --   early return in each hooked piece's show); open, one walk of the
+    --   pieces four times a second, their children every other time.
+    ------------------------------------------------------------------
+    do
+        local Under = {}
+        RC.UnderMap = Under
+        RC.UnderMapProviders = RC.UnderMapProviders or {}
+        local RANK = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6,
+            FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+        local BY_RANK = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
+        -- pieces on a window's layer, windows on a piece's, and the host
+        -- whose icons stand all over the screen (no box of its own)
+        local PIECE_NAMES = { RC_WTAlertFrame = true, RC_WTPullTimerMainAnchor = true,
+            RC_WTPullTimerIdleAnchor = true, ReadycheckNameplateHost = true }
+        local WINDOW_NAMES = { WR_GearSetPrompt = true, WR_CharacterStatsPanel = true }
+        local ALWAYS_NAMES = { ReadycheckNameplateHost = true }
+        local KID_DEPTH = 3
+        local weak = { __mode = "k" }
+        local lowered = setmetatable({}, weak)   -- piece -> { had, put, moved, kids = { [frame] = its own layer } }
+        local hooks = setmetatable({}, weak)     -- piece -> true: its show / layer change is looked at at once
+        local owned = setmetatable({}, weak)     -- frame -> true | false: made by Readycheck (the net)
+        local windowSet = {}                     -- this look's windows among the listed frames
+        local seen = {}
+        local netList, netCount = {}, -1
+        local ticker, hooked
+        local waiting = false                    -- a secure frame could not be touched in a fight
+        local working = false                    -- our own layer change: the hooks stay quiet
+        local active = false                     -- the map is open as a window and the switch is on
+        local deep = true                        -- this look also walks the pieces' children
+        local tick = 0
+        local map, ml, mb, mr, mt, mapRank, below, screenW, screenH
+
+        function Under.On()
+            local fs = RC.db and RC.db.fontSettings
+            return not (type(fs) == "table" and fs.underMap == false)
+        end
+        function Under.Lowered(f)
+            local rec = lowered[f]
+            return rec ~= nil and rec.moved == true
+        end
+
+        local function Map() return _G.WorldMapFrame end
+        local function Rank(st) return RANK[st or ""] or 3 end
+        local function Rect(f)
+            if not (f.GetRect and f.GetEffectiveScale) then return nil end
+            local ok, l, b, w, h = pcall(f.GetRect, f)
+            if not ok or type(l) ~= "number" or type(w) ~= "number" or type(h) ~= "number" then return nil end
+            local sc = f:GetEffectiveScale() or 1
+            return l * sc, b * sc, (l + w) * sc, (b + h) * sc
+        end
+        -- the piece's box in screen pixels; a holder with no size of its
+        -- own (icons hung on a 1 x 1 frame) is as big as what it holds
+        local function Box(f)
+            local l, b, r, t = Rect(f)
+            if l and (r - l) > 2 and (t - b) > 2 then return l, b, r, t end
+            local L, B, R, T
+            if f.GetChildren then
+                local kids = { f:GetChildren() }
+                for i = 1, #kids do
+                    local c = kids[i]
+                    if type(c) == "table" and c.IsShown and c:IsShown() then
+                        local cl, cb, cr, ct = Rect(c)
+                        if cl and (cr - cl) > 0 and (ct - cb) > 0 then
+                            if not L or cl < L then L = cl end
+                            if not B or cb < B then B = cb end
+                            if not R or cr > R then R = cr end
+                            if not T or ct > T then T = ct end
+                        end
+                    end
+                end
+            end
+            return L, B, R, T
+        end
+        local function IsWindow(f)
+            local name = f.GetName and f:GetName()
+            if name then
+                if PIECE_NAMES[name] then return false end
+                if WINDOW_NAMES[name] then return true end
+            end
+            if windowSet[f] then return true end
+            if f.IsToplevel and f:IsToplevel() then return true end
+            return Rank(f:GetFrameStrata()) >= RANK.DIALOG
+        end
+        local function Protected(f)
+            return (f.IsProtected and f:IsProtected()) and true or false
+        end
+        local function Set(f, strata)
+            working = true
+            pcall(f.SetFrameStrata, f, strata)
+            working = false
+        end
+        local function EachKid(f, depth, fn)
+            if depth <= 0 or not f.GetChildren then return end
+            local kids = { f:GetChildren() }
+            for i = 1, #kids do
+                local c = kids[i]
+                if type(c) == "table" and c.GetFrameStrata and not (c.IsForbidden and c:IsForbidden()) then
+                    fn(c)
+                    EachKid(c, depth - 1, fn)
+                end
+            end
+        end
+
+        local function Restore(f)
+            local rec = lowered[f]
+            if not rec then return end
+            local combat = InCombatLockdown and InCombatLockdown()
+            local left = false
+            if rec.put then
+                if combat and Protected(f) then
+                    left = true
+                else
+                    -- (only while it is still where it was put: a piece that took a layer of its own since keeps that)
+                    if f.GetFrameStrata and f:GetFrameStrata() == rec.put then Set(f, rec.had) end
+                    rec.put, rec.had = nil, nil
+                end
+            end
+            -- (after the parent: where a parent's change carries its children, this is what puts
+            -- them right. A parent that has to wait for the fight to end: its children go back
+            -- now and stay on record, to be put right once more after it)
+            local parentWaits = left
+            for k, ks in pairs(rec.kids) do
+                if combat and Protected(k) then
+                    left = true
+                else
+                    if k.GetFrameStrata and k:GetFrameStrata() ~= ks then Set(k, ks) end
+                    if not parentWaits then rec.kids[k] = nil end
+                end
+            end
+            if left then waiting = true else lowered[f] = nil end
+        end
+        local function RestoreAll()
+            for f in pairs(lowered) do pcall(Restore, f) end
+        end
+
+        local function Lower(f, walk)
+            local rec = lowered[f]
+            local combat = InCombatLockdown and InCombatLockdown()
+            if not rec then
+                rec = { kids = {} }
+                lowered[f] = rec
+                -- noted BEFORE the piece moves: every child on a layer of its own
+                EachKid(f, KID_DEPTH, function(k)
+                    local p = k:GetParent()
+                    local ks = k:GetFrameStrata()
+                    if p and p.GetFrameStrata and ks ~= p:GetFrameStrata() then rec.kids[k] = ks end
+                end)
+                walk = true
+            end
+            local st = f:GetFrameStrata()
+            if Rank(st) >= mapRank then
+                if combat and Protected(f) then
+                    waiting = true
+                else
+                    rec.had, rec.put, rec.moved = st, below, true
+                    Set(f, below)
+                end
+            end
+            if walk then
+                EachKid(f, KID_DEPTH, function(k)
+                    local ks = k:GetFrameStrata()
+                    if Rank(ks) >= mapRank then
+                        if combat and Protected(k) then
+                            waiting = true
+                        else
+                            rec.kids[k] = ks
+                            rec.moved = true
+                            Set(k, below)
+                        end
+                    end
+                end)
+            end
+        end
+
+        local Look
+        -- a piece that shows, or sets its own layer, while the map is open
+        local function Nudge(f)
+            if working or not active or type(f) ~= "table" then return end
+            seen[f] = nil
+            local was = deep
+            deep = true
+            pcall(Look, f)
+            deep = was
+        end
+        local function Hook(f)
+            if hooks[f] then return end
+            hooks[f] = true
+            if f.HookScript then pcall(f.HookScript, f, "OnShow", Nudge) end
+            -- (never a method hook on a secure frame: the game's own code calling that method
+            -- would run through our hook; its show script is enough there)
+            if not Protected(f) and type(f.SetFrameStrata) == "function" and hooksecurefunc then
+                pcall(hooksecurefunc, f, "SetFrameStrata", Nudge)
+            end
+        end
+        -- with: nil = by its own box, true / false = as the frame it hangs beside
+        Look = function(f, with)
+            if type(f) ~= "table" or not f.GetFrameStrata or f == map or seen[f] then return end
+            if f.IsForbidden and f:IsForbidden() then return end
+            seen[f] = true
+            Hook(f)
+            local under = false
+            if f.IsShown and f:IsShown() and not IsWindow(f) then
+                local name = f.GetName and f:GetName()
+                if with ~= nil then
+                    under = with
+                elseif name and ALWAYS_NAMES[name] then
+                    under = true
+                else
+                    local l, b, r, t = Box(f)
+                    if l and r > ml + 1 and l < mr - 1 and t > mb + 1 and b < mt - 1
+                       -- (a frame that fills the screen holds pieces; it is not one)
+                       and not ((r - l) >= screenW * 0.9 and (t - b) >= screenH * 0.9) then
+                        under = true
+                    end
+                end
+            end
+            if under then Lower(f, deep) else Restore(f) end
+            -- what hangs on the screen beside it
+            local h = rawget(f, "handle")
+            if type(h) == "table" and h.GetFrameStrata and rawget(h, "frame") == f and h:GetParent() ~= f then Look(h, under) end
+            local nav = rawget(f, "navHolder")
+            if type(nav) == "table" and nav.GetFrameStrata and nav:GetParent() ~= f then Look(nav, under) end
+            local sats = rawget(f, "_rcSatellites")
+            if type(sats) == "table" then
+                for i = 1, #sats do Look(sats[i], under) end
+            end
+        end
+        local function LookSafe(f) pcall(Look, f) end
+
+        -- THE NET. true when Readycheck's code made this frame: the client
+        -- names the addon that created a global, or that wrote a field
+        local function Owned(f)
+            local v = owned[f]
+            if v ~= nil then return v end
+            v = false
+            if issecurevariable then
+                pcall(function()
+                    local name = f.GetName and f:GetName()
+                    if name and _G[name] == f then
+                        local secure, who = issecurevariable(_G, name)
+                        if not secure and type(who) == "string" and who:find("^Readycheck") then v = true end
+                        return
+                    end
+                    -- no name: its fields. Ours when every field on it was written by our code and none by
+                    -- the game or another addon (a frame of theirs that we only dressed carries both)
+                    local n, mine = 0, 0
+                    for k in pairs(f) do
+                        if type(k) == "string" then
+                            n = n + 1
+                            local secure, who = issecurevariable(f, k)
+                            if secure or type(who) ~= "string" or not who:find("^Readycheck") then return end
+                            mine = mine + 1
+                            if n >= 12 then break end
+                        end
+                    end
+                    if mine > 0 then v = true end
+                end)
+            end
+            owned[f] = v
+            return v
+        end
+        local function Net()
+            local holder = Screen.Holder and Screen.Holder()
+            local n = (UIParent.GetNumChildren and UIParent:GetNumChildren() or 0)
+                + (holder and holder.GetNumChildren and holder:GetNumChildren() or 0) * 10000
+            if n ~= netCount then      -- (something was made, or changed parent, since)
+                netCount = n
+                wipe(netList)
+                local kids = { UIParent:GetChildren() }
+                for i = 1, #kids do
+                    local f = kids[i]
+                    -- (one frame that cannot be asked never stops the scan)
+                    local ok, mine = pcall(function()
+                        return type(f) == "table" and f ~= holder and not (f.IsForbidden and f:IsForbidden()) and Owned(f)
+                    end)
+                    if ok and mine then netList[#netList + 1] = f end
+                end
+                if holder and holder.GetChildren then
+                    kids = { holder:GetChildren() }
+                    for i = 1, #kids do
+                        if type(kids[i]) == "table" then netList[#netList + 1] = kids[i] end
+                    end
+                end
+            end
+            return netList
+        end
+
+        local Sweep
+        -- (a look that fails says so once in the debug log and is tried again at the next)
+        function Under.Sweep()
+            local ok, err = pcall(Sweep)
+            if not ok then
+                active = false
+                if RC.DebugPrint then RC:DebugPrint("Under the map: " .. tostring(err), "uimover") end
+                -- (told once, so it is seen and not repeated four times a second)
+                if not Under._erred then Under._erred = true if geterrorhandler then geterrorhandler()("Readycheck, under the map: " .. tostring(err)) end end
+            end
+        end
+        Sweep = function()
+            map = Map()
+            active = Under.On() and map ~= nil and map:IsShown()
+            if active then
+                mapRank = Rank(map:GetFrameStrata())
+                -- (full screen it is over every piece by itself; on the lowest layers there is no "under")
+                if mapRank >= RANK.FULLSCREEN or mapRank <= 1 then
+                    active = false
+                else
+                    ml, mb, mr, mt = Rect(map)
+                    active = ml ~= nil and (mr - ml) > 0 and (mt - mb) > 0
+                end
+            end
+            if not active then RestoreAll() return end
+            below = BY_RANK[mapRank - 1]
+            local us = UIParent:GetEffectiveScale() or 1
+            screenW, screenH = (UIParent:GetWidth() or 0) * us, (UIParent:GetHeight() or 0) * us
+            waiting = false
+            tick = tick + 1
+            deep = (tick % 2 == 1)
+            wipe(seen)
+            wipe(windowSet)
+            -- the mover's own windows (the gear set picker, the spec popup,
+            -- the consumables checker, the after-raid window) and the
+            -- key-picking covers
+            for key, data in pairs(UM.frames or {}) do
+                local f = data and data.frame
+                if type(f) == "table" and SCREEN_SKIP[key] then windowSet[f] = true end
+            end
+            local covers = RC._smartKeyCovers
+            if type(covers) == "table" then
+                for _, c in pairs(covers) do if type(c) == "table" then windowSet[c] = true end end
+            end
+            for _, data in pairs(UM.frames or {}) do
+                LookSafe(data and data.frame)
+            end
+            local P = RC.Position
+            if P and type(P.bound) == "table" then
+                for f in pairs(P.bound) do LookSafe(f) end
+            end
+            local GM = RC.GearManager
+            if GM and type(GM.buttons) == "table" then
+                for _, b in pairs(GM.buttons) do LookSafe(b) end
+            end
+            for name in pairs(PIECE_NAMES) do LookSafe(_G[name]) end
+            local provs = RC.UnderMapProviders
+            if type(provs) == "table" then
+                for i = 1, #provs do pcall(provs[i], LookSafe) end
+            end
+            local okNet, list = pcall(Net)
+            if okNet and list then
+                for i = 1, #list do LookSafe(list[i]) end
+            end
+            -- a piece that is gone from every list
+            for f in pairs(lowered) do
+                if not seen[f] then pcall(Restore, f) end
+            end
+        end
+
+        local function Stop()
+            if ticker then ticker:Cancel() ticker = nil end
+            active = false
+            RestoreAll()
+        end
+        local function Start()
+            if not Under.On() then return end
+            -- (a frame looked at before its fields were written is asked again)
+            for f, v in pairs(owned) do if v == false then owned[f] = nil end end
+            netCount = -1
+            tick = 0
+            Under.Sweep()
+            if not ticker and RC.Profiler and RC.Profiler.TrackTicker then
+                ticker = RC.Profiler:TrackTicker("UIMover:UnderMap", 0.25, function()
+                    local m = Map()
+                    if not (m and m:IsShown()) then Stop() return end
+                    Under.Sweep()
+                end)
+            end
+        end
+        function Under.Set(on)
+            if not RC.db then return end
+            RC.db.fontSettings = RC.db.fontSettings or {}
+            if on then RC.db.fontSettings.underMap = nil else RC.db.fontSettings.underMap = false end
+            local m = Map()
+            if on and m and m:IsShown() then Start() else Stop() end
+            if RC.DebugPrint then RC:DebugPrint("Pieces behind the open map: " .. tostring(on and true or false), "uimover") end
+        end
+
+        local function HookMap()
+            local m = Map()
+            if hooked or not (m and m.HookScript) then return end
+            hooked = true
+            m:HookScript("OnShow", Start)
+            m:HookScript("OnHide", Stop)
+            if m:IsShown() then Start() end
+        end
+        Under.Hook = HookMap
+        local ev = CreateFrame("Frame")
+        ev:RegisterEvent("PLAYER_LOGIN")
+        ev:RegisterEvent("ADDON_LOADED")
+        ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+        ev:SetScript("OnEvent", function(self, event, name)
+            if event == "PLAYER_REGEN_ENABLED" then
+                -- what a fight kept on the wrong layer, either way
+                if waiting or next(lowered) then
+                    waiting = false
+                    local m = Map()
+                    if m and m:IsShown() and Under.On() then Under.Sweep() else RestoreAll() end
+                end
+                return
+            end
+            if event == "ADDON_LOADED" and name ~= "Blizzard_WorldMap" then return end
+            HookMap()
+            if hooked then self:UnregisterEvent("ADDON_LOADED") end
+        end)
+        -- this file starts after the login: the map is there already
+        HookMap()
+        if hooked then ev:UnregisterEvent("ADDON_LOADED") end
+    end
+
     -- The Frames panel (the old floating Move UI window): a flat 300px
     -- window in the ZacUI family - fill + 1px border, 30px title bar with a
     -- gold hairline under it, and a chromeless X. Every fill below is
@@ -304,7 +927,7 @@ local function InitializeUIMover()
 
         local accent = header:CreateTexture(nil, "ARTWORK")
         accent:SetTexture(FLAT)
-        accent:SetHeight(1)
+        Readycheck.Line(accent, "H", 1)
         accent:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 0, 0)
         accent:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", 0, 0)
         local gold = RC:GetColor("ui", "accentGold")
@@ -409,7 +1032,7 @@ local function InitializeUIMover()
         local function Divider(y)
             local divider = panel:CreateTexture(nil, "ARTWORK")
             divider:SetTexture(FLAT)
-            divider:SetHeight(1)
+            Readycheck.Line(divider, "H", 1)
             divider:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PAD, y)
             divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PANEL_PAD, y)
             local divCol = RC:GetColor("ui", "borderNormal")
@@ -654,6 +1277,26 @@ local function InitializeUIMover()
             slider.Text:SetText(value .. RCL["px"])
         end)
         LayoutSliderRow(yPos, RCL["Snap"], snapSizeSlider)
+        yPos = yPos - SLIDER_ROW_H - 6
+
+        -- the pieces' one scale (RC.Screen, above)
+        local sizeSlider = RC.UI:CreateSlider(panel, 50, 150, math.floor(Screen.Scale() * 100 + 0.5), 5)
+        sizeSlider.Text:SetText(math.floor(Screen.Scale() * 100 + 0.5) .. "%")
+        sizeSlider:SetScript("OnValueChanged", function(slider, value)
+            value = math.floor(value / 5 + 0.5) * 5
+            slider.Text:SetText(value .. "%")
+            if math.abs(Screen.Scale() * 100 - value) < 0.5 then return end
+            Screen.Set(value / 100)
+            -- the handles follow their frames
+            if UM.isMoving then
+                for _, data in pairs(UM.frames) do
+                    if data.anchor and data.anchor:IsShown() then pcall(AttachAnchor, data) end
+                end
+            end
+        end)
+        local sizeRow = LayoutSliderRow(yPos, RCL["Size"], sizeSlider)
+        Tip(sizeRow, RCL["Size of everything"], RCL["One size for Readycheck's bars, trackers and alerts on your screen. They get smaller or bigger together and keep their places. Each piece's own size settings still apply on top. The stats bar, the route tracker and the windows keep their own."], "ANCHOR_TOP")
+        panel.sizeSlider = sizeSlider
         yPos = yPos - SLIDER_ROW_H - 10
 
         -- Cancel / Save & Exit along the bottom, as on the bar (the panel
@@ -1165,6 +1808,652 @@ local function InitializeUIMover()
     end
 
     -- ============================================================
+    -- A SIZE OF ITS OWN FOR EACH PIECE (2026-11-19)
+    -- The picked box has Smaller, its size, Bigger. No new number is
+    -- kept: it is the scale the piece already has in its settings -
+    --   * framePos.scale ("layer and scale" on its page) for a piece
+    --     dressed through RC:ApplyFrameCustom (which notes the settings
+    --     table on the frame), unless the feature told it scale = false;
+    --   * the feature's own Scale where it has one and says so
+    --     (frame._rcSize = { get, set, min, max }: the aura tracker, the
+    --     Battle Shout tracker, the gear swap notice).
+    -- A piece with neither (the consumable bars: their button size is on
+    -- their pages) has no size here. The piece stays where it is: a
+    -- SetPoint offset is in the frame's own units, so the saved spot is
+    -- rewritten for the new scale (Core_Position's SetScaleKeepingPoint
+    -- for a bound frame, its centre kept for the others).
+    -- ============================================================
+    local SIZE_MIN, SIZE_MAX = 0.5, 2
+    -- A piece is dressed (and its settings table noted on it) the first
+    -- time its feature draws it; one that has not been on screen yet this
+    -- session is found here by its mover key instead: [mover key] = the
+    -- name of its settings table in RC.db (the pieces whose "layer and
+    -- scale" card has a Scale).
+    local SIZE_DB = {
+        battleShoutReminder = "battleShoutReminder", fastWeaponReminder = "fastWeaponReminder",
+        buffPushoffAlert = "buffPushoffAlert", meshProgress = "meshProgressBar", reminderFrame = "reminderPopup",
+    }
+    local SIZE_DB_OPTS = { chrome = false }
+    local function KeyOf(data)
+        for key, d in pairs(UM.frames) do if d == data then return key end end
+    end
+    -- -> the settings table, and (for a piece not dressed yet) how to dress it
+    local function SizeRoot(data)
+        local f = data and data.frame
+        if not f then return nil end
+        local root = f._rcFrameRoot
+        if root then
+            local o = f._rcFrameOpts
+            if type(o) == "table" and (o.scale == false or o.sample) then return nil end
+            if type(root) == "function" then root = root() end
+            return type(root) == "table" and root or nil
+        end
+        local name = SIZE_DB[KeyOf(data) or ""]
+        local t = name and RC.db and RC.db[name]
+        if type(t) ~= "table" then return nil end
+        return t, function() return RC.db and RC.db[name] end
+    end
+    -- -> the piece's scale now, lowest, highest (nil: it has none here)
+    function UM:FrameScale(frameKey)
+        local data = self.frames[frameKey]
+        local f = data and data.frame
+        if not f then return nil end
+        local own = f._rcSize
+        if type(own) == "table" and own.get and own.set then
+            local ok, v = pcall(own.get)
+            v = ok and tonumber(v) or 1
+            return (v and v > 0) and v or 1, tonumber(own.min) or SIZE_MIN, tonumber(own.max) or SIZE_MAX
+        end
+        local root = SizeRoot(data)
+        if not root then return nil end
+        local fp = root.framePos
+        local v = type(fp) == "table" and tonumber(fp.scale) or nil
+        if not v or v <= 0 then
+            -- nothing set: the frame as its feature made it
+            local d = f._rcFrameDef
+            v = (type(d) == "table" and tonumber(d.scale)) or 1
+        end
+        return v, SIZE_MIN, SIZE_MAX
+    end
+    local function SizeRaw(data, v)
+        local f = data.frame
+        local own = f._rcSize
+        if type(own) == "table" and own.set then
+            own.set(v)
+            return
+        end
+        local root, late = SizeRoot(data)
+        if not root then return end
+        local P = RC.Position
+        local bound = P and P.IsBound(f)
+        local cx, cy, k1
+        if not bound then
+            cx, cy = FrameCenter(f)
+            k1 = f:GetScale() or 1
+        end
+        -- (2026-11-20) a placed piece's saved spot is in the units of its
+        -- SAVED scale. A piece its feature put back to another scale while
+        -- it was away (the reminder popup goes to 100 % on hide) is at the
+        -- saved scale first, or the spot would be rewritten from the wrong one.
+        if bound then
+            local was = type(root.framePos) == "table" and tonumber(root.framePos.scale) or nil
+            if not was or was <= 0 then
+                local d = f._rcFrameDef
+                was = type(d) == "table" and tonumber(d.scale) or nil
+            end
+            if was and was > 0 and math.abs((f:GetScale() or 1) - was) > 0.0005 then f:SetScale(was) end
+        end
+        if type(root.framePos) ~= "table" then root.framePos = {} end
+        root.framePos.scale = v
+        if bound and P.SetScaleKeepingPoint then P.SetScaleKeepingPoint(f, v) end
+        if late then RC:ApplyFrameCustom(f, late, SIZE_DB_OPTS)
+        else RC:ApplyFrameCustom(f, f._rcFrameRoot, f._rcFrameOpts) end
+        if not bound then
+            local k2 = f:GetScale() or 1
+            if k2 > 0 and math.abs(k1 - k2) > 0.0005 then
+                f:ClearAllPoints()
+                f:SetPoint("CENTER", UIParent, "CENTER", cx * k1 / k2, cy * k1 / k2)
+                Commit(data)
+            end
+        end
+    end
+    -- -> true when the piece has the size asked for (or as near as its range allows)
+    function UM:SetFrameScale(frameKey, v)
+        local data = self.frames[frameKey]
+        local cur, lo, hi = self:FrameScale(frameKey)
+        v = tonumber(v)
+        if not (cur and v and v == v) then return false end
+        if self:IsLocked(frameKey) then
+            self:RefuseLocked(frameKey)
+            return false
+        end
+        if v < lo then v = lo elseif v > hi then v = hi end
+        v = math.floor(v * 100 + 0.5) / 100
+        if math.abs(v - cur) < 0.0005 then return true end
+        SizeRaw(data, v)
+        AttachAnchor(data)
+        if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
+        if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
+        if RC.DebugPrint then RC:DebugPrint(tostring(frameKey) .. " size: " .. tostring(v), "uimover") end
+        return true
+    end
+    -- One step smaller (dir -1) or bigger (+1): to the next 5 %, Shift 1 %.
+    function UM:StepFrameScale(frameKey, dir)
+        local cur = self:FrameScale(frameKey)
+        if not cur then return false end
+        local step = (IsShiftKeyDown and IsShiftKeyDown()) and 1 or 5
+        local pct = cur * 100
+        local to
+        if dir > 0 then to = math.floor(pct / step + 1.0001) * step
+        else to = math.ceil(pct / step - 1.0001) * step end
+        self:Change(frameKey, function() self:SetFrameScale(frameKey, to / 100) end)
+        self:UpdateCoordinateInputs(frameKey)
+        self:PlaceActions()
+        return true
+    end
+
+    -- ------------------------------------------------------------
+    -- EVERY PIECE HAS A SIZE HERE (2026-11-19, Zac: "i want sizing and
+    -- stuff in both the addons moveui as well"). A piece whose size is not
+    -- a scale is sized by the numbers its settings page has, in their own
+    -- unit: a bar's button size, a timer bar's width and height, the
+    -- alert's text size, the after-raid window's icon size. Nothing new is
+    -- saved: each entry reads and writes the setting the page does, and
+    -- calls what the page calls.
+    --   UM:FrameSizes(key) -> { { label, tip, unit, get, set, min, max,
+    --     step, fine, def }, ... }   (one or two; a scale is the one
+    --     entry "%" from UM:FrameScale above)
+    -- ------------------------------------------------------------
+    local function DbSize(dbKey, field, def, lo, hi, step, unit, label, tip, apply)
+        return { label = label, tip = tip, unit = unit, def = def, min = lo, max = hi, step = step, fine = 1,
+            get = function()
+                local t = RC.db and RC.db[dbKey]
+                return (type(t) == "table" and tonumber(t[field])) or def or lo
+            end,
+            set = function(v)
+                local t = RC.db and RC.db[dbKey]
+                if type(t) ~= "table" then return end
+                t[field] = v
+                apply()
+            end }
+    end
+    local function TimerSize(savedKey, def, lo, hi, step, unit, label, tip)
+        local function Store()
+            local WT = RC.WorldTools
+            local st = WT and WT.Store and WT.Store()
+            return type(st) == "table" and type(st.timerSettings) == "table" and st.timerSettings or nil
+        end
+        return { label = label, tip = tip, unit = unit, def = def, min = lo, max = hi, step = step, fine = 1,
+            get = function()
+                local ts = Store()
+                return (ts and tonumber(ts[savedKey])) or def
+            end,
+            set = function(v)
+                local ts = Store()
+                if not ts then return end
+                ts[savedKey] = v
+                local PT = RC.WorldTools and RC.WorldTools.Bars
+                if PT then
+                    if PT.UpdateAnchorSizes then PT.UpdateAnchorSizes() end
+                    if PT.RefreshPreviewLayout then PT:RefreshPreviewLayout() end
+                end
+            end }
+    end
+    local BTN_TIP = RCL["The size of this bar's buttons - the same number its settings page has."]
+    local SIZE_OWN = {
+        consumablesHelper = {
+            DbSize("consumablesHelper", "buttonSize", 36, 24, 64, 2, "px", RCL["Buttons"], BTN_TIP,
+                function() if RC.UpdateConsumablesButtons then RC:UpdateConsumablesButtons() end end),
+            DbSize("consumablesHelper", "buttonsPerRow", 10, 1, 40, 1, nil, RCL["Per row"], RCL["How many buttons a row holds."],
+                function() if RC.UpdateConsumablesButtons then RC:UpdateConsumablesButtons() end end),
+            DbSize("consumablesHelper", "iconSpacing", 4, 0, 20, 1, "px", RCL["Spacing"], RCL["The space between two buttons."],
+                function() if RC.UpdateConsumablesButtons then RC:UpdateConsumablesButtons() end end),
+        },
+        potionsBar = {
+            DbSize("potionsBar", "buttonSize", 36, 24, 64, 2, "px", RCL["Buttons"], BTN_TIP,
+                function() if RC.UpdatePotionsButtons then RC:UpdatePotionsButtons() end end),
+            DbSize("potionsBar", "buttonsPerRow", 10, 1, 40, 1, nil, RCL["Per row"], RCL["How many buttons a row holds."],
+                function() if RC.UpdatePotionsButtons then RC:UpdatePotionsButtons() end end),
+            DbSize("potionsBar", "iconSpacing", 4, 0, 20, 1, "px", RCL["Spacing"], RCL["The space between two buttons."],
+                function() if RC.UpdatePotionsButtons then RC:UpdatePotionsButtons() end end),
+        },
+        weaponsBar = {
+            DbSize("weaponsBar", "buttonSize", 36, 24, 64, 2, "px", RCL["Buttons"], BTN_TIP,
+                function() if RC.UpdateWeaponsButtons then RC:UpdateWeaponsButtons() end end),
+            DbSize("weaponsBar", "buttonsPerRow", 4, 1, 12, 1, nil, RCL["Per row"], RCL["How many buttons a row holds."],
+                function() if RC.UpdateWeaponsButtons then RC:UpdateWeaponsButtons() end end),
+            DbSize("weaponsBar", "iconSpacing", 4, 0, 12, 1, "px", RCL["Spacing"], RCL["The space between two buttons."],
+                function() if RC.UpdateWeaponsButtons then RC:UpdateWeaponsButtons() end end),
+        },
+        trinketBar = {
+            DbSize("trinketBar", "buttonSize", 36, 24, 64, 2, "px", RCL["Buttons"], BTN_TIP,
+                function() if RC.UpdateTrinketBarButtons then RC:UpdateTrinketBarButtons() end end),
+            DbSize("trinketBar", "buttonsPerRow", 4, 1, 12, 1, nil, RCL["Per row"], RCL["How many buttons a row holds."],
+                function() if RC.UpdateTrinketBarButtons then RC:UpdateTrinketBarButtons() end end),
+            DbSize("trinketBar", "iconSpacing", 4, 0, 12, 1, "px", RCL["Spacing"], RCL["The space between two buttons."],
+                function() if RC.UpdateTrinketBarButtons then RC:UpdateTrinketBarButtons() end end),
+        },
+        wtPullTimersMain = {
+            TimerSize("pullTimerMainBarWidth", 224, 150, 500, 10, "px", RCL["Width"], RCL["The main buff drop bars' width."]),
+            TimerSize("pullTimerMainBarHeight", 18, 16, 48, 2, "px", RCL["Height"], RCL["The main buff drop bars' height."]),
+        },
+        wtPullTimersIdle = {
+            TimerSize("pullTimerSmallBarWidth", 150, 100, 400, 10, "px", RCL["Width"], RCL["The small buff drop bars' width."]),
+            TimerSize("pullTimerSmallBarHeight", 14, 10, 32, 2, "px", RCL["Height"], RCL["The small buff drop bars' height."]),
+        },
+        wtScreenAlert = { TimerSize("alertFontSize", 18, 10, 40, 1, "pt", RCL["Text"], RCL["The screen alert's text size."]) },
+        afterRaidBuffs = { { label = RCL["Icons"], tip = RCL["The size of the buff icons in this window."], unit = "px",
+            def = 36, min = 24, max = 64, step = 2, fine = 1,
+            get = function()
+                local AR = RC.AfterRaidBuffs
+                return (AR and AR.IconSize and AR.IconSize()) or 36
+            end,
+            set = function(v)
+                local AR = RC.AfterRaidBuffs
+                if AR and AR.SetIconSize then AR.SetIconSize(v) end
+            end } },
+        mustHaveAlert = { { label = RCL["Icons"], tip = RCL["The size of the missing must-have icons - the same number its settings page has."],
+            unit = "px", def = 56, min = 32, max = 128, step = 4, fine = 1,
+            get = function()
+                local ESS = RC.Essentials
+                local e = ESS and ESS.Settings and ESS.Settings()
+                return (e and tonumber(e.iconSize)) or 56
+            end,
+            set = function(v)
+                local ESS = RC.Essentials
+                local e = ESS and ESS.Settings and ESS.Settings()
+                if not e then return end
+                e.iconSize = v
+                if ESS.Refresh then ESS.Refresh() end
+            end } },
+        routeTracker = { { label = RCL["Size"], tip = RCL["The route tracker's scale - the same number its settings page has."], unit = "%",
+            def = 0.85, min = 0.6, max = 1.6, step = 0.05, fine = 0.01,
+            get = function()
+                local RR = RC.RaidRoute
+                local st = RR and RR.GetSettings and RR:GetSettings()
+                return (st and tonumber(st.trackerScale)) or (RR and RR.TRACKER_SCALE) or 0.85
+            end,
+            set = function(v)
+                local RR = RC.RaidRoute
+                local st = RR and RR.GetSettings and RR:GetSettings()
+                if not st then return end
+                st.trackerScale = v
+                if RR.RefreshTracker then RR:RefreshTracker() end
+            end },
+            -- (2026-11-20) its width: what dragging its title bar's grip sets
+            -- (never set, it is as wide as its lines need and this shows that)
+            { label = RCL["Width"], tip = RCL["The route tracker's width - what dragging the grip on its title bar sets."], unit = "px",
+            min = 180, max = 480, step = 10, fine = 1,
+            get = function()
+                local RR = RC.RaidRoute
+                local st = RR and RR.GetSettings and RR:GetSettings()
+                local w = st and tonumber(st.trackerW)
+                if w and w >= 180 and w <= 480 then return w end
+                local f = RR and RR.trackerFrame
+                w = f and f.GetWidth and f:GetWidth() or 180
+                return math.max(180, math.min(480, math.floor(w + 0.5)))
+            end,
+            set = function(v)
+                local RR = RC.RaidRoute
+                local st = RR and RR.GetSettings and RR:GetSettings()
+                local f = RR and RR.trackerFrame
+                if not st or (f and f._rcDocked) then return end
+                st.trackerW = v
+                if RR.RefreshTracker then RR:RefreshTracker() end
+            end } },
+    }
+    -- (2026-11-20) THE LAST PIECES WITHOUT A SIZE ON THEIR BOX: the gear set
+    -- picker, the spec popup, the consumables checker, and the boss notes'
+    -- text. The same settings their own pages and resize corners write.
+    local function TableSize(root, field, def, lo, hi, step, unit, label, tip, apply, fine)
+        return { label = label, tip = tip, unit = unit, def = def, min = lo, max = hi, step = step, fine = fine or 1,
+            get = function()
+                local t = root(false)
+                return (type(t) == "table" and tonumber(t[field])) or def or lo
+            end,
+            set = function(v)
+                local t = root(true)
+                if type(t) ~= "table" then return end
+                t[field] = v
+                if apply then apply() end
+            end }
+    end
+    do
+        local function PromptRoot(make)
+            local d = RC.db
+            if not d then return nil end
+            if type(d.gearSetPrompt) ~= "table" then
+                if not make then return nil end
+                d.gearSetPrompt = {}
+            end
+            return d.gearSetPrompt
+        end
+        local function PromptLive() if RC.RelayoutGearSetPrompt then RC:RelayoutGearSetPrompt() end end
+        SIZE_OWN.gearSetPrompt = function()
+            local G = RC.GEAR_PROMPT_SIZES
+            if type(G) ~= "table" then return nil end
+            return {
+                TableSize(PromptRoot, "buttonWidth", G.col, G.colMin, G.colMax, 2, "px", RCL["Buttons"],
+                    RCL["How wide the picker's set buttons are - what dragging its corner sets."], PromptLive),
+                TableSize(PromptRoot, "rowHeight", G.row, G.rowMin, G.rowMax, 1, "px", RCL["Row height"],
+                    RCL["How tall one row of the picker is."], PromptLive),
+            }
+        end
+        local function SpecRoot(make)
+            local d = RC.db
+            if not d then return nil end
+            if type(d.specDetection) ~= "table" then
+                if not make then return nil end
+                d.specDetection = {}
+            end
+            if type(d.specDetection.look) ~= "table" then
+                if not make then return nil end
+                d.specDetection.look = {}
+            end
+            return d.specDetection.look
+        end
+        local function SpecLive()
+            local f = RC.specDisplayFrame
+            if not f then return end
+            if RC.StyleSpecDisplay then RC:StyleSpecDisplay(f) end
+            -- (its icons and height follow at once while it is up)
+            if f:IsShown() and RC.FillSpecDisplay and RC.specDetection then
+                local specs = RC.specDetection.specs or {}
+                local spec = RC.DetectWarriorSpec and RC:DetectWarriorSpec()
+                if not (spec and specs[spec]) then spec = "fury" end
+                if specs[spec] then
+                    local talents = RC.GetDisplayTalents and RC:GetDisplayTalents(spec, 8) or nil
+                    RC:FillSpecDisplay(f, specs[spec], spec, talents)
+                end
+            end
+        end
+        SIZE_OWN.specPopup = {
+            -- (its spot is in its own scaled units, measured from the top
+            -- of the screen: rewritten with the scale so the popup stays put)
+            { label = RCL["Scale"], tip = RCL["The spec popup's scale - the same number its Look tab has."], unit = "%",
+              def = 1, min = 0.5, max = 2, step = 0.05, fine = 0.01,
+              get = function()
+                  local t = SpecRoot(false)
+                  local v = type(t) == "table" and tonumber(t.scale) or 1
+                  return (v and v > 0) and v or 1
+              end,
+              set = function(v)
+                  local t = SpecRoot(true)
+                  if type(t) ~= "table" or not (v and v > 0) then return end
+                  local old = tonumber(t.scale) or 1
+                  if old <= 0 then old = 1 end
+                  if math.abs(old - v) < 0.0005 then return end
+                  t.x, t.y = (tonumber(t.x) or 0) * old / v, (tonumber(t.y) or -150) * old / v
+                  t.scale = v
+                  SpecLive()
+                  local f = RC.specDisplayFrame
+                  if f then
+                      f:ClearAllPoints()
+                      f:SetPoint("TOP", UIParent, "TOP", t.x, t.y)
+                  end
+              end },
+            TableSize(SpecRoot, "width", 320, 220, 600, 5, "px", RCL["Width"], RCL["The spec popup's width."], SpecLive),
+            TableSize(SpecRoot, "iconSize", 48, 24, 96, 1, "px", RCL["Icon"], RCL["The spec icon's size."], SpecLive),
+            TableSize(SpecRoot, "talentSize", 28, 16, 48, 1, "px", RCL["Talents"], RCL["The talent icons' size."], SpecLive),
+        }
+        SIZE_OWN.bossNotes = {
+            DbSize("bossNotes", "fontSize", 14, 8, 24, 1, "px", RCL["Text"], RCL["The boss note's text size."], function()
+                if RC.UpdateBossNotes then RC:UpdateBossNotes() end
+            end),
+        }
+        local function CheckerRoot()
+            local d = RC.db
+            return d and type(d.consumablesChecker) == "table" and d.consumablesChecker or nil
+        end
+        local function CheckerLive()
+            local c = RC.consumablesChecker
+            local f = c and c.frame
+            local st = CheckerRoot()
+            if not (f and st) then return end
+            f:SetSize(tonumber(st.width) or 320, tonumber(st.height) or 480)
+            if f.scrollChild and f.scrollFrame then f.scrollChild:SetWidth(f.scrollFrame:GetWidth()) end
+            if RC.Position and RC.Position.IsBound and RC.Position.IsBound(f) then RC.Position.RestoreFrame(f) end
+        end
+        SIZE_OWN.consumablesChecker = {
+            TableSize(CheckerRoot, "width", 320, 200, 500, 10, "px", RCL["Width"], RCL["The consumables checker's width - what dragging its corner sets."], CheckerLive),
+            TableSize(CheckerRoot, "height", 480, 200, 800, 10, "px", RCL["Height"], RCL["The consumables checker's height."], CheckerLive),
+        }
+    end
+    -- WIDTH, HEIGHT AND THE REST BESIDE A SCALE (2026-11-19, Zac:
+    -- "everything needs full sizing width height and scaling"). The
+    -- pieces that have a scale name their other sizes here too - the
+    -- same settings, ranges and calls their pages use.
+    SIZE_OWN.polarityBar = {
+        DbSize("polarityMode", "barWidth", 170, 100, 400, 10, "px", RCL["Width"], RCL["The polarity bar's width."],
+            function() if RC.polarityMode and RC.polarityMode.barFrame and RC.PolarityApplyBarSettings then RC:PolarityApplyBarSettings() end end),
+        DbSize("polarityMode", "barHeight", 22, 14, 40, 1, "px", RCL["Height"], RCL["The polarity bar's height."],
+            function() if RC.polarityMode and RC.polarityMode.barFrame and RC.PolarityApplyBarSettings then RC:PolarityApplyBarSettings() end end),
+    }
+    local function ShoutIcon()
+        if RC.UpdateBattleShoutReminderAppearance then RC:UpdateBattleShoutReminderAppearance() end
+        if RC.battleShoutReminder and RC.battleShoutReminder.ticker and RC.UpdateBattleShoutReminder then RC:UpdateBattleShoutReminder() end
+    end
+    SIZE_OWN.battleShoutReminder = {
+        DbSize("battleShoutReminder", "iconSize", 40, 20, 80, 1, "px", RCL["Icon"], RCL["The Battle Shout icon's size."], ShoutIcon),
+    }
+    local function ShoutTracker()
+        local f = RC.battleShoutPartyTracker and RC.battleShoutPartyTracker.frame
+        if f and RC.StyleBattleShoutTracker then RC:StyleBattleShoutTracker(f) end
+        local pt = RC.db and RC.db.battleShoutPartyTracker
+        if pt and pt.enabled and RC.UpdateBattleShoutPartyTracker then RC:UpdateBattleShoutPartyTracker() end
+    end
+    SIZE_OWN.battleShoutPartyTracker = {
+        DbSize("battleShoutPartyTracker", "width", 165, 120, 280, 5, "px", RCL["Width"], RCL["The Battle Shout tracker's width."], ShoutTracker),
+        DbSize("battleShoutPartyTracker", "rowHeight", 17, 14, 26, 1, "px", RCL["Row height"], RCL["The height of one row of the tracker."], ShoutTracker),
+    }
+    local function TTKLook()
+        local TTK = RC.TTKDisplay
+        if TTK and TTK.UpdateTTKDisplayAppearance then TTK:UpdateTTKDisplayAppearance() end
+    end
+    SIZE_OWN.ttkDisplay = {
+        DbSize("ttkDisplay", "width", 120, 100, 300, 5, "px", RCL["Width"], RCL["The time-to-kill frame's width."], TTKLook),
+        DbSize("ttkDisplay", "height", 70, 40, 120, 5, "px", RCL["Height"], RCL["The time-to-kill frame's height (it grows by itself when its rows need more)."], TTKLook),
+    }
+    -- (the two aura trackers: which sizes they have follows their layout)
+    local function TrackerSizes(objKey, dbKey)
+        return function()
+            local t = RC.db and RC.db[dbKey]
+            if type(t) ~= "table" then return nil end
+            local function Live()
+                local tr = RC[objKey]
+                if tr and tr.LiveAppearance then tr:LiveAppearance() end
+                if tr and tr.Refresh then tr:Refresh() end
+            end
+            if t.layout == "compact" then
+                return {
+                    DbSize(dbKey, "compactIconSize", 32, 16, 48, 1, "px", RCL["Icons"], RCL["The tracker's icon size."], Live),
+                    DbSize(dbKey, "compactSpacing", 2, 0, 12, 1, "px", RCL["Spacing"], RCL["The space between two icons."], Live),
+                }
+            end
+            return {
+                DbSize(dbKey, "iconSize", 16, 10, 32, 1, "px", RCL["Icons"], RCL["The tracker's icon size."], Live),
+                DbSize(dbKey, "rowWidth", 180, 120, 320, 5, "px", RCL["Width"], RCL["The width of one row of the tracker."], Live),
+                DbSize(dbKey, "spacing", 0, 0, 10, 1, "px", RCL["Spacing"], RCL["The space between two rows."], Live),
+            }
+        end
+    end
+    SIZE_OWN.raidBuffTracker = TrackerSizes("raidBuffTracker", "raidBuffTracker")
+    SIZE_OWN.bossDebuffTracker = TrackerSizes("bossDebuffTracker", "bossDebuffTracker")
+    -- (the trinket button: nothing saved = the feature's own default size)
+    SIZE_OWN.trinketToggle = function()
+        local D = RC.TRINKET_TOGGLE or { width = 75, height = 22 }
+        local function Apply()
+            if RC.trinketToggleButton and RC.trinketToggleButton.UpdateButtonState then RC.trinketToggleButton.UpdateButtonState() end
+        end
+        return {
+            DbSize("trinketSwap", "buttonWidth", D.width, 50, 200, 5, "px", RCL["Width"], RCL["The trinket button's width."], Apply),
+            DbSize("trinketSwap", "buttonHeight", D.height, 14, 48, 1, "px", RCL["Height"], RCL["The trinket button's height."], Apply),
+        }
+    end
+
+    -- (2026-11-19 22:10, the rest of the pieces that had a scale only)
+    -- a size kept straight in RC.db (not in a feature's own table)
+    local function TopSize(field, def, lo, hi, step, unit, label, tip, apply)
+        return { label = label, tip = tip, unit = unit, def = def, min = lo, max = hi, step = step, fine = 1,
+            get = function() return (RC.db and tonumber(RC.db[field])) or def end,
+            set = function(v)
+                if not RC.db then return end
+                RC.db[field] = v
+                if apply then apply() end
+            end }
+    end
+    SIZE_OWN.statsBar = {
+        TopSize("statsBarHeight", 20, 14, 40, 1, "px", RCL["Height"], RCL["The stats bar's height."], function()
+            local CS = RC.CharacterStats
+            if CS and CS.barFrame and CS.RefreshStatsBar then CS:RefreshStatsBar() end
+        end),
+    }
+    SIZE_OWN.buffPushoffAlert = {
+        DbSize("buffPushoffAlert", "iconSize", 32, 16, 64, 2, "px", RCL["Icon"], RCL["The buff push-off alert's icon size."], function()
+            local CS = RC.CharacterStats
+            if CS and CS.UpdateBuffPushoffAlertAppearance then CS:UpdateBuffPushoffAlertAppearance() end
+        end),
+    }
+    SIZE_OWN.reminderFrame = {
+        TopSize("iconSize", 80, 16, 256, 4, "px", RCL["Icons"], RCL["The reminder popup's icon size."], function()
+            if RC.RefreshReminderPopupLook then RC:RefreshReminderPopupLook() end
+        end),
+        TopSize("iconSpacing", 5, 0, 100, 1, "px", RCL["Spacing"], RCL["The space between two reminder icons."], function()
+            if RC.RefreshReminderPopupLook then RC:RefreshReminderPopupLook() end
+        end),
+    }
+    SIZE_OWN.fastWeaponReminder = {
+        DbSize("fastWeaponReminder", "iconSize", 48, 24, 96, 2, "px", RCL["Box"], RCL["The weapon reminder's box size."], function()
+            if RC.UpdateEquipmentReminderIconSize then RC:UpdateEquipmentReminderIconSize() end
+        end),
+    }
+    SIZE_OWN.meshProgress = function()
+        local m = RC.db and RC.db.meshProgressBar
+        if type(m) ~= "table" then return nil end
+        return { { label = RCL["Width"], tip = RCL["The sync bar's width."], unit = "px", def = 240, min = 180, max = 420, step = 10, fine = 2,
+            get = function()
+                local l = RC.db.meshProgressBar and RC.db.meshProgressBar.look
+                return (type(l) == "table" and tonumber(l.width)) or 240
+            end,
+            set = function(v)
+                local mm = RC.db.meshProgressBar
+                if type(mm) ~= "table" then return end
+                if type(mm.look) ~= "table" then mm.look = {} end
+                mm.look.width = v
+                if RC.ApplyMeshLook then RC.ApplyMeshLook() end
+            end } }
+    end
+    SIZE_OWN.worldBuffMini = function()
+        local wb = RC.db and RC.db.worldBuffs
+        if type(wb) ~= "table" then return nil end
+        local function E(label, tip, field, def, lo, hi)
+            return { label = label, tip = tip, unit = "px", def = def, min = lo, max = hi, step = 1, fine = 1,
+                get = function()
+                    local l = RC.db.worldBuffs and RC.db.worldBuffs.look
+                    return (type(l) == "table" and tonumber(l[field])) or def
+                end,
+                set = function(v)
+                    local w = RC.db.worldBuffs
+                    if type(w) ~= "table" then return end
+                    if type(w.look) ~= "table" then w.look = {} end
+                    w.look[field] = v
+                    if RC._wbApplyLook then RC._wbApplyLook() end
+                end }
+        end
+        return { E(RCL["Cells"], RCL["The world buffs board's cell size."], "iconSize", 20, 14, 40),
+            E(RCL["Row height"], RCL["The height of one row of the board."], "rowHeight", 38, 26, 70) }
+    end
+    -- (the gear swap notice has its Scale through frame._rcSize: its icons here)
+    SIZE_OWN.swapToast = { { label = RCL["Icons"], tip = RCL["The gear swap notice's icon size."], unit = "px",
+        def = 18, min = 12, max = 36, step = 1, fine = 1,
+        get = function()
+            local ST = RC.SwapToast
+            local st = ST and ST.Settings and ST:Settings()
+            return (st and tonumber(st.iconSize)) or (ST and ST.ICON_SIZE) or 18
+        end,
+        set = function(v)
+            local ST = RC.SwapToast
+            local st = ST and ST.Settings and ST:Settings()
+            if not st then return end
+            st.iconSize = v
+            if ST.Refresh then ST:Refresh() end
+        end } }
+
+    -- a piece's sizes that are not its scale (a list, or made when asked)
+    local function OwnSizes(frameKey)
+        local own = SIZE_OWN[frameKey]
+        if type(own) == "function" then
+            local ok, list = pcall(own)
+            own = ok and list or nil
+        end
+        return (type(own) == "table" and #own > 0) and own or nil
+    end
+    local SCALE_TIP = RCL["This piece's own size - the Scale on its settings page."]
+    function UM:FrameSizes(frameKey)
+        local data = self.frames[frameKey]
+        if not (data and data.frame) then return nil end
+        local list = {}
+        local cur, lo, hi = self:FrameScale(frameKey)
+        if cur then
+            -- (one entry made per ask: it only wraps the two calls above)
+            list[1] = { label = RCL["Scale"], tip = SCALE_TIP, unit = "%", def = 1, min = lo, max = hi, step = 0.05, fine = 0.01, scale = true,
+                get = function() return (UM:FrameScale(frameKey)) or 1 end,
+                set = function(v) UM:SetFrameScale(frameKey, v) end }
+        end
+        for _, size in ipairs(OwnSizes(frameKey) or {}) do list[#list + 1] = size end
+        return (#list > 0) and list or nil
+    end
+    -- what the strip writes for a value: "105%", "36px", "18pt"
+    function UM.SizeText(size, v)
+        if size.unit == "%" then return math.floor(v * 100 + 0.5) .. "%" end
+        return math.floor(v + 0.5) .. (size.unit or "")
+    end
+    local function SizeClamp(size, v)
+        if v < size.min then v = size.min elseif v > size.max then v = size.max end
+        if size.unit == "%" then return math.floor(v * 100 + 0.5) / 100 end
+        return math.floor(v + 0.5)
+    end
+    -- One of a piece's sizes to a value (index: which of its sizes); -> true
+    -- when it is set (or already was). A step in the undo stack.
+    function UM:SetFrameSize(frameKey, index, v)
+        local sizes = self:FrameSizes(frameKey)
+        local size = sizes and sizes[index or 1]
+        v = tonumber(v)
+        if not (size and v and v == v) then return false end
+        if self:IsLocked(frameKey) then
+            self:RefuseLocked(frameKey)
+            return false
+        end
+        v = SizeClamp(size, v)
+        if math.abs(v - size.get()) < 0.0005 then return true end
+        local data = self.frames[frameKey]
+        self:Change(frameKey, function()
+            size.set(v)
+            AttachAnchor(data)
+        end)
+        if not size.scale then
+            if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
+            if RC.DebugPrint then RC:DebugPrint(tostring(frameKey) .. " " .. tostring(size.label) .. ": " .. tostring(v), "uimover") end
+        end
+        self:UpdateCoordinateInputs(frameKey)
+        self:PlaceActions()
+        return true
+    end
+    -- One step smaller (dir -1) or bigger (+1) on the size's own grid
+    -- (Shift: its fine step).
+    function UM:StepFrameSize(frameKey, index, dir)
+        local sizes = self:FrameSizes(frameKey)
+        local size = sizes and sizes[index or 1]
+        if not size then return false end
+        local step = (IsShiftKeyDown and IsShiftKeyDown()) and (size.fine or size.step) or size.step
+        local cur = size.get()
+        local n = cur / step
+        local to
+        if dir > 0 then to = math.floor(n + 1.0001) * step else to = math.ceil(n - 1.0001) * step end
+        return self:SetFrameSize(frameKey, index, to)
+    end
+
+    -- ============================================================
     -- THE PASS: UNDO AND CANCEL
     -- Where every frame was when move mode opened is kept (UM.entry) and
     -- every change made since is on a stack (UM.undo). Undo (Ctrl+Z) puts
@@ -1175,14 +2464,44 @@ local function InitializeUIMover()
     local function Spot(data)
         if not (data and data.frame) then return nil end
         local _, x, y = Readout(data)
-        return { x = x or 0, y = y or 0 }
+        local spot = { x = x or 0, y = y or 0 }
+        -- (its size rides along where it has one: A SIZE OF ITS OWN, above)
+        local key = KeyOf(data)
+        spot.scale = key and UM:FrameScale(key) or nil
+        -- (and the sizes that are not a scale: EVERY PIECE HAS A SIZE HERE)
+        local own = key and OwnSizes(key)
+        if own then
+            spot.own = {}
+            for i, size in ipairs(own) do spot.own[i] = size.get() or 0 end
+        end
+        return spot
     end
     local function SameSpot(a, b)
-        return (a and b and math.abs(a.x - b.x) < 0.05 and math.abs(a.y - b.y) < 0.05) and true or false
+        if not (a and b and math.abs(a.x - b.x) < 0.05 and math.abs(a.y - b.y) < 0.05
+            and math.abs((a.scale or 1) - (b.scale or 1)) < 0.0005) then return false end
+        if a.own or b.own then
+            local ao, bo = a.own or {}, b.own or {}
+            for i = 1, math.max(#ao, #bo) do
+                if math.abs((ao[i] or 0) - (bo[i] or 0)) >= 0.0005 then return false end
+            end
+        end
+        return true
     end
     local function PutBack(data, spot)
         if not (data and data.frame and spot) then return end
         data._pending = nil
+        if spot.scale then
+            local key = KeyOf(data)
+            local cur = key and UM:FrameScale(key)
+            if cur and math.abs(cur - spot.scale) >= 0.0005 then SizeRaw(data, spot.scale) end
+        end
+        if spot.own then
+            local own = OwnSizes(KeyOf(data) or "")
+            for i, size in ipairs(own or {}) do
+                local v = spot.own[i]
+                if v and math.abs(size.get() - v) >= 0.0005 then size.set(v) end
+            end
+        end
         SetStored(data, spot.x, spot.y)
     end
     UM.Spot = Spot
@@ -2013,7 +3332,8 @@ local function InitializeUIMover()
         acts:SetSize(56 + 4 + 48, 20)
         acts:Hide()
         acts.reset = RC.UI:CreateStyledButton(acts, RCL["Reset"], 56, 20)
-        acts.reset:SetPoint("LEFT", acts, "LEFT", 0, 0)
+        -- (top left: the strip grows downward by a row for each size)
+        acts.reset:SetPoint("TOPLEFT", acts, "TOPLEFT", 0, 0)
         acts.reset:SetScript("OnClick", function()
             local key = UM.selectedFrame
             if not key then return end
@@ -2032,7 +3352,74 @@ local function InitializeUIMover()
             UM:PlaceActions()
         end)
         Tip(acts.hide, RCL["Hide"], RCL["Out of the way while you place the rest. The Frames button on the top bar brings it back."])
-        acts:SetWidth((acts.reset:GetWidth() or 56) + 4 + (acts.hide:GetWidth() or 48))
+        -- its size, where it has one: smaller, what it is now (a click:
+        -- back to 100%), bigger
+        -- (2026-11-19) THE PIECE'S SIZES, a row each under Reset / Hide:
+        -- "-  Width 224px  +". A scale, a width and height, an icon size,
+        -- a spacing - whatever the piece has (UM:FrameSizes). Made as
+        -- they are needed.
+        acts.groups = {}
+        acts.rowH, acts.rowW = 22, 22 + 2 + 132 + 2 + 22
+        local function SizeAt(i)
+            local key = UM.selectedFrame
+            local sizes = key and UM:FrameSizes(key)
+            return sizes and sizes[i]
+        end
+        function acts:Group(i)
+            local g = self.groups[i]
+            if g then return g end
+            g = {}
+            g.smaller = RC.UI:CreateStyledButton(self, "-", 22, 20)
+            g.smaller:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -i * self.rowH)
+            g.smaller:SetScript("OnClick", function()
+                if UM.selectedFrame then UM:StepFrameSize(UM.selectedFrame, i, -1) end
+            end)
+            g.size = RC.UI:CreateStyledButton(self, "100%", 132, 20)
+            g.size:SetPoint("LEFT", g.smaller, "RIGHT", 2, 0)
+            g.size:SetScript("OnClick", function()
+                local size = SizeAt(i)
+                if size and size.def ~= nil then UM:SetFrameSize(UM.selectedFrame, i, size.def) end
+            end)
+            g.bigger = RC.UI:CreateStyledButton(self, "+", 22, 20)
+            g.bigger:SetPoint("LEFT", g.size, "RIGHT", 2, 0)
+            g.bigger:SetScript("OnClick", function()
+                if UM.selectedFrame then UM:StepFrameSize(UM.selectedFrame, i, 1) end
+            end)
+            -- (the tips are written for the picked piece's size)
+            local function SizeTip(owner, which)
+                owner:HookScript("OnEnter", function(btn)
+                    local size = SizeAt(i)
+                    if not size then return end
+                    local stepText = UM.SizeText(size, size.step)
+                    local title, body
+                    if which == 0 then
+                        title = size.label
+                        body = size.tip or ""
+                        if size.def ~= nil then body = body .. " " .. string.format(RCL["Click: back to %s."], UM.SizeText(size, size.def)) end
+                    else
+                        title = which < 0 and RCL["Smaller"] or RCL["Bigger"]
+                        body = string.format(which < 0 and RCL["%s less (hold Shift for a finer step). Undo puts it back."]
+                            or RCL["%s more (hold Shift for a finer step). Undo puts it back."], stepText)
+                    end
+                    -- (the colours Tip above uses)
+                    GameTooltip:SetOwner(btn, "ANCHOR_BOTTOM")
+                    local w = GetColor("whiteText")
+                    GameTooltip:SetText(title, w.r, w.g, w.b)
+                    local c = GetColor("tooltipText")
+                    GameTooltip:AddLine(body, c.r, c.g, c.b, true)
+                    GameTooltip:Show()
+                end)
+                owner:HookScript("OnLeave", function() GameTooltip:Hide() end)
+            end
+            SizeTip(g.smaller, -1) SizeTip(g.size, 0) SizeTip(g.bigger, 1)
+            self.groups[i] = g
+            return g
+        end
+        -- (the first row under its old names: tests and callers know them)
+        local g1 = acts:Group(1)
+        acts.smaller, acts.size, acts.bigger = g1.smaller, g1.size, g1.bigger
+        acts.baseW = (acts.reset:GetWidth() or 56) + 4 + (acts.hide:GetWidth() or 48)
+        acts:SetWidth(acts.baseW)
         self.acts = acts
         return acts
     end
@@ -2046,6 +3433,31 @@ local function InitializeUIMover()
             return
         end
         acts = self:CreateActions()
+        -- (its size, where it has one)
+        do
+            local sizes = self:FrameSizes(self.selectedFrame) or {}
+            local n = #sizes
+            for i = 1, math.max(n, #acts.groups) do
+                local size = sizes[i]
+                local g = size and acts:Group(i) or acts.groups[i]
+                if g then
+                    local has = size ~= nil
+                    g.smaller:SetShown(has)
+                    g.size:SetShown(has)
+                    g.bigger:SetShown(has)
+                    if has then
+                        local cur = size.get() or 0
+                        -- (one size: just its value; several: each says which it is)
+                        local text = UM.SizeText(size, cur)
+                        if n > 1 then text = tostring(size.label or "") .. " " .. text end
+                        RC.UI:SetButtonText(g.size, text)
+                        g.smaller:SetEnabled(cur > size.min + 0.0005)
+                        g.bigger:SetEnabled(cur < size.max - 0.0005)
+                    end
+                end
+            end
+            acts:SetSize(math.max(acts.baseW, n > 0 and acts.rowW or 0), 20 + n * acts.rowH)
+        end
         -- (a small box carries its name over it and its numbers under it)
         local out = (anchor._textsInside == false) and 20 or 4
         acts:ClearAllPoints()
@@ -2111,6 +3523,10 @@ local function InitializeUIMover()
     -- out the same way Save & Exit goes.
     function UM:CancelMoveMode()
         if not self.isMoving then return end
+        -- (the pieces' one scale, as it was when this opened)
+        if self._entryScale and RC.Screen and math.abs(RC.Screen.Scale() - self._entryScale) > 0.0005 then
+            RC.Screen.Set(self._entryScale)
+        end
         self:RestoreEntry()
         self:ExitMoveMode("cancel")
     end
@@ -2246,16 +3662,26 @@ local function InitializeUIMover()
                 end
 
                 if frameKey == "reminderFrame" and RC.ShowReminderForced then
-                    -- Real reminder popup with sample text; dismissed on exit.
-                    -- No ability keys here: the forced path speaks them via
-                    -- TTS (possibly on a delayed timer), and the mover must
-                    -- stay silent.
+                    -- The real reminder popup, dismissed on exit, with two
+                    -- sample icons on it (2026-11-20) so its icon size, its
+                    -- spacing and its scale are seen as they are set. The
+                    -- forced path's quiet flag: no sound, nothing spoken -
+                    -- the mover stays silent.
                     RC._suppressReminderTTSOnce = true
-                    RC:ShowReminderForced(RCL["Reminder preview - place me"], {}, 0)
+                    RC:ShowReminderForced(RCL["Reminder preview - place me"], { "trinket1", "trinket2" }, 0, true)
                     RC._suppressReminderTTSOnce = nil
+                    -- held still at rest (no entrance playing under the handle)
+                    if RC.Motion and RC.Motion.Stop then RC.Motion.Stop(frame) end
                     data._previewReminder = frame:IsShown() and true or nil
                     data._previewShown = true
                     frame:Show()
+                    -- at its saved layer and scale even when the popup could
+                    -- not be built (it goes back to 100 % each time it hides,
+                    -- and its saved spot is in the units of the saved scale)
+                    if RC.ApplyFrameCustom then
+                        RC:ApplyFrameCustom(frame, function() return RC.db and RC.db.reminderPopup end)
+                    end
+                    if frame.SetAlpha then frame:SetAlpha(1) end
                 elseif frameKey == "specPopup" and RC.FillSpecDisplay and RC.specDetection then
                     -- the real popup with this character's spec (or Fury),
                     -- held still: no entrance, no timer to fade it out
@@ -2437,6 +3863,10 @@ local function InitializeUIMover()
             RC._uiMoverActive = true
         end
         self.panelless = (opts and opts.noPanel) and true or false
+        self._entryScale = RC.Screen and RC.Screen.Scale() or nil
+        if self.controlPanel and self.controlPanel.sizeSlider and self._entryScale then
+            self.controlPanel.sizeSlider:SetValue(math.floor(self._entryScale * 100 + 0.5))
+        end
 
         self:RegisterAddonFrames()
         self:ActivatePreviews()
@@ -2803,6 +4233,9 @@ local function InitializeUIMover()
                     if RC.SaveConfigurationToProfile then RC:SaveConfigurationToProfile() end
                 end })
         end
+
+        -- the pieces' one scale: what was just registered follows it
+        if RC.Screen and RC.Screen.Scale() ~= 1 then RC.Screen.Apply() end
 
         if RC.DebugPrint then
             local count = 0
