@@ -68,6 +68,19 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.13",
+            date = "2026-11-22",
+            title = "Cooldowns after a PC restart",
+            sections = {
+                {
+                    type = "fixed",
+                    items = {
+                        "A cooldown that began before your PC was restarted could show as a full cooldown on trinket, consumable and item timers. It shows the time really left.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.12",
             date = "2026-11-20",
             title = "Gear by spec and stance, and a size for every piece on screen",

@@ -2,7 +2,7 @@
 -- never write _G - a written Blizzard global taints its readers)
 local RCC = _G.Readycheck
 local GetSpellInfo = GetSpellInfo or (RCC and RCC.Compat and RCC.Compat.GetSpellInfo)
-local GetSpellCooldown = GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
+local GetSpellCooldown = (_G.Readycheck and _G.Readycheck.SpellCooldown) or GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
 ------------------------------------------------------------------------
 -- Readycheck - Hotswap
 -- Spell-triggered temporary gear swaps (T2 Battle Shout, Diamond Flask,

@@ -36,7 +36,7 @@ do
     local UnitGUID = UnitGUID
     local UnitCastingInfo = UnitCastingInfo
     local UnitChannelInfo = UnitChannelInfo
-    local GetSpellCooldown = GetSpellCooldown or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetSpellCooldown)
+    local GetSpellCooldown = (_G.Readycheck and _G.Readycheck.SpellCooldown) or GetSpellCooldown or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetSpellCooldown)
     local math_floor = math.floor
     local math_ceil = math.ceil
     local math_max = math.max

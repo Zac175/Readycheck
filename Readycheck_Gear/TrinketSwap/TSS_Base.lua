@@ -27,7 +27,7 @@ do
         function RC:GetItemCooldownSafe(itemId)
             if not itemId then return 0, 0 end
             if C_Container and C_Container.GetItemCooldown then
-                local start, duration = C_Container.GetItemCooldown(itemId)
+                local start, duration = Readycheck.PlainCD(C_Container.GetItemCooldown(itemId))
                 return start or 0, duration or 0
             end
             if self.GetItemCooldown then

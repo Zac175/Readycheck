@@ -9,7 +9,7 @@
 -- Taint-safe API locals (fallbacks on RC.Compat, built in Core;
 -- never write _G - a written Blizzard global taints its readers)
 local RCC = _G.Readycheck
-local GetSpellCooldown = GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
+local GetSpellCooldown = (_G.Readycheck and _G.Readycheck.SpellCooldown) or GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
 local function InitializeCooldownManager()
     local RC = _G.Readycheck
     if not RC then

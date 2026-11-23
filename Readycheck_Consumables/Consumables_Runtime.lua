@@ -101,7 +101,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
                         if cooldownRemaining < 0 then cooldownRemaining = 0 end
                     end
                 elseif trinketData.bag and trinketData.slot then
-                    start, duration = C_Container.GetContainerItemCooldown(trinketData.bag, trinketData.slot)
+                    start, duration = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(trinketData.bag, trinketData.slot))
                     if start and start > 0 and duration > 1.5 then
                         cooldownRemaining = (start + duration) - now
                         if cooldownRemaining < 0 then cooldownRemaining = 0 end
@@ -302,7 +302,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
                                         updT = true; break
                                     end
                                 elseif trinketData.bag and trinketData.slot then
-                                    local start, duration = C_Container.GetContainerItemCooldown(trinketData.bag, trinketData.slot)
+                                    local start, duration = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(trinketData.bag, trinketData.slot))
                                     if start and start > 0 and duration > 1.5 and (start + duration) - now > 0 then
                                         updT = true; break
                                     end

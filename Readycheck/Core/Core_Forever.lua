@@ -66,6 +66,11 @@ local function PlainCD(key, s, d, en, m)
     end
     if Secret(en) then en = true end
     if Secret(m) then m = 1 end
+    -- (a cooldown that began before this PC started: each addon's own fix,
+    -- ZacUI's Core_Flavor / Readycheck's Core_Secret, whichever is there)
+    local Z, R = G.ZacUI, G.Readycheck
+    local Fix = (Z and Z.CooldownFix) or (R and R.CooldownFix)
+    if Fix then s, d = Fix(s, d) end
     return s, d, en and 1 or 0, m or 1
 end
 

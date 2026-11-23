@@ -2708,7 +2708,7 @@ local _rrs = RC._rrs
             bag, slot = RC.Bags:Find(itemId)
         end
         if not bag then return false end
-        local st, du = C_Container.GetContainerItemCooldown(bag, slot)
+        local st, du = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bag, slot))
         if st and st > 0 and du and du > 1.5 then
             return true, math.floor(st + du - GetTime() + 0.5)
         end

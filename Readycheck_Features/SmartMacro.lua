@@ -113,7 +113,7 @@ local function InitializeSmartMacro()
                         -- means no cooldown is running.
                         local key = name:lower():match("^%s*(.-)%s*$")
                         if not cache[key] then
-                            local start = C_Container.GetContainerItemCooldown(bag, slot)
+                            local start = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bag, slot))
                             cache[key] = {
                                 exists    = true,
                                 available = (not start or start == 0),

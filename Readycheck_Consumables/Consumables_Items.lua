@@ -14,7 +14,7 @@ local GetItemInfo = GetItemInfo or (RCC and RCC.Compat and RCC.Compat.GetItemInf
 local GetItemInfoInstant = GetItemInfoInstant or (RCC and RCC.Compat and RCC.Compat.GetItemInfoInstant)
 local GetItemSpell = GetItemSpell or (RCC and RCC.Compat and RCC.Compat.GetItemSpell)
 local UnitAura = UnitAura or (RCC and RCC.Compat and RCC.Compat.UnitAura)
-local GetSpellCooldown = GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
+local GetSpellCooldown = (_G.Readycheck and _G.Readycheck.SpellCooldown) or GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
 local WRF = _G.Readycheck
 if not WRF then return end
 WRF._chInit = WRF._chInit or {}
@@ -34,7 +34,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
     local UnitGUID = UnitGUID
     local UnitCastingInfo = UnitCastingInfo
     local UnitChannelInfo = UnitChannelInfo
-    local GetSpellCooldown = GetSpellCooldown or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetSpellCooldown)
+    local GetSpellCooldown = (_G.Readycheck and _G.Readycheck.SpellCooldown) or GetSpellCooldown or (_G.Readycheck and _G.Readycheck.Compat and _G.Readycheck.Compat.GetSpellCooldown)
     local math_floor = math.floor
     local math_ceil = math.ceil
     local math_max = math.max
@@ -349,7 +349,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
                 end
             end
             if not bestBag then return nil end
-            local st, du = C_Container.GetContainerItemCooldown(bestBag, bestSlot)
+            local st, du = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bestBag, bestSlot))
             if st and st > 0 and du and du > 1.5 then
                 return st + du - GetTime()
             end

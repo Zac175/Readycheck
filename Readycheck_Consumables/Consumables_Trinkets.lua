@@ -371,7 +371,7 @@ WRF._chInit[#WRF._chInit + 1] = function()
                 if itemEquipLoc == "INVTYPE_TRINKET" and not hiddenTrinkets[itemID] then
                     local name, link, rarity, _, _, _, _, _, _, icon = GetItemInfo(itemID)
                     if name then
-                        local start, duration = C_Container.GetContainerItemCooldown(bag, slot)
+                        local start, duration = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bag, slot))
                         local cooldownRemaining = 0
                         if start and start > 0 and duration > 1.5 then
                             cooldownRemaining = (start + duration) - now

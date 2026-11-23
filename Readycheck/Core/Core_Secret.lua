@@ -60,7 +60,45 @@ function RC.GCDSpell()
     return id
 end
 
+-- A COOLDOWN THAT BEGAN BEFORE THIS PC STARTED (2026-11-22). The game
+-- keeps a cooldown's start in milliseconds since the PC started, in a 32
+-- bit number. One that began before that - used, then the PC restarted; or
+-- started on another computer - comes back from every cooldown read one
+-- turn of that number too late: 2^32 ms (49.7 days) in the future
+-- (WoWUIBugs #47). Counted with, that is weeks left (and "C_Timer.After
+-- duration is too large", 2026-10-31); on a Cooldown it is a greyed full
+-- swipe. With the turn taken off the start is before zero, which every
+-- "start > 0" test reads as no cooldown - so the corrected reading starts
+-- just after zero and ENDS WHEN THE COOLDOWN REALLY ENDS: the time left
+-- and "is it running" are right everywhere.
+--   RC.CooldownFix(start, duration, ...) -> start, duration, ...
+-- Ordinary readings and hidden values come back exactly as given.
+local CLOCK_TURN = 2 ^ 32 / 1000
+local CLOCK_ZERO = 0.001
+function RC.CooldownFix(start, duration, ...)
+    if issecret ~= nil and (issecret(start) or issecret(duration)) then return start, duration, ... end
+    if type(start) ~= "number" or type(duration) ~= "number" then return start, duration, ... end
+    local now = GetTime()
+    if start <= now + 1 or duration <= 0 then return start, duration, ... end
+    local began = start - CLOCK_TURN
+    if began > now then return start, duration, ... end       -- (not this fault: left alone)
+    local ends = began + duration
+    if ends <= now then return 0, 0, ... end                   -- (over already)
+    if began > 0 then return began, duration, ... end
+    return CLOCK_ZERO, ends - CLOCK_ZERO, ...
+end
+
 function RC.PlainCD(start, duration, enable, ...)
     if issecret ~= nil and (issecret(start) or issecret(duration) or issecret(enable)) then return 0, 0, 1 end
-    return start, duration, enable, ...
+    return RC.CooldownFix(start, duration, enable, ...)
+end
+
+-- The spell cooldown read every file takes in place of the game's own
+-- (`local GetSpellCooldown = Readycheck.SpellCooldown or ...`): the same
+-- answers, with a start from before this PC started put right.
+do
+    local raw = GetSpellCooldown or (RC.Compat and RC.Compat.GetSpellCooldown)
+    if raw then
+        function RC.SpellCooldown(a, b) return RC.CooldownFix(raw(a, b)) end
+    end
 end

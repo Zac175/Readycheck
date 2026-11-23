@@ -21,7 +21,7 @@ local GetItemInfo = GetItemInfo or (RCC and RCC.Compat and RCC.Compat.GetItemInf
 local GetItemIcon = GetItemIcon or (RCC and RCC.Compat and RCC.Compat.GetItemIcon)
 local GetSpellInfo = GetSpellInfo or (RCC and RCC.Compat and RCC.Compat.GetSpellInfo)
 local GetSpellTexture = GetSpellTexture or (RCC and RCC.Compat and RCC.Compat.GetSpellTexture)
-local GetSpellCooldown = GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
+local GetSpellCooldown = (_G.Readycheck and _G.Readycheck.SpellCooldown) or GetSpellCooldown or (RCC and RCC.Compat and RCC.Compat.GetSpellCooldown)
 local UnitDebuff = UnitDebuff or (RCC and RCC.Compat and RCC.Compat.UnitDebuff)
 local IsSpellInRange = IsSpellInRange or (RCC and RCC.Compat and RCC.Compat.IsSpellInRange)
 
@@ -535,7 +535,7 @@ local function InitializeCustomReminders()
             end
             local bag, bagSlot = RC.Bags:Find(itemId)
             if bag then
-                local s, d = C_Container.GetContainerItemCooldown(bag, bagSlot)
+                local s, d = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bag, bagSlot))
                 return s, d
             end
         end

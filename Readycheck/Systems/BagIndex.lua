@@ -160,7 +160,8 @@ end
 function Bags:Cooldown(itemID)
     local bag, slot = self:Find(itemID)
     if not bag then return 0, 0 end
-    local start, duration = GetCooldown(bag, slot)
+    -- (began before this PC started: RC.CooldownFix, Core_Secret)
+    local start, duration = RC.CooldownFix(GetCooldown(bag, slot))
     return start or 0, duration or 0
 end
 

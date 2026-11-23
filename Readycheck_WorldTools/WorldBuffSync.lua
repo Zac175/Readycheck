@@ -594,7 +594,7 @@ local function InitializeWorldBuffSync()
         for id in pairs(CHRONO_ITEM_IDS) do
             local bag, s = RC.Bags:Find(id)
             if bag then
-                local start, dur = C_Container.GetContainerItemCooldown(bag, s)
+                local start, dur = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bag, s))
                 if start and start > 0 and dur and dur > 10 then
                     local rem = start + dur - GetTime()
                     if rem > 1 and (not best or rem > best) then best = math_floor(rem) end
@@ -607,7 +607,7 @@ local function InitializeWorldBuffSync()
     function WB:ReadHearthstoneCD()
         local bag, s = RC.Bags:Find(6948)
         if not bag then return nil end
-        local start, dur, enable = C_Container.GetContainerItemCooldown(bag, s)
+        local start, dur, enable = Readycheck.PlainCD(C_Container.GetContainerItemCooldown(bag, s))
         if start and dur and dur > 0 and enable == 1 then
             local rem = start + dur - GetTime()
             if rem > 1 then return math_floor(rem) end
