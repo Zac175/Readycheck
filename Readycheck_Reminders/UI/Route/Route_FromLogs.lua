@@ -20,7 +20,7 @@ local function C(cat, key) return RC:GetColor(cat, key) end
 -- The Readycheck Routes page (GitHub Pages, repository
 -- Zac175/readycheck-routes). If it is ever emptied, the window says the
 -- page is not online instead of handing over a dead link.
-RC.ROUTE_TOOL_URL = RC.ROUTE_TOOL_URL or "https://zac175.github.io/readycheck-routes/"
+RC.ROUTE_TOOL_URL = RC.ROUTE_TOOL_URL or "https://zacaddons.com/readycheck-routes/"
 
 local logsWin
 local function BuildLogsWindow()

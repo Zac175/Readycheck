@@ -68,6 +68,19 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.15",
+            date = "2026-11-27",
+            title = "The website's new address",
+            sections = {
+                {
+                    type = "changed",
+                    items = {
+                        "The website has a new address: zacaddons.com. The report, suggest and website buttons, /rc report, /rc suggest and the route planner link now open it.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.14",
             date = "2026-11-25",
             title = "A tidier settings window, and a website for reports and ideas",

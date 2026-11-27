@@ -1153,7 +1153,7 @@ function RC.UI:CreateSearchBox(parent, opts)
     -- and suggestions. One address, here only. A link from RC.SiteLink
     -- carries the addon, this version and this game version, so the
     -- site's form opens already filled in.
-    RC.SITE = "https://zac175.github.io/"
+    RC.SITE = "https://zacaddons.com/"
     -- kind: "report" (a problem), "suggest" (a feature), anything else = what changed
     function RC.SiteLink(kind)
         local v = tostring(RC.version or "")
