@@ -254,13 +254,23 @@ local TEXT = _sbs.TEXT
                 note:SetPoint("RIGHT", card, "RIGHT", -14, 0)
                 note:SetJustifyH("LEFT")
                 note:SetText(RCL["Message Zac on Discord: "] .. tostring(self.CONTACT_DISCORD or "Zac12")
-                    .. RCL[". The button shows the name ready to copy (/rc discord does the same)."])
+                    .. RCL[". The button shows the name ready to copy (/rc discord does the same)."]
+                    .. " " .. RCL["Something broken, or something missing? The other two buttons give you a link to the site's form, already filled in with your version."])
                 note:SetTextColor(gray.r, gray.g, gray.b, gray.a or 1)
                 y = y - math.max(12, note:GetStringHeight() or 12) - 10
                 local btn = self.UI:CreateStyledButton(card, RCL["Discord"], 120, 24)
                 btn:SetPoint("TOPLEFT", card, "TOPLEFT", 14, y)
                 btn:SetScript("OnClick", function() RC.UI:ShowDiscordContact() end)
                 card.discordButton = btn
+                -- the site's two forms (/rc report, /rc suggest)
+                local rp = self.UI:CreateStyledButton(card, RCL["Report a problem"], 150, 24)
+                rp:SetPoint("LEFT", btn, "RIGHT", 8, 0)
+                rp:SetScript("OnClick", function() RC.UI:ShowDiscordContact("report") end)
+                card.reportButton = rp
+                local sg = self.UI:CreateStyledButton(card, RCL["Suggest a feature"], 150, 24)
+                sg:SetPoint("LEFT", rp, "RIGHT", 8, 0)
+                sg:SetScript("OnClick", function() RC.UI:ShowDiscordContact("suggest") end)
+                card.suggestButton = sg
                 return y - 24 - 10
             end)
         end
@@ -623,7 +633,7 @@ local TEXT = _sbs.TEXT
         home        = { RCL["Core options, appearance, profiles and help"],              "Interface\\Icons\\INV_Misc_Gear_01" },
     }
 
-    local TILE_H, TILE_GAP, TILE_MIN_W = 92, 10, 230
+    local TILE_H, TILE_GAP, TILE_MIN_W = 104, 12, 230
 
     local function FindCategory(catId)
         for _, cat in ipairs(RC.MenuStructure or {}) do
@@ -660,41 +670,91 @@ local TEXT = _sbs.TEXT
         return RC:GetColor("text", "secondary")
     end
 
+    -- ONE TILE (2026-11-25, Zac, looking at these pages in the game: "too
+    -- flat and look terrible ... its all of them"). A tile was a name, a
+    -- line and a button straight on the window's ground, with nothing
+    -- round them until the mouse was over one. It is a raised plate now,
+    -- the one the sidebar's rows and the buttons are made of (RC.UI:Plate:
+    -- lit along its top, an edge all round, a shadow under its foot), with
+    -- a darker band along its foot that holds the state on the left and
+    -- the buttons on the right. Under the mouse the edge goes to the
+    -- accent, the accent washes in from the left and a bar stands down the
+    -- left edge, as on the sidebar's open row.
+    local TILE_FOOT = 36
     local function BuildTile(self, grid, item, cat, frame, catId)
         local outer = self.sidebarConfigFrame
         local spec = OT[item.id] or {}
+        local S = RC.UI.S
+        local FLAT = RC.UI.FLAT
 
         local tile = self:CreateSettingsCard(grid, 0, nil)
         tile:ClearAllPoints()
-        tile.bg = tile.bgTexture   -- AttachHover paints .bg
+        tile.bg = tile.bgTexture
         tile.menuItem = item
         tile._rcOverviewTile = item.id
         tile:EnableMouse(true)
+        if tile.rule then tile.rule:Hide() end
+        -- (the plate paints the tile: the hover helper only reports)
+        tile._rcOwnPaint = true
+
+        local plate = RC.UI:Plate(tile, 0, 0, 0, 0, true)
+        local function Tex(layer, sub)
+            local t = tile:CreateTexture(nil, layer, nil, sub)
+            t:SetTexture(FLAT)
+            return t
+        end
+        -- the accent washing in from the left, and the bar down the edge
+        tile.wash = Tex("BACKGROUND", 5)
+        tile.wash:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
+        tile.wash:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -1, TILE_FOOT)
+        tile.wash:Hide()
+        tile.bar = Tex("ARTWORK", 2)
+        tile.bar:SetWidth(3)
+        tile.bar:SetPoint("TOPLEFT", tile, "TOPLEFT", 0, 0)
+        tile.bar:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 0, 0)
+        tile.bar:Hide()
+        -- the band along the foot and the line over it
+        tile.foot = Tex("BACKGROUND", 6)
+        tile.foot:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 1, 1)
+        tile.foot:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -1, 1)
+        tile.foot:SetHeight(TILE_FOOT - 1)
+        tile.footRule = Tex("BORDER", 1)
+        RC.Line(tile.footRule, "H", 1)
+        tile.footRule:SetPoint("BOTTOMLEFT", tile.foot, "TOPLEFT", 0, 0)
+        tile.footRule:SetPoint("BOTTOMRIGHT", tile.foot, "TOPRIGHT", 0, 0)
 
         local iconBox = CreateFrame("Frame", nil, tile)
-        iconBox:SetSize(34, 34)
-        iconBox:SetPoint("TOPLEFT", tile, "TOPLEFT", 14, -12)
+        iconBox:SetSize(38, 38)
+        iconBox:SetPoint("TOPLEFT", tile, "TOPLEFT", 14, -13)
         local icon = iconBox:CreateTexture(nil, "ARTWORK")
         icon:SetPoint("TOPLEFT", iconBox, "TOPLEFT", 1, -1)
         icon:SetPoint("BOTTOMRIGHT", iconBox, "BOTTOMRIGHT", -1, 1)
         icon:SetTexture(item.icon or 134400)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         iconBox.border = self.UI:CreateSimpleBorder(iconBox, 1)
-        self.UI:UpdateBorderColor(iconBox.border, self:GetColor("ui", "borderNormal"), 1)
         function iconBox:Repaint()
-            RC.UI:UpdateBorderColor(self.border, RC:GetColor("ui", "borderNormal"), 1)
+            local sh = RC:GetColor("settings", "shade")
+            RC.UI:UpdateBorderColor(self.border, sh, 1)
         end
+        iconBox:Repaint()
         tile.icon = icon
 
         -- sidebar box, top-right corner
         local navKey = item.sidebarVisibleKey
         local navBox
+        local navLabelW = 0
         if navKey then
             if not RC.db.sidebarNav then RC.db.sidebarNav = {} end
-            navBox = self.UI:CreateCheckbox(tile, "", RC.db.sidebarNav[navKey] ~= false)
+            -- (a bare ticked box in the corner of a tile whose state said
+            -- "Off" read as two answers to one question: it says what it
+            -- is for)
+            navBox = self.UI:CreateCheckbox(tile, RCL["In menu"], RC.db.sidebarNav[navKey] ~= false)
+            navLabelW = math_ceil(navBox.Text:GetStringWidth() or 0)
+            if navLabelW < 10 then navLabelW = 46 end
             navBox.parentFrame:SetSize(14, 14)
-            navBox.parentFrame:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -12, -12)
-            navBox:SetHitRectInsets(-4, -4, -4, -4)
+            -- (placed in the band along the foot, once the buttons are made:
+            -- beside the name it cut the longer names short, "On-Use Gear S...")
+            navBox:SetHitRectInsets(-4, -(10 + navLabelW), -4, -4)
             navBox:SetScript("OnClick", function(box)
                 local on = box:GetChecked() and true or false
                 if not RC.db.sidebarNav then RC.db.sidebarNav = {} end
@@ -715,15 +775,15 @@ local TEXT = _sbs.TEXT
             tile.navBox = navBox
         end
 
-        local name = self:CreateFontString(tile, "OVERLAY", nil, 13)
-        name:SetPoint("TOPLEFT", iconBox, "TOPRIGHT", 10, -1)
-        name:SetPoint("RIGHT", tile, "RIGHT", navBox and -34 or -12, 0)
+        local name = self:CreateFontString(tile, "OVERLAY", nil, 15)
+        name:SetPoint("TOPLEFT", iconBox, "TOPRIGHT", 12, -1)
+        name:SetPoint("RIGHT", tile, "RIGHT", -12, 0)
         name:SetJustifyH("LEFT")
         name:SetWordWrap(false)
         name:SetText(item.name or "")
         tile.nameText = name
 
-        local desc = self:CreateFontString(tile, "OVERLAY", nil, 10)
+        local desc = self:CreateFontString(tile, "OVERLAY", nil, 11)
         desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
         desc:SetPoint("RIGHT", tile, "RIGHT", -12, 0)
         desc:SetJustifyH("LEFT")
@@ -740,8 +800,9 @@ local TEXT = _sbs.TEXT
 
         local function Open() self:SelectSidebarItem(outer, item, cat) end
 
-        local openBtn = self.UI:CreateStyledButton(tile, RCL["Open"], 54, 20)
-        openBtn:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -10, 10)
+        local footMid = math_floor(TILE_FOOT / 2 + 0.5)
+        local openBtn = self.UI:CreateStyledButton(tile, RCL["Open"], 64, 22)
+        openBtn:SetPoint("RIGHT", tile, "BOTTOMRIGHT", -10, footMid)
         openBtn:SetScript("OnClick", Open)
         tile.openBtn = openBtn
 
@@ -755,7 +816,7 @@ local TEXT = _sbs.TEXT
         local rightOf = openBtn
         if spec.toggle then
             local isOn = spec.toggle.get() and true or false
-            local sw = self.UI:CreateStyledButton(tile, isOn and RCL["On"] or RCL["Off"], 40, 20)
+            local sw = self.UI:CreateStyledButton(tile, isOn and RCL["On"] or RCL["Off"], 44, 22)
             sw:SetPoint("RIGHT", openBtn, "LEFT", -6, 0)
             -- green configured look = on; plain = off
             sw:SetActive(isOn)
@@ -771,43 +832,78 @@ local TEXT = _sbs.TEXT
             if on == nil then on = isOn end
         end
 
-        local status = self:CreateFontString(tile, "OVERLAY", nil, 10)
-        status:SetPoint("LEFT", tile, "BOTTOMLEFT", 14, 20)
-        status:SetPoint("RIGHT", rightOf, "LEFT", -8, 0)
+        -- "In menu", in the band, left of the buttons
+        local stateRight = rightOf
+        if navBox then
+            navBox.parentFrame:SetPoint("RIGHT", rightOf, "LEFT", -(10 + navLabelW + 10 + 4), 0)
+            stateRight = navBox.parentFrame
+        end
+
+        -- the state: a lamp and its words, at the band's left
+        local lamp = tile:CreateTexture(nil, "ARTWORK")
+        lamp:SetSize(6, 6)
+        lamp:SetPoint("LEFT", tile, "BOTTOMLEFT", 14, footMid)
+        RC.UI:DiscArt(lamp, 6)
+        tile.lamp = lamp
+        local status = self:CreateFontString(tile, "OVERLAY", nil, 11)
+        status:SetPoint("LEFT", lamp, "RIGHT", 7, 0)
+        status:SetPoint("RIGHT", stateRight, "LEFT", -8, 0)
         status:SetJustifyH("LEFT")
         status:SetWordWrap(false)
         status:SetText(text or "")
-        if not text then status:Hide() end
         tile.statusText = status
         tile.statusOn = on
+        if not text then
+            status:Hide()
+            lamp:Hide()
+        elseif on == nil then
+            -- words with no on or off to them: no lamp, the words at the edge
+            lamp:Hide()
+            status:ClearAllPoints()
+            status:SetPoint("LEFT", tile, "BOTTOMLEFT", 14, footMid)
+            status:SetPoint("RIGHT", stateRight, "LEFT", -8, 0)
+        end
 
         local function Paint(t)
-            local tc = RC:GetColor("text", "gold")
-            t.nameText:SetTextColor(tc.r, tc.g, tc.b)
-            local gc = RC:GetColor("text", "gray")
-            t.descText:SetTextColor(gc.r, gc.g, gc.b)
+            local hot = t._rcHot and true or false
+            local A = RC.UI:SAccent()
+            local tc = RC:GetColor("settings", "text")
+            plate.box:SetVertexColor(RC.UI:SCol("buttonBackground", hot and 0.62 or 0.42))
+            if hot then
+                plate:Paint(S.NAV_PL_LIFT_H, S.NAV_PL_SHEEN_H, A, S.NAV_PL_EDGE_H, S.NAV_PL_DROP)
+            else
+                plate:Paint(S.NAV_PL_LIFT, S.NAV_PL_SHEEN, tc, S.NAV_PL_EDGE, S.NAV_PL_DROP)
+            end
+            t.wash:SetShown(hot)
+            if hot then RC.UI:Grad(t.wash, A, 0.14) end
+            t.bar:SetShown(hot)
+            t.bar:SetVertexColor(A.r, A.g, A.b, 1)
+            t.foot:SetVertexColor(RC.UI:SCol("shade", 0.26))
+            t.footRule:SetVertexColor(RC.UI:SCol("shade", 0.55))
+            if hot then
+                t.nameText:SetTextColor(A.r, A.g, A.b, 1)
+            else
+                t.nameText:SetTextColor(RC.UI:SCol("text", 1))
+            end
+            t.descText:SetTextColor(RC.UI:SCol("text", 0.60))
             local sc = StatusColor(t.statusOn)
             t.statusText:SetTextColor(sc.r, sc.g, sc.b)
+            local lc = (t.statusOn == true) and RC:GetColor("ui", "configured") or RC:GetColor("text", "gray")
+            t.lamp:SetVertexColor(lc.r, lc.g, lc.b, (t.statusOn == true) and 1 or 0.7)
         end
         Paint(tile)
 
-        local function HoverRing(t, hot)
-            if hot then
-                RC.UI:UpdateBorderColor(t.border, RC:GetColor("ui", "borderHover"), 1)
-            else
-                RC.UI:UpdateBorderColor(t.border, RC:GetColor("ui", "borderNormal"), 0.55)
-            end
+        local function Hover(t, hot)
+            t._rcHot = hot or nil
+            Paint(t)
         end
         self.UI:AttachHover(tile, self:GetColor("ui", "cardBackground"), self:GetColor("buttons", "hoverBackground"), {
-            onEnter = function(t) HoverRing(t, true) end,
+            skipWhen = "_rcOwnPaint",
+            onEnter = function(t) Hover(t, true) end,
             onLeave = function(t)
                 -- moving onto the tile's own buttons keeps the tile lit
-                if t:IsMouseOver() then
-                    local hc = t.hoverBg
-                    t.bg:SetVertexColor(hc.r, hc.g, hc.b, hc.a or 1)
-                    return
-                end
-                HoverRing(t, false)
+                if t:IsMouseOver() then return end
+                Hover(t, false)
             end,
         })
         -- a tile is a fixed size: a long name, description or status line
@@ -833,8 +929,7 @@ local TEXT = _sbs.TEXT
         local cardRepaint = tile.Repaint
         function tile:Repaint()
             cardRepaint(self)
-            self.normBg = RC:GetColor("ui", "cardBackground")
-            self.hoverBg = RC:GetColor("buttons", "hoverBackground")
+            if self.rule then self.rule:Hide() end
             Paint(self)
         end
 
@@ -869,7 +964,7 @@ local TEXT = _sbs.TEXT
             hint:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, yPos + 4)
             hint:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
             hint:SetJustifyH("LEFT")
-            hint:SetText(anyNav and RCL["Hidden pages still work; turn them back on here."]
+            hint:SetText(anyNav and RCL["In menu: untick it and the page leaves the menu on the left. It keeps working and opens from here."]
                 or RCL["Switched-off bars are hidden from the sidebar; turn them on here."])
             local hc = self:GetColor("text", "gray")
             hint:SetTextColor(hc.r, hc.g, hc.b)

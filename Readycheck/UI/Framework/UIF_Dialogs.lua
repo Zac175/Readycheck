@@ -1149,12 +1149,35 @@ function RC.UI:CreateSearchBox(parent, opts)
     -- Escape, the X and Close all shut it.
     RC.CONTACT_DISCORD = "Zac12"
     RC.CONTACT_TWITCH = "twitch.tv/zac984"
-    -- kind: nil (Discord: Zac's name) or "twitch" (his channel's link)
+    -- THE SITE (2026-11-24): newest versions, what changed, bug reports
+    -- and suggestions. One address, here only. A link from RC.SiteLink
+    -- carries the addon, this version and this game version, so the
+    -- site's form opens already filled in.
+    RC.SITE = "https://zac175.github.io/"
+    -- kind: "report" (a problem), "suggest" (a feature), anything else = what changed
+    function RC.SiteLink(kind)
+        local v = tostring(RC.version or "")
+        local game = (RC.DetectFlavor and RC:DetectFlavor()) or ""
+        if kind == "report" then
+            return RC.SITE .. "#/report?addon=readycheck&v=" .. v .. "&game=" .. game
+        elseif kind == "suggest" then
+            return RC.SITE .. "#/suggest?addon=readycheck&game=" .. game
+        end
+        return RC.SITE .. "#/changelog/readycheck"
+    end
+    local SITE_KINDS = {
+        report  = { title = RCL["Report a problem"], desc = RCL["Open this link in your browser. It knows your version."] },
+        suggest = { title = RCL["Suggest a feature"], desc = RCL["Open this link in your browser."] },
+        site    = { title = RCL["Readycheck on the web"], desc = RCL["What changed, bug reports and suggestions. Open this link in your browser."] },
+    }
+    -- kind: nil (Discord: Zac's name), "twitch" (his channel's link), or a
+    -- link to the site: "report", "suggest", "site"
     function RC.UI:ShowDiscordContact(kind)
         local dialogName = "ReadycheckContactDialog"
         local dialog = _G[dialogName]
         local tw = kind == "twitch"
-        local name = tw and RC.CONTACT_TWITCH or RC.CONTACT_DISCORD
+        local site = SITE_KINDS[kind]
+        local name = site and RC.SiteLink(kind) or (tw and RC.CONTACT_TWITCH or RC.CONTACT_DISCORD)
 
         if not dialog then
             dialog = CreateFrame("Frame", dialogName, UIParent, "BackdropTemplate")
@@ -1224,14 +1247,24 @@ function RC.UI:CreateSearchBox(parent, opts)
         end
 
         dialog._rcText = name
-        dialog.titleText:SetText(tw and RCL["Watch on Twitch"] or RCL["Need help?"])
-        dialog.messageText:SetText(tw and RCL["Zac's channel"] or RCL["Message Zac on Discord"])
         dialog.onCancel = nil
-        local textH = LayoutDialogBody(dialog, { icon = (self.ICONS or "Interface\\AddOns\\Readycheck\\Media\\Icons\\") .. (tw and "twitch" or "discord") }, 380)
-        -- our glyph has its own margin: shown whole, in the accent
-        dialog.icon:SetTexCoord(0, 1, 0, 1)
-        local A = GetAccentGold()
-        dialog.icon:SetVertexColor(A.r, A.g, A.b, 1)
+        local textH
+        if site then
+            -- a link: the addon's own mark in the title, a wider box
+            dialog.titleText:SetText(site.title)
+            dialog.messageText:SetText(site.desc)
+            dialog.hint:SetText(RCL["Ctrl+C to copy, then paste it into your browser"])
+            textH = LayoutDialogBody(dialog, {}, 470)
+        else
+            dialog.titleText:SetText(tw and RCL["Watch on Twitch"] or RCL["Need help?"])
+            dialog.messageText:SetText(tw and RCL["Zac's channel"] or RCL["Message Zac on Discord"])
+            dialog.hint:SetText(RCL["Ctrl+C to copy"])
+            textH = LayoutDialogBody(dialog, { icon = (self.ICONS or "Interface\\AddOns\\Readycheck\\Media\\Icons\\") .. (tw and "twitch" or "discord") }, 380)
+            -- our glyph has its own margin: shown whole, in the accent
+            dialog.icon:SetTexCoord(0, 1, 0, 1)
+            local A = GetAccentGold()
+            dialog.icon:SetVertexColor(A.r, A.g, A.b, 1)
+        end
         -- Height: title bar 31 + 14 + body + 10 + box 22 + 6 + hint 12 +
         -- 12 + button 22 + 14
         dialog.nameBox:ClearAllPoints()
@@ -1243,8 +1276,10 @@ function RC.UI:CreateSearchBox(parent, opts)
         ShowModal(dialog)
         dialog.editBox:SetText(name)
         dialog.editBox:SetFocus()
+        -- a long link shows from its start; all of it is selected either way
+        if dialog.editBox.SetCursorPosition then dialog.editBox:SetCursorPosition(0) end
         dialog.editBox:HighlightText()
-        RC:DebugPrint("Discord contact shown", "ui")
+        RC:DebugPrint("Contact shown: " .. tostring(kind or "discord"), "ui")
         return dialog
     end
 

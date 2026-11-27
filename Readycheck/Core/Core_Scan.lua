@@ -799,6 +799,21 @@ CMD(function(cmd, args, msg, isWarrior)
         end
 end, "discord", "contact")
 
+-- /rc report, /rc suggest, /rc site: a link to the site to copy, already
+-- filled in with this version and game version (UIF_Dialogs RC.SiteLink)
+local function SiteCommand(kind)
+    return function()
+        if RC.UI and RC.UI.ShowDiscordContact and RC.SiteLink then
+            RC.UI:ShowDiscordContact(kind)
+        elseif RC.SiteLink then
+            RC:Print(RC.SiteLink(kind))
+        end
+    end
+end
+CMD(SiteCommand("report"), "report", "bug")
+CMD(SiteCommand("suggest"), "suggest", "idea")
+CMD(SiteCommand("site"), "site", "web", "website")
+
 -- /rc search <words>: the settings window with the words typed into its
 -- search box and the results dropped under it (Sidebar_SearchBox);
 -- bare, just the cursor in the box.

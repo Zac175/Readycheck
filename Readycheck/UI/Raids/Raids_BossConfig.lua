@@ -405,6 +405,15 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
 
         local parent = frame.scrollChild
         local yPos = -20
+        -- THE PAGE'S TITLE (2026-11-25, seen in the game: every page of the
+        -- window carries its title in the header, and a raid's page had an
+        -- empty band there). The raid's name, pinned like every other
+        -- title; the boss, its strip and the chips follow under it.
+        if self.CreateSettingsPageHeader then
+            local okH, _, hy = pcall(self.CreateSettingsPageHeader, self, parent, -15, raidName,
+                RCL["Reminders, gear and notes for each boss and trash pack"])
+            if okH and type(hy) == "number" then yPos = hy - 4 end
+        end
 
         local encounterIcon = nil
         if encounterType == "boss" then
@@ -711,12 +720,30 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
             end)
             local pb = frame._profileBarFrame
             if pb and frame._chipStrip then
-                pb:ClearAllPoints()
-                pb:SetPoint("TOPLEFT", frame._chipStrip, "TOPLEFT",
-                    (frame._chipRowEndX or 232) + 10, frame._chipRowY or -42)
-                pb:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
-                pb:SetHeight(22)
-                yPos = preBarY
+                -- ROOM FOR THE PROFILE'S NAME (2026-11-24, seen in game at
+                -- the smallest window: Molten Core's six chips left the
+                -- profile box 40 wide, reading "Def..."). Beside the chips
+                -- while Manage and a name you can read fit there; else the
+                -- bar keeps the row of its own it was made on, under the
+                -- chips, with the box a fixed width at the right.
+                local endX = (frame._chipRowEndX or 232) + 10
+                local stripW = frame._chipStrip:GetWidth() or 0
+                if stripW <= 0 then stripW = (parent:GetWidth() or 0) - 40 end
+                local NEED = 110 + 6 + 150
+                if stripW <= 0 or stripW - endX >= NEED then
+                    pb:ClearAllPoints()
+                    pb:SetPoint("TOPLEFT", frame._chipStrip, "TOPLEFT", endX, frame._chipRowY or -42)
+                    pb:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
+                    pb:SetHeight(22)
+                    yPos = preBarY
+                else
+                    local pd, md = pb.profileDropdown, pb.manageDropdown
+                    if pd and md then
+                        pd:ClearAllPoints()
+                        pd:SetPoint("RIGHT", md, "LEFT", -6, 0)
+                        pd:SetWidth(240)
+                    end
+                end
             end
         end
 
@@ -1772,7 +1799,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                     local slotKey = INV_SLOT_NAMES[invSlot]
                     local emptyTex = slotKey and RC:GetSlotEmptyTexture(slotKey) or nil
                     if not emptyTex then
-                        emptyTex = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Background"
+                        emptyTex = "Interface\\PaperDoll\\UI-Backpack-EmptySlot"
                     end
 
                     for i, r in ipairs(rows) do
@@ -1996,7 +2023,7 @@ local GetConfiguredHover, GetTabHoverBg, GetTabNormalBg, GetTabSelectedBg, TEXT 
                         local invSlot  = slotEntry.invSlot
                         local slotInfo = slotDataByInv[invSlot]
                         local emptyTex = (slotInfo and slotInfo.bgTex)
-                                       or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Background"
+                                       or "Interface\\PaperDoll\\UI-Backpack-EmptySlot"
 
                         local btn = CreateFrame("Frame", nil, gridFrame)
                         btn:SetSize(ICON_SIZE, ICON_SIZE)

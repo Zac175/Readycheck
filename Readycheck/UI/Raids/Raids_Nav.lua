@@ -149,7 +149,12 @@ local _sbr = RC._sbr
 
         local x = isCategory and S.NAV_LEFT or 24
         button.text = self:CreateFontString(button, "OVERLAY", nil, isCategory and S.F_GROUP or S.F_NAV)
-        button.text:SetPoint("LEFT", button, "LEFT", x, isRaid and 9 or 0)
+        -- (a raid's row: its three lines sit in the middle of the plate.
+        -- 2026-11-25, seen in the game: with the name 9 above the middle
+        -- the third line lay on the plate's bottom edge and 9 px stood
+        -- empty over the name.)
+        local RAID_NAME_Y = 13
+        button.text:SetPoint("LEFT", button, "LEFT", x, isRaid and RAID_NAME_Y or 0)
         button.text:SetJustifyH("LEFT")
         button.text:SetWordWrap(false)
         button.text:SetText(menuItem.name)
@@ -169,6 +174,13 @@ local _sbr = RC._sbr
             local gl = button:CreateTexture(nil, "ARTWORK")
             gl:SetTexture(FLAT)
             RC.Line(gl, "H", 1)
+            -- (2026-11-25, seen in the game: the line came and went as the
+            -- list scrolled. It is one pixel high and centred on its row,
+            -- so its two edges sit on half pixels, and the client's snap to
+            -- the pixel grid rounds them to the same row as often as not.
+            -- Unsnapped it is always drawn.)
+            if gl.SetSnapToPixelGrid then pcall(gl.SetSnapToPixelGrid, gl, false) end
+            if gl.SetTexelSnappingBias then pcall(gl.SetTexelSnappingBias, gl, 0) end
             gl:SetPoint("LEFT", button.text, "RIGHT", 26, 0)
             gl:SetPoint("RIGHT", button, "RIGHT", -14, 0)
             button.groupLine = gl
@@ -190,7 +202,7 @@ local _sbr = RC._sbr
         end
 
         if isRaid then
-            button.text:SetPoint("RIGHT", button, "RIGHT", -22, 9)
+            button.text:SetPoint("RIGHT", button, "RIGHT", -22, RAID_NAME_Y)
 
             button.profileText = self:CreateFontString(button, "OVERLAY", nil, 10)
             button.profileText:SetPoint("TOPLEFT", button.text, "BOTTOMLEFT", 0, -2)

@@ -99,6 +99,7 @@ local TEXT = _sbc.TEXT
                 RC:EnsureReminderIconText(icon)
                 icon.cooldownText:SetWidth(size)
                 RC:SetReminderIconLabel(icon, sample.text, sample.color)
+                if RC.FitReminderIconLabel then RC:FitReminderIconLabel(icon, size) end
                 icon.cooldownText:Show()
             elseif icon.cooldownText then
                 icon.cooldownText:Hide()

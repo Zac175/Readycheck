@@ -442,6 +442,37 @@ local function Icon(i)
     return ic
 end
 
+-- THE CAPTION FITS ITS ROOM (2026-11-25, seen in the game: "Mongoose"
+-- under a 40 px icon read "Mongo..."). A name wider than the icon plus 20
+-- is set a size smaller, down to 9, rather than cut; a short one keeps
+-- the 12 it always had. Measured only when the name or the icon's size
+-- changes, never per tick.
+local CAPTION, CAPTION_MIN = 12, 9
+local function FitCaption(ic, size, label)
+    local fs = ic.text
+    -- (a font picked on the Appearance page re-dresses the string: fit again)
+    local face = fs.GetFont and fs:GetFont() or nil
+    if ic._capLabel == label and ic._capSize == size and ic._capFace == face then return end
+    local room = size + 20
+    fs:SetWidth(room)
+    if RC.ApplyCustomFont and fs.GetUnboundedStringWidth then
+        local outline = fs._wrFontOutline or "OUTLINE"
+        local px = CAPTION
+        RC:ApplyCustomFont(fs, px, outline)
+        while px > CAPTION_MIN do
+            local need = fs:GetUnboundedStringWidth()
+            -- (two more than the name measures: a word that measures just
+            -- under its room is still drawn cut)
+            if type(need) ~= "number" or need ~= need or (issecretvalue ~= nil and issecretvalue(need)) or need + 2 <= room then break end
+            px = px - 1
+            RC:ApplyCustomFont(fs, px, outline)
+        end
+        -- (the size a font refresh puts back: Core_Boot, RC:CreateFontString)
+        fs._wrFontSize = px
+    end
+    ic._capLabel, ic._capSize, ic._capFace = label, size, fs.GetFont and fs:GetFont() or nil
+end
+
 -- Paints one icon for missing item m ({ icon, label, charges, left }) at
 -- the reminder bar's size, glow and text settings (the live row and the
 -- preview alike).
@@ -464,6 +495,7 @@ local function PaintIcon(ic, m)
     ApplyGlow(ic)
     ic.texture:SetTexture(m.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     ic.text:SetText(m.label or "")
+    FitCaption(ic, size, m.label or "")
     ic.text:SetTextColor(gold.r, gold.g, gold.b, 1)
     if showText then ic.text:Show() else ic.text:Hide() end
     if m.charges then

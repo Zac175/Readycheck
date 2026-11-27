@@ -654,6 +654,38 @@ local _uif = RC._uif
         return false
     end
 
+    -- A CONTAINER WHOSE SIZE CAN BE READ (2026-11-25; measured on the real
+    -- client with /run). A page's tab frame is made pinned TOPLEFT and
+    -- TOPRIGHT and only given its height once its cards are in. Until
+    -- then the client has no rectangle for it, and anything inside it that
+    -- asks its own width is told 0:
+    --     local p = CreateFrame("Frame", nil, UIParent)
+    --     p:SetPoint("TOPLEFT", 99, -99) p:SetPoint("TOPRIGHT", -99, -99)
+    --     local c = CreateFrame("Frame", nil, p)
+    --     c:SetPoint("TOPLEFT", 9, 0) c:SetPoint("RIGHT", -9, 0) c:SetHeight(50)
+    --     c:GetWidth()  -> 0          p:SetHeight(1)  c:GetWidth()  -> 1629
+    -- So "text:SetWidth(card:GetWidth() - 30)" made a text 1 wide and
+    -- nothing of it was drawn (Reminder Settings > Sound: three grey
+    -- lines; 76 places size a text this way). A test stub that works
+    -- rectangles out from the anchors alone never showed it.
+    -- EnsureRect gives every container up the chain that has no height a
+    -- height of 1, which is enough for the client; the page's own
+    -- SetHeight still follows. A frame pinned top and bottom ignores it.
+    function RC.UI:EnsureRect(frame)
+        local f, hops = frame, 0
+        while type(f) == "table" and f ~= _G.UIParent and hops < 8 do
+            if f.GetHeight and f.SetHeight then
+                local okh, h = pcall(f.GetHeight, f)
+                if okh and type(h) == "number" and h == h and h <= 0
+                   and not (issecretvalue ~= nil and issecretvalue(h)) then
+                    pcall(f.SetHeight, f, 1)
+                end
+            end
+            f = f.GetParent and f:GetParent() or nil
+            hops = hops + 1
+        end
+    end
+
     -- ROUND ART: plain white anti-aliased discs (Media/Icons/disc<n>, the
     -- same files ZacUI ships - our own art), each in a power-of-two
     -- canvas. A pill is a disc's two halves for its ends with a flat

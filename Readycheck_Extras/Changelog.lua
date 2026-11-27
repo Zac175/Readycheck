@@ -68,6 +68,44 @@ local function InitializeChangelog()
 
     RC.Changelog.versions = {
         {
+            version = "5.0.14",
+            date = "2026-11-25",
+            title = "A tidier settings window, and a website for reports and ideas",
+            sections = {
+                {
+                    type = "added",
+                    items = {
+                        "Readycheck has a website: what changed in every version, bug reports and feature suggestions. /rc report and /rc suggest give you the link with your version filled in. So do the buttons under Need help? on the General page and the headset button beside Discord and Twitch.",
+                        "Gold: pick whose gold counts, on the stats bar's Gold tab. Every account in your mesh is listed. An account on another Battle.net counts once each of the two accounts ticks the other, and a tick carries to your other accounts on the same Battle.net. An account on your Battle.net that is not yours can be unticked.",
+                    },
+                },
+                {
+                    type = "changed",
+                    items = {
+                        "The group pages (Reminders, Consumables, Gear and the rest) have a new look: each feature is a raised tile with its state, its switch and an In menu tick that takes its page out of the menu on the left.",
+                        "Dropdown lists are as wide as their longest choice, so nothing in an open list is cut short.",
+                        "Appearance: the window preview shows the settings window as it looks today.",
+                    },
+                },
+                {
+                    type = "fixed",
+                    items = {
+                        "Searching the settings made the game stutter. It no longer does.",
+                        "Settings window: text that did not show or was cut short on many pages, among them the description lines on the Sound tab, the Icon look picker, the raid profile box and smart macro lines.",
+                        "Raid pages and the Custom Reminders page were missing their title.",
+                        "Dropdown lists opened bigger or smaller than their box when the settings window was not at 100%.",
+                        "Thin lines in the settings window came and went as it scrolled on some screens.",
+                        "Raid Buff Tracker and Boss Debuff Tracker: the time and the word MISSING were cut short. When a name and MISSING do not both fit, missing rows show an X.",
+                        { "Battle Shout tracker: long names were cut short.", feature = "battle_shout_party" },
+                        "Reminder icons and Raid Consume Reminders: a label wider than its icon was cut short.",
+                        { "World Buff Drops: your own character's row showed only \"(you)\", and a long name from another realm ran into the level column.", feature = "world_tools" },
+                        { "World buff board: the Stored and Ready captions were cut short.", feature = "world_tools" },
+                        "Flask of the Titans, Spirit of Zanza and the Missing Buff Alert preset showed a blank icon.",
+                    },
+                },
+            },
+        },
+        {
             version = "5.0.13",
             date = "2026-11-22",
             title = "Cooldowns after a PC restart",

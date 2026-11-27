@@ -1,10 +1,12 @@
 ------------------------------------------------------------------------
 -- Readycheck - Appearance: the preview and the Motion tab
 -- RC:DeclareAppearancePreview() puts a working miniature of the
--- Readycheck window in the preview pane - its title bar, nav rows, a
--- settings card with a real checkbox, slider, dropdown and buttons from
--- the framework, a bar in the global texture, a reminder icon and text in
--- the global font - so every font, texture, colour and motion setting on
+-- Readycheck window in the preview pane, built from the window's own
+-- parts: the mark and the name over the nav column, a group and two page
+-- rows, the page's tab row and a section with a real checkbox, slider,
+-- dropdown and buttons. Beside it, what sits on the screen: a piece's
+-- header strip, a bar in the global texture, a reminder icon and text in
+-- the global font. So every font, texture, colour and motion setting on
 -- the Appearance page shows on the real widgets as it changes. "Text"
 -- mode lists every text colour.
 -- RC:ShowAppearanceMotionContent is the Motion tab: db.motion.enabled
@@ -17,11 +19,17 @@ local C_Timer = C_Timer
 local RC = _G.Readycheck
 if not RC then return end
 
-    -- wide and short for the preview strip: the title bar on top, then the
-    -- nav, a card with its controls in one line, and the bar / icon / text
-    -- side by side (reads at 0.75 at Normal)
-    local W, H = 740, 80
-    local NAV_W = 74
+    -- wide and short for the preview strip. (2026-11-25, seen in the game:
+    -- the miniature still drew the gold title bar the window lost, its
+    -- checkbox was stretched under the slider's label, the bar ran over
+    -- the icon and the text was cut off at the strip's edge.) The window
+    -- part is now the /rc window as it is drawn today; the pieces that sit
+    -- on the screen have a column of their own to its right.
+    local W, H = 870, 126
+    local WIN_W, NAV_W = 740, 170
+    local SIDE_X = WIN_W + 10
+    local SIDE_W = W - SIDE_X
+    local CARD_H = 70
 
     local function RepaintTree(root, depth)
         depth = depth or 0
@@ -48,12 +56,11 @@ if not RC then return end
         fs:SetTextColor(c.r, c.g, c.b, 1)
     end
 
-    -- the nav rows in the window's own colours (sidebar.* / text.menu*)
+    -- the nav column: a group, a page and the open page
     local NAV = {
-        { text = RCL["SETTINGS"], kind = "category" },
+        { text = RCL["Settings"], kind = "category" },
         { text = RCL["General"],  kind = "normal" },
-        { text = RCL["Reminders"], kind = "selected" },
-        { text = RCL["Testing"],  kind = "disabled" },
+        { text = RCL["Appearance"], kind = "selected" },
     }
 
     -- every text colour, as the colours page names them
@@ -68,30 +75,24 @@ if not RC then return end
     local function Build(canvas, P)
         local st = P.store
         local UI = RC.UI
+        local S = UI.S
 
-        -- WINDOW
+        -- THE WINDOW. Marked as part of the settings window (_rcSetRoot),
+        -- so the framework's constructors give every piece the window's
+        -- look and the window's font, exactly as on the real one.
         local win = CreateFrame("Frame", nil, canvas)
-        win:SetSize(W, H)
-        win:SetPoint("CENTER", canvas, "CENTER", 0, 0)
+        win._rcSetRoot = true
+        win:SetSize(WIN_W, H)
+        win:SetPoint("LEFT", canvas, "LEFT", 0, 0)
         win.bg = Flat(win)
         win.bg:SetAllPoints()
         win.border = UI:CreateSimpleBorder(win)
         st.win = win
 
-        local bar = CreateFrame("Frame", nil, win)
-        bar:SetPoint("TOPLEFT", win, "TOPLEFT", 1, -1)
-        bar:SetPoint("TOPRIGHT", win, "TOPRIGHT", -1, -1)
-        bar:SetHeight(18)
-        UI:ApplyHeaderArt(bar, { stepX = NAV_W, leftColor = function() return RC:GetColor("sidebar", "background") end })
-        local icon = UI:AddTitleIcon(bar, 14, 6)
-        bar.title = RC:CreateFontString(bar, "OVERLAY", nil, 12)
-        bar.title:SetPoint("LEFT", icon, "RIGHT", 6, 1)
-        bar.title:SetText("Readycheck")
-        st.bar = bar
-
+        -- the nav column: the mark and the name, then the rows
         local nav = CreateFrame("Frame", nil, win)
-        nav:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
-        nav:SetPoint("BOTTOMLEFT", win, "BOTTOMLEFT", 1, 1)
+        nav:SetPoint("TOPLEFT", win, "TOPLEFT", 0, 0)
+        nav:SetPoint("BOTTOMLEFT", win, "BOTTOMLEFT", 0, 0)
         nav:SetWidth(NAV_W)
         nav.bg = Flat(nav)
         nav.bg:SetAllPoints()
@@ -99,97 +100,136 @@ if not RC then return end
         RC.Line(nav.rule, "V", 1)
         nav.rule:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
         nav.rule:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", 0, 0)
+        nav.mark = nav:CreateTexture(nil, "ARTWORK", nil, 3)
+        nav.mark:SetSize(22, 22)
+        nav.mark:SetPoint("TOPLEFT", nav, "TOPLEFT", 16, -9)
+        nav.mark:SetTexture("Interface\\AddOns\\Readycheck\\Media\\Checkmark")
+        nav.mark:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        nav.first = RC:CreateFontString(nav, "OVERLAY", nil, 18)
+        nav.first:SetPoint("LEFT", nav.mark, "RIGHT", 7, 0)
+        nav.first:SetText(RCL["Ready"])
+        nav.second = RC:CreateFontString(nav, "OVERLAY", nil, 18)
+        nav.second:SetPoint("LEFT", nav.first, "RIGHT", 0, 0)
+        nav.second:SetText(RCL["check"])
+        -- (the ring and the light behind the mark, as on the window)
+        if UI.AnimateMark then pcall(UI.AnimateMark, UI, nav.mark, nav, { inset = 0 }) end
         nav.rows = {}
-        local y = -3
+        local y = -40
         for i, r in ipairs(NAV) do
-            local row = CreateFrame("Frame", nil, nav)
-            row:SetPoint("TOPLEFT", nav, "TOPLEFT", 3, y)
-            row:SetPoint("RIGHT", nav, "RIGHT", -3, 0)
-            row:SetHeight(r.kind == "category" and 12 or 14)
-            row.bg = Flat(row)
-            row.bg:SetAllPoints()
-            row.text = RC:CreateFontString(row, "OVERLAY", nil, r.kind == "category" and 8 or 10)
-            row.text:SetPoint("LEFT", row, "LEFT", 4, 0)
-            row.text:SetText(r.text)
-            row.kind = r.kind
+            local isGroup = (r.kind == "category")
+            local row = RC:CreateSidebarButton(nav, { name = r.text, category = isGroup or nil }, y, not isGroup)
+            row:SetWidth(NAV_W - 1)
+            row.isSelected = (r.kind == "selected")
+            row.isExpanded = true
             nav.rows[i] = row
-            y = y - (r.kind == "category" and 13 or 15)
+            y = y - (row.buttonHeight or S.CHILD_ROW)
         end
         st.nav = nav
 
+        -- the page: its tab row and one section
         local content = CreateFrame("Frame", nil, win)
-        content:SetPoint("TOPLEFT", nav, "TOPRIGHT", 1, 0)
+        content:SetPoint("TOPLEFT", nav, "TOPRIGHT", 0, -1)
         content:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -1, 1)
+        content:SetClipsChildren(true)
         st.content = content
 
-        -- a scrollbar rail down the content edge
+        local tabs
+        tabs = UI:CreateTabGroup(content, {
+            tabs = { { key = "fonts", label = RCL["Fonts"] }, { key = "colors", label = RCL["Colors"] },
+                     { key = "motion", label = RCL["Motion"] } },
+            selected = "fonts", y = 0, bar = true,
+            onClick = function(key) if tabs then tabs:SetSelected(key) end end,
+        })
+        st.tabs = tabs
+
+        -- the page's scroll bar down the content edge
         local rail = CreateFrame("Frame", nil, content)
-        rail:SetWidth(8)
-        rail:SetPoint("TOPRIGHT", content, "TOPRIGHT", -2, -4)
-        rail:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -2, 4)
+        rail:SetWidth(S.SCROLL_W)
+        rail:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -(S.TABS + 6))
+        rail:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -4, 6)
         rail.bg = Flat(rail)
         rail.bg:SetAllPoints()
-        rail.border = UI:CreateSimpleBorder(rail)
         rail.thumb = Flat(rail, "OVERLAY")
-        rail.thumb:SetPoint("TOPLEFT", rail, "TOPLEFT", 0, -10)
-        rail.thumb:SetPoint("TOPRIGHT", rail, "TOPRIGHT", 0, -10)
-        rail.thumb:SetHeight(22)
+        rail.thumb:SetPoint("TOPLEFT", rail, "TOPLEFT", 0, -6)
+        rail.thumb:SetPoint("TOPRIGHT", rail, "TOPRIGHT", 0, -6)
+        rail.thumb:SetHeight(26)
         st.rail = rail
 
-        -- the card and real controls (the framework's own constructors)
-        local card = RC:CreateSettingsCard(content, -8, RCL["Card title"])
-        card:ClearAllPoints()
-        card:SetPoint("TOPLEFT", content, "TOPLEFT", 6, -4)
-        card:SetSize(512, 52)
+        -- the section and real controls (the framework's own constructors),
+        -- in one line under the section's title
+        local card = RC:CreateSettingsCard(content, -(S.TABS + 6), RCL["Card title"])
+        card:SetHeight(CARD_H)
         st.card = card
 
-        -- the controls in one line under the card's title
         local cb = UI:CreateCheckbox(card, RCL["Checkbox"], true)
-        cb:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -28)
-        cb:SetWidth(84)
+        cb:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -37)
         local sl = UI:CreateSlider(card, 0, 100, 60, 1)
-        sl:SetPoint("TOPLEFT", card, "TOPLEFT", 100, -18)
-        sl:SetWidth(110)
+        sl:SetPoint("TOPLEFT", card, "TOPLEFT", 120, -30)
+        sl:SetWidth(130)
         sl:SetLabel(RCL["Slider"])
         local dd = UI:CreateScrollableDropdown(card, 110, RCL["Dropdown"], 3)
-        dd:SetPoint("TOPLEFT", card, "TOPLEFT", 226, -24)
+        dd:SetPoint("TOPLEFT", card, "TOPLEFT", 264, -35)
         dd:SetItems({ { text = RCL["Option one"], value = 1 }, { text = RCL["Option two"], value = 2 } }, function() end)
         dd:SetSearchEnabled(false)
-        local b1 = UI:CreateStyledButton(card, RCL["Button"], 60, 20)
-        b1:SetPoint("TOPLEFT", card, "TOPLEFT", 352, -26)
-        local b2 = UI:CreateStyledButton(card, RCL["On"], 40, 20)
+        local b1 = UI:CreateStyledButton(card, RCL["Button"], 56, 22)
+        b1:SetPoint("TOPLEFT", card, "TOPLEFT", 388, -35)
+        local b2 = UI:CreateStyledButton(card, RCL["On"], 38, 22)
         b2:SetPoint("LEFT", b1, "RIGHT", 4, 0)
         b2:SetActive(true)
-        local b3 = UI:CreateStyledButton(card, RCL["Off"], 40, 20)
+        local b3 = UI:CreateStyledButton(card, RCL["Off"], 38, 22)
         b3:SetPoint("LEFT", b2, "RIGHT", 4, 0)
         b3:Disable()
 
+        -- ON THE SCREEN: the pieces Readycheck places in the game wear the
+        -- global font and texture, not the window's.
+        local side = CreateFrame("Frame", nil, canvas)
+        side:SetSize(SIDE_W, H)
+        side:SetPoint("LEFT", canvas, "LEFT", SIDE_X, 0)
+        st.side = side
+
+        -- a piece's header strip (the trackers', the reminders')
+        local strip = CreateFrame("Frame", nil, side)
+        strip:SetPoint("TOPLEFT", side, "TOPLEFT", 0, -8)
+        strip:SetPoint("TOPRIGHT", side, "TOPRIGHT", 0, -8)
+        strip:SetHeight(18)
+        UI:ApplyHeaderArt(strip, { compact = true })
+        strip.title = RC:CreateFontString(strip, "OVERLAY", nil, 11)
+        strip.title:SetPoint("LEFT", strip, "LEFT", 6, 0)
+        strip.title:SetText(RCL["On screen"])
+        st.strip = strip
+
         -- a bar in the global texture
-        local barBox = CreateFrame("Frame", nil, content)
-        barBox:SetPoint("TOPLEFT", card, "TOPRIGHT", 10, -10)
-        barBox:SetSize(90, 10)
+        local barBox = CreateFrame("Frame", nil, side)
+        barBox:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", 0, -8)
+        barBox:SetPoint("TOPRIGHT", strip, "BOTTOMRIGHT", 0, -8)
+        barBox:SetHeight(10)
         barBox.track = Flat(barBox)
         barBox.track:SetAllPoints()
         barBox.fill = barBox:CreateTexture(nil, "ARTWORK")
         barBox.fill:SetPoint("TOPLEFT", barBox, "TOPLEFT", 0, 0)
         barBox.fill:SetPoint("BOTTOMLEFT", barBox, "BOTTOMLEFT", 0, 0)
-        barBox.fill:SetWidth(98)
+        barBox.fill:SetWidth(math_floor(SIDE_W * 0.7))
         barBox.border = UI:CreateSimpleBorder(barBox)
         st.barBox = barBox
 
         -- a reminder icon: the ready dress and halo, as on the popup
-        local ready = CreateFrame("Frame", nil, content)
-        ready:SetSize(22, 22)
-        ready:SetPoint("LEFT", barBox, "RIGHT", 10, 0)
+        local ready = CreateFrame("Frame", nil, side)
+        ready:SetSize(24, 24)
+        ready:SetPoint("TOPLEFT", barBox, "BOTTOMLEFT", 2, -10)
         ready.texture = ready:CreateTexture(nil, "ARTWORK")
         ready.texture:SetAllPoints()
         ready.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         ready.texture:SetTexture("Interface\\Icons\\Ability_CriticalStrike")
-        UI:DressReadyIcon(ready, 22)
+        UI:DressReadyIcon(ready, 24)
         st.ready = ready
 
-        local body = content:CreateFontString(nil, "OVERLAY")
-        body:SetPoint("TOPLEFT", barBox, "BOTTOMLEFT", 0, -14)
+        -- text in the global font, at the base size (it wraps in the column)
+        local body = side:CreateFontString(nil, "OVERLAY")
+        body:SetPoint("TOPLEFT", ready, "TOPRIGHT", 10, 2)
+        body:SetPoint("RIGHT", side, "RIGHT", 0, 0)
+        body:SetJustifyH("LEFT")
+        body:SetJustifyV("TOP")
+        body:SetWordWrap(true)
         RC:ApplyCustomFont(body)
         body:SetText(RCL["Body text in your font"])
         st.body = body
@@ -206,7 +246,7 @@ if not RC then return end
         local colW = math_floor((W - 24) / 5)
         for i, line in ipairs(TEXT_LINES) do
             local fs = textPanel:CreateFontString(nil, "OVERLAY")
-            fs:SetPoint("TOPLEFT", textPanel, "TOPLEFT", 12 + ((i - 1) % 5) * colW, -16 - math_floor((i - 1) / 5) * 28)
+            fs:SetPoint("TOPLEFT", textPanel, "TOPLEFT", 12 + ((i - 1) % 5) * colW, -30 - math_floor((i - 1) / 5) * 36)
             RC:ApplyCustomFont(fs)
             fs:SetText(line[2])
             fs.colorKey = line[1]
@@ -217,15 +257,19 @@ if not RC then return end
 
     local function Update(canvas, P)
         local st = P.store
+        local UI = RC.UI
+        local S = UI.S
         local textMode = (P.mode == "text")
-        if textMode then st.win:Hide() st.textPanel:Show() else st.textPanel:Hide() st.win:Show() end
+        st.win:SetShown(not textMode)
+        st.side:SetShown(not textMode)
+        st.textPanel:SetShown(textMode)
         local fs = RC.db and RC.db.fontSettings or {}
         local alpha = fs.mainWindowBgOpacity or 1
 
         if textMode then
             Paint(st.textPanel.bg, "ui", "windowBackground", 1)
             st.textPanel.bg:SetAlpha(alpha)
-            RC.UI:UpdateBorderColor(st.textPanel.border, RC:GetColor("ui", "borderNormal"), 1)
+            UI:UpdateBorderColor(st.textPanel.border, RC:GetColor("ui", "borderNormal"), 1)
             for _, line in ipairs(st.textPanel.lines) do
                 RC:ApplyCustomFont(line)
                 TextColor(line, "text", line.colorKey)
@@ -233,47 +277,42 @@ if not RC then return end
             return
         end
 
-        Paint(st.win.bg, "ui", "windowBackground", 1)
+        -- the window's ground, edge and nav band: what the /rc window's own
+        -- repaint does (Sidebar_Window, frame:RepaintShell)
+        st.win.bg:SetVertexColor(UI:SCol("windowBackground", 1))
         st.win.bg:SetAlpha(alpha)
-        RC.UI:UpdateBorderColor(st.win.border, RC:GetColor("ui", "borderNormal"), 1)
-        if st.bar.RepaintArt then st.bar:RepaintArt() end
-        if RC.UI.PaintMark and st.bar.titleIcon then RC.UI:PaintMark(st.bar.titleIcon) end
-        TextColor(st.bar.title, "ui", "headerText")
-
-        Paint(st.nav.bg, "sidebar", "background")
-        st.nav.bg:SetAlpha(alpha)
-        Paint(st.nav.rule, "ui", "borderNormal")
-        for _, row in ipairs(st.nav.rows) do
-            if row.kind == "category" then
-                row.bg:SetVertexColor(0, 0, 0, 0)
-                TextColor(row.text, "text", "menuCategory")
-            elseif row.kind == "selected" then
-                Paint(row.bg, "sidebar", "buttonSelected")
-                TextColor(row.text, "text", "menuSelected")
-            elseif row.kind == "disabled" then
-                Paint(row.bg, "sidebar", "buttonNormal", 0.5)
-                TextColor(row.text, "text", "menuDisabled")
-            else
-                Paint(row.bg, "sidebar", "buttonNormal")
-                TextColor(row.text, "text", "menuNormal")
-            end
+        if UI.Finish then UI:Finish(st.win, st.win.bg, "window", alpha) end
+        UI:UpdateBorderColor(st.win.border, RC:GetColor("settings", "text"), S.BORDER_A)
+        st.nav.bg:SetVertexColor(UI:SCol("shade", S.SIDEBAR_A))
+        st.nav.bg:SetAlpha(alpha * S.SIDEBAR_A)
+        st.nav.rule:SetVertexColor(UI:SCol("text", S.BORDER_A))
+        if UI.PaintMark then UI:PaintMark(st.nav.mark) end
+        local A = UI:SAccent()
+        st.nav.first:SetTextColor(UI:SCol("text", 1))
+        st.nav.second:SetTextColor(A.r, A.g, A.b, 1)
+        if st.tabs and st.tabs.container and st.tabs.container.band then
+            st.tabs.container.band:SetVertexColor(UI:SCol("shade", S.TAB_BAND_A))
         end
+        st.rail.bg:SetVertexColor(UI:SCol("text", S.SCROLL_TRACK_A))
+        st.rail.thumb:SetVertexColor(UI:ScrollThumbColor(false, 1))
 
-        Paint(st.rail.bg, "scrollbar", "track")
-        st.rail.thumb:SetVertexColor(RC.UI:ScrollThumbColor(false, 1))
-        RC.UI:UpdateBorderColor(st.rail.border, RC:GetColor("ui", "borderNormal"), 1)
+        -- the nav rows, the tabs, the section and its controls repaint
+        -- themselves from the theme
+        RepaintTree(st.win)
+        st.card:SetHeight(CARD_H)
+        if st.card.LayBands then st.card.LayBands() end
 
-        -- the framework widgets repaint themselves from the theme
-        RepaintTree(st.content)
-
+        -- on the screen
+        if st.strip.RepaintArt then st.strip:RepaintArt() end
+        TextColor(st.strip.title, "ui", "headerText")
         Paint(st.barBox.track, "ui", "elementBackground", 1)
         RC:ApplyTextureSpec(st.barBox.fill, nil)
         local g = RC:GetColor("text", "green")
         st.barBox.fill:SetVertexColor(g.r * 0.8, g.g * 0.8, g.b * 0.8, 1)
-        RC.UI:UpdateBorderColor(st.barBox.border, RC:GetColor("ui", "borderNormal"), 1)
+        UI:UpdateBorderColor(st.barBox.border, RC:GetColor("ui", "borderNormal"), 1)
 
-        RC.UI:RepaintReadyIcon(st.ready)
-        RC.UI:SetReadyIconGlow(st.ready, "pulse")
+        UI:RepaintReadyIcon(st.ready)
+        UI:SetReadyIconGlow(st.ready, "pulse")
 
         -- base size and style exactly as a string with no size of its own gets
         RC:ApplyCustomFont(st.body)

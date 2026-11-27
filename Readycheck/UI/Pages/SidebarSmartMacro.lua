@@ -875,8 +875,12 @@ function SM_RenderList(frame)
                 if effectiveBody == "" then
                     bodyShort = "(clears macro)"
                 else
-                    bodyShort = effectiveBody:sub(1, 30)
-                    if #effectiveBody > 30 then bodyShort = bodyShort .. "..." end
+                    -- the whole body on the one line, its lines side by side;
+                    -- the line itself is cut where the card ends (seen in
+                    -- game, 2026-11-24: 30 characters and "..." with half
+                    -- the card empty beside it; a cut by bytes can also
+                    -- land inside a letter on a non-English client)
+                    bodyShort = effectiveBody:gsub("%s*[\r\n]+%s*", "   ")
                 end
                 local rowFS = MakeFS(card, 10,
                     i .. ". " .. condTxt .. valSuffix .. itemSuffix

@@ -109,6 +109,9 @@ local BACK_PANELS = {
         manageDropdown:SetHeight(22)
         manageDropdown:SetPoint("RIGHT", barFrame, "RIGHT", 0, 0)
         profileDropdown:SetPoint("RIGHT", manageDropdown, "LEFT", -6, 0)
+        -- (the raid page places this bar beside its chips, or on a row of
+        -- its own when there is no room: Raids_BossConfig)
+        barFrame.profileDropdown, barFrame.manageDropdown = profileDropdown, manageDropdown
         local chipZone = CreateFrame("Frame", nil, barFrame)
         chipZone:SetPoint("LEFT", barFrame, "LEFT", 0, 0)
         chipZone:SetPoint("RIGHT", profileDropdown, "LEFT", -14, 0)
@@ -810,8 +813,38 @@ local BACK_PANELS = {
         titleBar:SetScript("OnDragStart", function()
             frame:StartMoving()
         end)
+        -- THE WINDOW'S CORNER ON A WHOLE SCREEN PIXEL, as ZacUI's window
+        -- (its Config_Window, SnapWindow). 2026-11-25, measured in the game
+        -- on a 4K screen with /run: the window's left edge at 1139.53 and
+        -- its top at 1579.50 screen pixels. Centred, a window of an odd
+        -- number of pixels starts half a pixel in, and every edge inside it
+        -- is then rounded on its own: a box's sides and a row's gaps come
+        -- out a pixel different from their neighbours. Moved by less than
+        -- one pixel, through the anchor it already has (a centred window
+        -- stays centred, a dragged one stays where it was dropped). After
+        -- an open, a drag, a resize and a scale change.
+        function frame:SnapToPixels()
+            local P = RC.Pixel
+            if not (self:IsShown() and P and P.On and P.On()) then return end
+            if self._rcFolded or (self.GetNumPoints and self:GetNumPoints() ~= 1) then return end
+            local left, top = self:GetLeft(), self:GetTop()
+            local es = self:GetEffectiveScale()
+            local gp = _G.GetPhysicalScreenSize
+            if type(gp) ~= "function" then return end
+            local ok, _, ph = pcall(gp)
+            if not (ok and left and top and es and es > 0.01 and type(ph) == "number" and ph > 0) then return end
+            local one = (768 / ph) / es                 -- one screen pixel in the window's units
+            local dx = math.floor(left / one + 0.5) * one - left
+            local dy = math.floor(top / one + 0.5) * one - top
+            if math.abs(dx) < one * 0.02 and math.abs(dy) < one * 0.02 then return end
+            local point, rel, relPoint, x, y = self:GetPoint(1)
+            if not point then return end
+            self:ClearAllPoints()
+            self:SetPoint(point, rel, relPoint, (x or 0) + dx, (y or 0) + dy)
+        end
         titleBar:SetScript("OnDragStop", function()
             frame:StopMovingOrSizing()
+            frame:SnapToPixels()
         end)
         frame.titleBar = titleBar
 
@@ -952,6 +985,47 @@ local BACK_PANELS = {
             end)
             tw:Repaint()
             frame.twitchButton = tw
+
+            -- The site, after Twitch (2026-11-24, Zac: "a button next the
+            -- twitch and discord buttons as well"): what changed, bug
+            -- reports, suggestions. Same build as the two before it.
+            local web = CreateFrame("Button", nil, sidebar)
+            web:SetSize(20, 20)
+            web:SetPoint("LEFT", tw, "RIGHT", 10, 0)
+            web:SetFrameLevel(sidebar:GetFrameLevel() + 5)
+            local wg = web:CreateTexture(nil, "ARTWORK")
+            wg:SetAllPoints()
+            wg:SetTexture(ICONS .. "support")   -- a headset (2026-11-24, Zac: "more of a support icon")
+            function web:Repaint()
+                if self._rcHot then
+                    local A = RC.UI:SAccent()
+                    wg:SetVertexColor(A.r, A.g, A.b, 1)
+                else
+                    wg:SetVertexColor(SC("text", S.DIM_A))
+                end
+            end
+            RC.UI:AttachHover(web, RC:GetColor("buttons", "normalBackground"), RC:GetColor("buttons", "hoverBackground"), {
+                onEnter = function(b)
+                    b._rcHot = true
+                    b:Repaint()
+                    GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+                    local tc = RC:GetColor("text", "gold") or RC.UI:SAccent()
+                    GameTooltip:SetText(RCL["Readycheck on the web"], tc.r, tc.g, tc.b)
+                    local bc = RC:GetColor("text", "gray") or { r = 0.7, g = 0.7, b = 0.7 }
+                    GameTooltip:AddLine(RCL["What changed, report a problem, suggest a feature. Click to copy the link."], bc.r, bc.g, bc.b, true)
+                    GameTooltip:Show()
+                end,
+                onLeave = function(b)
+                    b._rcHot = nil
+                    b:Repaint()
+                    GameTooltip:Hide()
+                end,
+            })
+            web:SetScript("OnClick", function()
+                if RC.UI.ShowDiscordContact then RC.UI:ShowDiscordContact("site") end
+            end)
+            web:Repaint()
+            frame.siteButton = web
         end
 
         -- A glow over the mark, played by frame.PlayIconAnimation() (the
@@ -1219,6 +1293,8 @@ local BACK_PANELS = {
             if RC and RC.UpdateSidebarMenuScrollbar and RC.sidebarConfigFrame then
                 RC:UpdateSidebarMenuScrollbar(RC.sidebarConfigFrame)
             end
+            -- (once the client has placed it and its scale is on)
+            C_Timer.After(0.3, function() if frame.SnapToPixels then frame:SnapToPixels() end end)
         end)
 
         frame:HookScript("OnSizeChanged", function()
@@ -1449,6 +1525,7 @@ local BACK_PANELS = {
             frame:SetScale(v)
             -- (its edges are whole screen pixels at the new size: UIF_Widgets, RC.Pixel)
             if RC.Pixel and RC.Pixel.Resnap then RC.Pixel.Resnap() end
+            frame:SnapToPixels()
             if scaleText then scaleText:SetText(math.floor(v * 100 + 0.5) .. "%") end
             -- the preview keeps its sample at the real, in-game size
             if RC.Preview and RC.Preview.Place then pcall(RC.Preview.Place) end
@@ -1511,6 +1588,7 @@ local BACK_PANELS = {
             editModeButton:Repaint()
             contactButton:Repaint()
             if frame.twitchButton then frame.twitchButton:Repaint() end
+            if frame.siteButton then frame.siteButton:Repaint() end
             searchContainer:Repaint()
             closeButton:Repaint()
             foldButton:Repaint()
@@ -1555,6 +1633,7 @@ local BACK_PANELS = {
 
         resizeGrip:SetScript("OnMouseUp", function(self, button)
             frame:StopMovingOrSizing()
+            frame:SnapToPixels()
             if frame._rcFolded then return end
             local oldW = pageW
             pageW = math.max(MIN_WIDTH, frame:GetWidth() or pageW)
@@ -1870,6 +1949,9 @@ local BACK_PANELS = {
             frame:Show()
             self:UpdateSidebarMenuScrollbar(frame)
         end
+        -- (the first open: the window is made shown, so its OnShow does not
+        -- run and the corner snap hooked there is asked for here)
+        C_Timer.After(0.3, function() if frame.SnapToPixels then frame:SnapToPixels() end end)
         self:DebugPrint("Sidebar config window created", "config")
     end
 

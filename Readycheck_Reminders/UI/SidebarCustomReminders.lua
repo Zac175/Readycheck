@@ -769,7 +769,8 @@ end
 -- left panel, its scroll frame/child and scrollbar, the divider and the
 -- right-hand editor panel. Re-parents and re-anchors on every call so the
 -- cache survives another sidebar page having cleared out scrollChild.
-local function EnsureChrome(frame,sc,FH)
+local function EnsureChrome(frame,sc,FH,top)
+    top=top or 0
     local ui=frame._crUI
     if ui and ui.sc~=sc then ui=nil end
     if not ui then
@@ -831,11 +832,11 @@ local function EnsureChrome(frame,sc,FH)
     -- Re-assert parenting/anchors: another sidebar page may have orphaned
     -- these while it owned scrollChild.
     ui.lp:SetParent(sc);ui.lp:ClearAllPoints()
-    ui.lp:SetPoint("TOPLEFT",0,0);ui.lp:SetSize(LIST_W,FH);ui.lp:Show()
+    ui.lp:SetPoint("TOPLEFT",0,top);ui.lp:SetSize(LIST_W,FH);ui.lp:Show()
     ui.div:ClearAllPoints()
-    ui.div:SetPoint("TOPLEFT",LIST_W,0);ui.div:SetPoint("BOTTOMLEFT",LIST_W,0);ui.div:Show()
+    ui.div:SetPoint("TOPLEFT",LIST_W,top);ui.div:SetPoint("BOTTOMLEFT",LIST_W,0);ui.div:Show()
     ui.rp:SetParent(sc);ui.rp:ClearAllPoints()
-    ui.rp:SetPoint("TOPLEFT",sc,"TOPLEFT",LIST_W+1,0)
+    ui.rp:SetPoint("TOPLEFT",sc,"TOPLEFT",LIST_W+1,top)
     ui.rp:SetPoint("BOTTOMRIGHT",sc,"BOTTOMRIGHT",0,0);ui.rp:Show()
     return ui
 end
@@ -949,17 +950,38 @@ function RC:ShowSidebarCustomReminders(frame)
         local gt=self:GetColor("text","disabled");l:SetTextColor(gt.r,gt.g,gt.b,1);l:SetText(RCL["Initializing..."])
         return
     end
+    -- THE PAGE'S TITLE (2026-11-25, seen in the game: no title, and the
+    -- preview strip up in the header band where every other page has its
+    -- name). Made when the page is opened (the window has just cleared
+    -- it), not on the page's own redraws: the title made then is still
+    -- pinned. The two panes start under it (at the top once it is pinned,
+    -- which leaves the page; below it where it stays in the page).
+    local paneTop=frame._crPaneTop or 0
+    do
+        local old=frame._crUI
+        local fresh=not (old and old.sc==sc and old.lp and old.lp:GetParent()==sc and old.lp:IsShown())
+        if fresh then
+            paneTop=0
+            if self.CreateSettingsPageHeader then
+                local okH,hf,hy=pcall(self.CreateSettingsPageHeader,self,sc,-15,RCL["Custom Reminders"],
+                    RCL["Your own reminders, with their own triggers and conditions"])
+                if okH and type(hy)=="number" then paneTop=math.min(0,hy+6) end
+                frame._crHeader=okH and hf or nil
+            end
+            frame._crPaneTop=paneTop
+        end
+    end
     RC:CR_DeclarePreview()
     local FW=sc:GetWidth(); if FW<100 then FW=827 end
     local EW=FW-LIST_W-1
     _EW = EW
-    local FH=math.max(frame:GetHeight()-10,500);sc:SetHeight(FH)
+    local FH=math.max(frame:GetHeight()-10,500);sc:SetHeight(FH-paneTop)
 
-    local ui=EnsureChrome(frame,sc,FH)
+    local ui=EnsureChrome(frame,sc,FH,paneTop)
     -- Drop anything in scrollChild that is not ours (a different sidebar
     -- page having rendered here); our own chrome stays and is reused.
     for _,c in pairs({sc:GetChildren()}) do
-        if c~=ui.lp and c~=ui.rp then c:Hide();c:SetParent(nil) end
+        if c~=ui.lp and c~=ui.rp and c~=frame._crHeader then c:Hide();c:SetParent(nil) end
     end
     for _,r in pairs({sc:GetRegions()}) do
         if r~=ui.div then r:Hide() end

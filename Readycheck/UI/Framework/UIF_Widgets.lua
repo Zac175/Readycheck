@@ -1978,7 +1978,10 @@ local S = _uif.S
             for _, it in ipairs(items) do
                 if it.key == key then return it.label or tostring(it.key) end
             end
-            return key ~= nil and tostring(key) or ""
+            -- (opts.emptyLabel: what the box reads when the value is none of
+            -- its items, e.g. "Custom" over a set of presets; a blank box
+            -- reads as broken)
+            return key ~= nil and tostring(key) or (opts.emptyLabel or "")
         end
         local function TipOf(key)
             for _, it in ipairs(items) do if it.key == key then return it.tooltip end end

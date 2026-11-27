@@ -313,6 +313,24 @@ function ESS.LayoutAlert(f, list)
     f._laidOut = true
 end
 
+-- How far the captions reach past the alert's own sides. A caption is wider
+-- than its icon, so with three or more icons the first and last reach past
+-- the frame (the frame is as wide as its icons). Nothing clips the real
+-- alert; the settings sample is clipped to its box and has to be told
+-- (seen in the game, 2026-11-25: "Limited Invulnerability Potion" under the
+-- first icon read "vulnerability").
+function ESS.CaptionOverhang(f)
+    local t = f and f.tiles and f.tiles[1]
+    if not (t and t:IsShown() and t.name) then return 0 end
+    local n = 0
+    for _, tile in ipairs(f.tiles) do if tile:IsShown() then n = n + 1 end end
+    local e = ESS.Settings()
+    local size = t:GetWidth() or 0
+    local gap = math.floor(size * (tonumber(e and e.gap) or ESS.GAP))
+    local margin = ((f:GetWidth() or 0) - (n * size + (n - 1) * gap)) / 2
+    return math.max(0, ((t.name:GetWidth() or 0) - size) / 2 - margin)
+end
+
 local function Layout(list)
     ESS.LayoutAlert(alert, list)
 end

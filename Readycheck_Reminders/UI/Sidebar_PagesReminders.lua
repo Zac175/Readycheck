@@ -111,6 +111,7 @@ local TEXT = _sbs.TEXT
                 icon.cooldownText:SetWidth(size)
                 RCx:PlaceReminderIconText(icon)
                 RCx:SetReminderIconLabel(icon, sample.text, sample.color)
+                if RCx.FitReminderIconLabel then RCx:FitReminderIconLabel(icon, size) RCx:PlaceReminderIconText(icon) end
                 icon.cooldownText:Show()
             else
                 if icon.cooldownText then icon.cooldownText:Hide() end
@@ -424,6 +425,9 @@ local TEXT = _sbs.TEXT
                     {key="minimal", label=RCL["Minimal"], tooltip=RCL["Thin black ring, no glow."]},
                 },
                 selected=CurrentPreset(),
+                -- (2026-11-24, seen in game: a border / glow picked by hand
+                -- fits no preset and the box was left blank)
+                emptyLabel=RCL["Custom"],
                 onSelect=function(k) ApplyPreset(k) end,
             })
             pcy=pcy-30
@@ -718,6 +722,8 @@ local TEXT = _sbs.TEXT
                 RC.db.ttsRepeatInterval=v; s.Text:SetText(v.."s")
             end)
             rptIntSlider:SetScript("OnMouseUp",function() RC:SaveConfigurationToProfile() end)
+            -- (both sliders in one column, after the longer label)
+            self.UI:AlignLabelledSliders({ { ttsRptLbl, rptCntSlider }, { ttsIntLbl, rptIntSlider } }, 180)
             scy=scy-32
 
             local ttsRptDesc=self:CreateFontString(sCard,"OVERLAY",nil,10)
@@ -826,7 +832,9 @@ local TEXT = _sbs.TEXT
                 vLbl:SetPoint("TOPLEFT",voiceCard,"TOPLEFT",14,vcy)
                 vLbl:SetText(RCL["Voice:"])
                 vLbl:SetTextColor(TEXT.light[1],TEXT.light[2],TEXT.light[3])
-                local vDD = self.UI:CreateScrollableDropdown(voiceCard, 200, selectedLabel, 10)
+                -- (wide enough for a voice's whole name: "Microsoft Zira
+                -- Desktop - English (United States)" was cut at "Eng...")
+                local vDD = self.UI:CreateScrollableDropdown(voiceCard, 360, selectedLabel, 10)
                 vDD:SetPoint("TOPLEFT",vLbl,"TOPRIGHT",8,2)
                 vDD:SetItems(voiceItems, function(key, label)
                     if key == "__default__" then

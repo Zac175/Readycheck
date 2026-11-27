@@ -298,9 +298,12 @@ end
     -- The cancellable stamina sources and the flat max HP each one adds at 60.
     -- Only these three are offered; anything else contributing HP has to be
     -- handled by the player.
+    -- (2026-11-25, asked of the real client: INV_Alchemy_ElunaPotion_A and
+    -- Spell_Nature_StrengthOfEarth are not files on it, so these two drew
+    -- no icon. The items' own pictures.)
     local FB_BUFF_META = {
-        { key="Flask of the Titans",   spellId=17626, hp=1200, icon="Interface\\Icons\\INV_Alchemy_ElunaPotion_A",    name="Flask of the Titans"   },
-        { key="Spirit of Zanza",       spellId=24381, hp=500,  icon="Interface\\Icons\\Spell_Nature_StrengthOfEarth", name="Spirit of Zanza"       },
+        { key="Flask of the Titans",   spellId=17626, hp=1200, icon="Interface\\Icons\\INV_Potion_62",               name="Flask of the Titans"   },
+        { key="Spirit of Zanza",       spellId=24381, hp=500,  icon="Interface\\Icons\\INV_Potion_30",               name="Spirit of Zanza"       },
         { key="Power Word: Fortitude", spellId=21562, hp=540,  icon="Interface\\Icons\\Spell_Holy_WordFortitude",     name="Power Word: Fortitude" },
     }
 

@@ -797,7 +797,6 @@ local function InitializeSidebarWorldBuffs()
             cell.countFs:Hide()
         end
 
-        StyleFont(txt, WBLook().timeFont, math.max(6, math.floor(sz * 0.35)))
         if cellW and cellW > 0 then
             txt:SetWidth(cellW)
             txt:SetJustifyH("CENTER")
@@ -809,31 +808,73 @@ local function InitializeSidebarWorldBuffs()
         cell.hit.cellCount     = count
         cell.hit.cellStored    = stored and true or nil
 
+        local caption, c
         if remaining and remaining > 0 then
             icon:SetDesaturated(true)
             icon:SetVertexColor(0.7, 0.7, 0.7, 1)
-            local c = RC:GetColor("text", "orange")
-            txt:SetText(TimerText(remaining, "cd"))
-            txt:SetTextColor(c.r, c.g, c.b, 1)
+            c = RC:GetColor("text", "orange")
+            caption = TimerText(remaining, "cd")
         elseif stored then
             icon:SetDesaturated(false)
             icon:SetVertexColor(1, 1, 1, 1)
-            local c = RC:GetColor("text", "green")
-            txt:SetText(RCL["Stored"])
-            txt:SetTextColor(c.r, c.g, c.b, 1)
+            c = RC:GetColor("text", "green")
+            caption = RCL["Stored"]
         elseif count ~= nil and count <= 0 then
             icon:SetDesaturated(true)
             icon:SetVertexColor(0.7, 0.7, 0.7, 1)
-            local c = RC:GetColor("text", "red")
-            txt:SetText(RCL["None"])
-            txt:SetTextColor(c.r, c.g, c.b, 1)
+            c = RC:GetColor("text", "red")
+            caption = RCL["None"]
         else
             icon:SetDesaturated(false)
             icon:SetVertexColor(1, 1, 1, 1)
-            local c = RC:GetColor("text", "green")
-            txt:SetText(RCL["Ready"])
-            txt:SetTextColor(c.r, c.g, c.b, 1)
+            c = RC:GetColor("text", "green")
+            caption = RCL["Ready"]
         end
+        caption = caption or ""
+        -- THE CAPTION WHOLE (2026-11-25, seen in the game: at the board's
+        -- own width "Stored" and "Ready" read "Stor..." and "Rea..."). A
+        -- cell is as wide as the step between two icons, which at that
+        -- width is narrower than the word at the caption's size. A caption
+        -- that does not fit is set a point smaller at a time (6 at least),
+        -- and one that is still too wide at 6 (measured in the game: the
+        -- step is 26 there, and "Stored" is wider at any size) gets the
+        -- width of its own word: it is centred under its icon and runs a
+        -- pixel or two under its neighbours' empty edges. The size and
+        -- width found are kept for that word, cell and look, so a refresh
+        -- measures nothing.
+        local base = math.max(6, math.floor(sz * 0.35))
+        local fitKey = caption .. "|" .. tostring(cellW) .. "|" .. base .. "|" .. tostring(RC._wbLookSig)
+        if txt._wbFitKey == fitKey then
+            StyleFont(txt, WBLook().timeFont, txt._wbFitSize or base)
+            txt:SetText(caption)
+            if txt._wbFitW then txt:SetWidth(txt._wbFitW) end
+        else
+            local size, wide = base, nil
+            StyleFont(txt, WBLook().timeFont, size)
+            txt:SetText(caption)
+            if cellW and cellW > 0 and txt.GetUnboundedStringWidth then
+                -- (two more than the word measures: in the game "Stored"
+                -- measured 25.9 in a cell of 26 and was still drawn "Stor...")
+                local function Need()
+                    local need = txt:GetUnboundedStringWidth()
+                    if type(need) ~= "number" or need ~= need
+                       or (issecretvalue ~= nil and issecretvalue(need)) then return nil end
+                    return need + 2
+                end
+                local need = Need()
+                while need and need > cellW and size > 6 do
+                    size = size - 1
+                    StyleFont(txt, WBLook().timeFont, size)
+                    need = Need()
+                end
+                if need and need > cellW then
+                    wide = math.ceil(need)
+                    txt:SetWidth(wide)
+                end
+            end
+            txt._wbFitKey, txt._wbFitSize, txt._wbFitW = fitKey, size, wide
+        end
+        txt:SetTextColor(c.r, c.g, c.b, 1)
 
         PlaceText(txt, "cd", "TOP", icon, "BOTTOM", 0, -1, CellTo(row, cell))
         icon:Show(); txt:Show(); cell.hit:Show()
@@ -870,6 +911,10 @@ local function InitializeSidebarWorldBuffs()
         local subText, subColor = SublineFor(info)
         subFs:SetText(subText)
         subFs:SetTextColor(subColor.r, subColor.g, subColor.b, 1)
+        -- (a long place is shortened in the name column on purpose: the
+        -- row's own tooltip, AttachNameTooltip, gives it whole)
+        subFs._rcTruncTip = true
+        nameFs._rcTruncTip = true
         row.subFs = subFs
         PlaceText(nameFs, "name", "TOPLEFT", row, "TOPLEFT", 0, -2, RowTo(row))
         PlaceText(subFs, "sub", "TOPLEFT", row, "TOPLEFT", 0, -20, RowTo(row))
@@ -1186,8 +1231,9 @@ local function InitializeSidebarWorldBuffs()
         end)
 
         local hintFs = self:CreateFontString(parent, "OVERLAY", nil, 10)
-        hintFs:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yPos - 2)
-        hintFs:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
+        -- (level with the text inside the cards: it sat 18 to their left)
+        hintFs:SetPoint("TOPLEFT", parent, "TOPLEFT", 32, yPos - 2)
+        hintFs:SetPoint("RIGHT", parent, "RIGHT", -32, 0)
         hintFs:SetJustifyH("LEFT")
         hintFs:SetText(RCL["Tip: type /wb to pop up the compact board anywhere."])
         local hc = self:GetColor("text", "gray")
@@ -1484,6 +1530,8 @@ local function InitializeSidebarWorldBuffs()
         row.subFs = RC:CreateFontString(row, "OVERLAY", nil, 9)
         row.subFs:SetJustifyH("LEFT")
         row.subFs:SetWordWrap(false)
+        -- (shortened on purpose: the row's tooltip gives the place whole)
+        row.subFs._rcTruncTip = true
         RC.UI:TagElement(row.nameFs, "wbName")
         RC.UI:TagElement(row.subFs, "wbSub")
         return row

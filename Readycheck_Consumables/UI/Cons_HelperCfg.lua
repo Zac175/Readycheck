@@ -747,6 +747,8 @@ _sbc.CreateIconToggleTile = CreateIconToggleTile
                 slider.Text:SetText(value .. "s")
             end)
             repeatSlider:SetScript("OnMouseUp", function() RC:SaveConfigurationToProfile() end)
+            -- (both sliders in one column, after the longer label)
+            self.UI:AlignLabelledSliders({ { repeatCntLbl, repeatCntSlider }, { repeatLbl, repeatSlider } }, 180)
             cardY = cardY - 32
             local repeatDesc = self:CreateFontString(behaviorCard, "OVERLAY", nil, 10)
             repeatDesc:SetPoint("TOPLEFT", behaviorCard, "TOPLEFT", 35, cardY)

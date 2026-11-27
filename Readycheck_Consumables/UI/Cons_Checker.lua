@@ -57,6 +57,15 @@ local GetTabHoverBg, GetTabNormalBg, GetTabNormalText, GetTabSelectedBg, GetTabS
     OT.weapons_bar     = { desc = RCL["Weapon stones and oils timer display."],
         toggle = BarSwitch("weaponsBar", "weaponsBar", "CreateWeaponsBarFrame", "UpdateWeaponsButtons") }
 
+    -- (2026-11-25, seen in the game: this page's tile was a name and an
+    -- Open button over an empty box)
+    OT.consumeremind   = { desc = RCL["Icons for the important consumables you are missing in a raid."],
+        status = function()
+            local d = RC.db and RC.db.consumeRemind
+            if type(d) ~= "table" then return nil end
+            return d.enabled and true or false
+        end }
+
     function RC:ShowSidebarBarsOverview(frame)
         self:ShowSidebarGroupOverview(frame, "consumables")
     end
@@ -181,8 +190,10 @@ local GetTabHoverBg, GetTabNormalBg, GetTabNormalText, GetTabSelectedBg, GetTabS
                     f:SetScale(1)
                     st.sig = sig
                 end
-                -- the canvas is the alert's box; the strip shows it at real size
-                P.Resize(w + 6, h + 6)
+                -- the canvas is the alert's box and what its captions reach
+                -- past it (the strip clips to the canvas); shown at real size
+                local over = RC.Essentials.CaptionOverhang and RC.Essentials.CaptionOverhang(f) or 0
+                P.Resize(w + 6 + 2 * math.ceil(over), h + 6)
             end,
             replay = function(canvas, P)
                 local M = RC.Motion

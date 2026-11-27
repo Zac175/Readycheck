@@ -289,6 +289,25 @@ function RC:SetReminderIconLabel(icon, text, colorKey)
     ApplyLabelState(icon, colorKey)
 end
 
+-- THE LABEL'S WIDTH. As wide as its icon, as it always was, and as wide as
+-- its own words when those are wider (twice the icon at most): seen in
+-- game (2026-11-24), "unboon" on a 40 px icon read "unb...", and "REMOVE"
+-- is as long. Call it after the label's text and font are set.
+function RC:FitReminderIconLabel(icon, size)
+    local t = icon and icon.cooldownText
+    size = tonumber(size)
+    if not (t and size and size > 0) then return end
+    local w = size
+    if t.GetUnboundedStringWidth then
+        local need = t:GetUnboundedStringWidth()
+        if type(need) == "number" and need == need and need > 0
+           and not (issecretvalue ~= nil and issecretvalue(need)) then
+            w = math.max(size, math.min(size * 2, math.ceil(need) + 2))
+        end
+    end
+    t:SetWidth(w)
+end
+
 -- The boon icon's label: db.boonReminder.label (Chronoboon page > Text),
 -- else "unboon" as it has always read.
 function RC:GetBoonLabel()
@@ -930,7 +949,7 @@ function RC:ShowReminder(message, abilities, duration, bypassFilter)
                 end
             end
             if not (type(ability) == "string" and ability:find("^custom_")) then
-                icon.cooldownText:SetWidth(iconSize)
+                self:FitReminderIconLabel(icon, iconSize)
             end
             self:PlaceReminderIconText(icon)
         else
@@ -1471,7 +1490,7 @@ function RC:ShowReminderForced(message, abilities, duration, quiet)
             else
                 self:SetReminderIconLabel(icon, "USE", "green")
             end
-            icon.cooldownText:SetWidth(iconSize)
+            self:FitReminderIconLabel(icon, iconSize)
             self:PlaceReminderIconText(icon)
         else
             ApplyLabelState(icon, StateColorFor(ability))

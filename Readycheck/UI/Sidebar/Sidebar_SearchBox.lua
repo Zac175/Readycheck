@@ -55,6 +55,8 @@ function Box.Results() return S.results end
 -- Best result on one page, for a sidebar row clicked while searching
 -- (Raids_Nav reads this off RC.SidebarSearch).
 function S.BestFor(itemId)
+    -- (S.Run notes every page's best line; the list itself only holds the top)
+    if S.best then return S.best[itemId] end
     for _, r in ipairs(S.results) do
         if r.item == itemId then return r end
     end
@@ -223,11 +225,12 @@ end
 -- ============================================================
 local function Run(text)
     S.query = text or ""
-    S.results, S.hits = S.Run(S.query)
+    S.results, S.hits, S.best = S.Run(S.query)
 end
 
 local function Clear()
-    S.query, S.results, S.hits = "", {}, {}
+    if S.CancelSliced then S.CancelSliced() end
+    S.query, S.results, S.hits, S.best = "", {}, {}, {}
     for k in pairs(shown) do shown[k] = nil end
     sel = 1
     Hide()
@@ -242,9 +245,15 @@ local function OnIndexed()
     local eb = EB()
     local text = eb and eb:GetText() or ""
     if not text:find("%S") then return end
-    Run(text)
-    RC:BuildSidebar(win, false)
-    if popup:IsShown() or eb:HasFocus() then Draw() end
+    -- (a slice a frame, like the search a key starts; whichever of the
+    -- two started last is the one that answers)
+    local mine = serial
+    S.RunSliced(text, function(results, hits, best)
+        if mine ~= serial or not (win and win:IsShown()) then return end
+        S.query, S.results, S.hits, S.best = text, results, hits, best
+        RC:BuildSidebar(win, false)
+        if popup:IsShown() or eb:HasFocus() then Draw() end
+    end)
 end
 
 -- Sidebar_Window calls this on every keystroke (after it has narrowed
@@ -264,11 +273,16 @@ function S.OnTextChanged(outer, text)
             return
         end
         S.EnsureIndex(OnIndexed)
-        Run(now)
-        sel = 1
-        -- (the sidebar again: the pages the settings search hit join it)
-        RC:BuildSidebar(outer, false)
-        Draw()
+        -- (2026-11-25) the search itself is spread over frames; the list
+        -- and the sidebar are drawn once, when it is through
+        S.RunSliced(now, function(results, hits, best)
+            if mine ~= serial or not (outer and outer:IsShown()) then return end
+            S.query, S.results, S.hits, S.best = now, results, hits, best
+            sel = 1
+            -- (the sidebar again: the pages the settings search hit join it)
+            RC:BuildSidebar(outer, false)
+            Draw()
+        end)
     end)
 end
 

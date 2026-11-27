@@ -208,6 +208,29 @@ function RC:ShowSidebarWBDrops(frame, preserveScroll)
     local listCard = self:CreateSettingsCard(parent, yPos, RCL["Toons"])
     local rowY = -30
 
+    -- THE NAME COLUMN IS AS WIDE AS ITS LONGEST NAME (2026-11-25, the
+    -- in-game audit: a toon of another realm, "name-realm", was wider than
+    -- the 124 the column had and was drawn with its ends cut off). From
+    -- 130 to 220; a name longer than that is cut with dots and shows whole
+    -- under the mouse.
+    local function RowLabel(info)
+        if info.isLocal then return (info.name or "?") .. " " .. RCL["(you)"] end
+        return info.label or info.name or "?"
+    end
+    local NAME_W = NAME_W
+    do
+        local probe = self:CreateFontString(listCard, "OVERLAY", nil, 11)
+        probe:Hide()
+        local widest = 0
+        for _, info in ipairs(roster) do
+            probe:SetText(RowLabel(info))
+            local w = (probe.GetUnboundedStringWidth and probe:GetUnboundedStringWidth()) or probe:GetStringWidth() or 0
+            if w > widest then widest = w end
+        end
+        probe:SetText("")
+        NAME_W = math.max(NAME_W, math.min(220, math.ceil(widest) + 2 + 6))
+    end
+
     local hc = self:GetColor("ui", "headerText")
     local hdr = self:CreateFontString(listCard, "OVERLAY", nil, 10)
     hdr:SetPoint("TOPLEFT", listCard, "TOPLEFT", 14, rowY)
@@ -259,7 +282,18 @@ function RC:ShowSidebarWBDrops(frame, preserveScroll)
         nameFs:SetPoint("TOPLEFT", listCard, "TOPLEFT", 14, rowY)
         nameFs:SetWidth(NAME_W - 6)
         nameFs:SetJustifyH("LEFT")
-        nameFs:SetText(info.label or info.name or "?")
+        nameFs:SetWordWrap(false)
+        -- (2026-11-24, seen in game: this character's own row read "(you)"
+        -- and nothing else) its name, then "(you)"
+        nameFs:SetText(RowLabel(info))
+        -- (longer than the widest column: whole under the mouse)
+        if RC.UI and RC.UI.TruncTip then
+            local hit = CreateFrame("Frame", nil, listCard)
+            hit:SetPoint("TOPLEFT", listCard, "TOPLEFT", 14, rowY + 3)
+            hit:SetSize(NAME_W - 6, ROW_H - 2)
+            hit:EnableMouse(true)
+            RC.UI:TruncTip(nameFs, hit)
+        end
         local nc = ClassColor(info.class)
             or (info.isLocal and self:GetColor("text", "gold") or self:GetColor("ui", "headerText"))
         local dim = (not info.online and not info.isLocal) and 0.55 or 1
@@ -291,8 +325,9 @@ function RC:ShowSidebarWBDrops(frame, preserveScroll)
     yPos = yPos - listCard:GetHeight() - 12
 
     local note = self:CreateFontString(parent, "OVERLAY", nil, 10)
-    note:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yPos)
-    note:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
+    -- (level with the text inside the cards: it sat 18 to their left)
+    note:SetPoint("TOPLEFT", parent, "TOPLEFT", 32, yPos)
+    note:SetPoint("RIGHT", parent, "RIGHT", -32, 0)
     note:SetJustifyH("LEFT")
     note:SetText(RCL["These hand-ins are one-time per character. Green = can still drop and holds the head/heart. Yellow = can still drop, no head yet. Orange = already dropped on that toon. ? = that toon's build does not report yet. Rend is Horde only."])
     local noteC = self:GetColor("text", "gray")

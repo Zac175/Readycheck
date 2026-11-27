@@ -453,6 +453,8 @@ local function _seq_look() return RC._seq.Look end
                 slider.Text:SetText(value .. "s")
             end)
             repIntSlider:SetScript("OnMouseUp", function() RC:SaveConfigurationToProfile() end)
+            -- (both sliders in one column, after the longer label)
+            self.UI:AlignLabelledSliders({ { repCntLbl, repCntSlider }, { repIntLbl, repIntSlider } }, 180)
             cardY = cardY - 32
 
             if not (C_VoiceChat and C_VoiceChat.SpeakText) then

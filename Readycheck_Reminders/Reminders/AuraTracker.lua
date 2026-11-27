@@ -1054,6 +1054,82 @@ local function InitializeAuraTracker()
         -- db.stackFont (the stack count; its own size, else 55% of the icon).
         local ROW_FONT = { outline = "OUTLINE", shadow = false }
         local STACK_FONT = { outline = "THICKOUTLINE", shadow = false }
+        -- THE TIME COLUMN'S WIDTH (list layout). Four characters of the
+        -- font, as before, and never less than the word the column says
+        -- when a buff is gone: seen in game (2026-11-24), "MISSING" in a 44
+        -- wide column read "MISSI...". Measured in the row's own font, after
+        -- that font is on it.
+        function T:TimeWidth(row)
+            local db = self:Cfg()
+            local w = math_max(34, (db.fontSize or 11) * 4)
+            local fsr = row and row.time
+            if fsr and fsr.GetUnboundedStringWidth and not self:IsCompact() then
+                local was = fsr:GetText()
+                fsr:SetText(RCL["MISSING"])
+                local need = fsr:GetUnboundedStringWidth()
+                fsr:SetText(was or "")
+                if type(need) == "number" and need == need and need > 0
+                   and not (issecretvalue ~= nil and issecretvalue(need)) then
+                    w = math_max(w, math.ceil(need) + 4)
+                end
+            end
+            return w
+        end
+        -- THE LINE FITS (2026-11-25, /rcaudit in the game: with the time
+        -- column as wide as "MISSING" on every row, "Shadow Protection" and
+        -- "Mark of the Wild" were cut at the default width - my change of
+        -- the day before had taken their room). The time takes what its
+        -- own text needs and the name gets the rest, so a running buff's
+        -- name has more room than it ever had. Measured only when the
+        -- text or the row's width changed.
+        function T:FitTime(row, txt)
+            local fsr = row.time
+            if not (fsr and fsr.GetUnboundedStringWidth) then return end
+            local rw = row:GetWidth()
+            if row._fitIn == txt and row._fitRow == rw then return end
+            fsr:SetText(txt)
+            local need = fsr:GetUnboundedStringWidth()
+            if type(need) == "number" and need == need and not (issecretvalue ~= nil and issecretvalue(need)) then
+                fsr:SetWidth(math.ceil(need) + 4)
+            end
+            row._fitIn, row._fitRow = txt, rw
+        end
+        -- ...and a tracker where some name and the word "MISSING" do not
+        -- both fit says "missing" with the X the compact layout uses, on
+        -- every row alike (one row with the word and the next with an X
+        -- would read as two different states). Returns short, placed.
+        -- placed = false while the rows are not on the screen yet (a
+        -- preview's first build after a /reload: seen in the game, the
+        -- sample read "Mark of the Wi... MISSING" until the page was opened
+        -- again): the answer then comes from the row's own sizes and the
+        -- list layout's insets (ShapeRow), and is asked again next pass.
+        function T:MissingNeedsShort(frame, n)
+            local short, placed = false, true
+            local fw = (frame.GetWidth and frame:GetWidth()) or 0
+            for i = 1, n do
+                local row = frame.rows[i]
+                local fsr, lab = row and row.time, row and row.label
+                if not (fsr and lab and fsr.GetUnboundedStringWidth) then return false, true end
+                local was = fsr:GetText()
+                fsr:SetText(RCL["MISSING"])
+                local word = fsr:GetUnboundedStringWidth()
+                fsr:SetText(was or "")
+                local name = lab:GetUnboundedStringWidth()
+                if type(word) ~= "number" or type(name) ~= "number" or word ~= word or name ~= name
+                   or (issecretvalue ~= nil and (issecretvalue(word) or issecretvalue(name))) then return false, true end
+                local left, right = lab:GetLeft(), row:GetRight()
+                local room
+                if left and right then
+                    room = (right - 4 - (math.ceil(word) + 4) - 4) - left
+                else
+                    placed = false
+                    local isz = (row.icon and row.icon:GetWidth()) or 0
+                    room = (fw - 2) - 4 - (math.ceil(word) + 4) - 4 - (2 + isz + 4)
+                end
+                if room < name + 2 then short = true end
+            end
+            return short, placed
+        end
         function T:PaintRow(row)
             local db = self:Cfg()
             local fs = db.fontSize or 11
@@ -1066,7 +1142,9 @@ local function InitializeAuraTracker()
             local sf = type(db.stackFont) == "table" and db.stackFont or {}
             RC:ApplyFontSpec(row.count, { face = sf.face, outline = sf.outline, shadow = sf.shadow,
                 size = sf.size or math_max(8, math_floor(isz * 0.55)) }, STACK_FONT)
-            row.time:SetWidth(math_max(34, fs * 4))
+            row.time:SetWidth(self:TimeWidth(row))
+            row._fitIn = nil
+            self.missShort = nil
             local rowC = RC:GetColor(COLOR_GROUP, "rowBackground")
             row.bg:SetVertexColor(rowC.r, rowC.g, rowC.b, rowC.a or 0.03)
             local sc = RC:GetColor(COLOR_GROUP, "stackText")
@@ -1263,7 +1341,8 @@ local function InitializeAuraTracker()
                     end
                     ShapeRow(row, false, nil, showBg)
                     PlaceRowParts(db, row, false)
-                    row.time:SetWidth(math_max(34, (db.fontSize or 11) * 4))
+                    row.time:SetWidth(self:TimeWidth(row))
+                    row._fitIn = nil
                     row.label:SetText(NameText(db, rows[i].entry.label))
                     row.rtRef = rows[i]
                     row.tipEnabled = false
@@ -1370,9 +1449,16 @@ local function InitializeAuraTracker()
             if sig ~= self.layoutSig then
                 self.layoutSig = sig
                 self:Layout(rows)
+                self.missShort = nil
             end
 
-            local missingTxt = compact and "X" or RCL["MISSING"]
+            local short = self.missShort
+            if not compact and short == nil then
+                local placed
+                short, placed = self:MissingNeedsShort(frame, #rows)
+                if placed then self.missShort = short end
+            end
+            local missingTxt = (compact or short) and "X" or RCL["MISSING"]
             local warnAt, warnAt2 = db.warnAt or 0, db.warnAt2 or 0
             local cc = type(db.colors) == "table" and db.colors or {}
             local urgentAnim = (not self.isSample) and db.urgentAnim or nil
@@ -1393,6 +1479,7 @@ local function InitializeAuraTracker()
                 else
                     bucket, txt = 1, "\226\128\148"
                 end
+                if not compact then self:FitTime(row, txt) end
                 row.time:SetText(txt)
                 local restate = false
                 if row._stOf ~= states then

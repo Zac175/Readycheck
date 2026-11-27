@@ -27,6 +27,9 @@ local _sbs = RC._sbs
     -- edge. card.contentY is the first-control offset (-32).
     function RC:CreateSettingsCard(parent, yPos, title, width)
         local FLAT = (RC.UI and RC.UI.FLAT) or "Interface\\Buttons\\WHITE8X8"
+        -- (the card's width has to be readable the moment it is made:
+        -- pages size their texts from it. UIF_Base, RC.UI:EnsureRect)
+        if RC.UI and RC.UI.EnsureRect then RC.UI:EnsureRect(parent) end
         local card = CreateFrame("Frame", nil, parent)
         card:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, yPos)
         card:SetPoint("RIGHT", parent, "RIGHT", -18, 0)

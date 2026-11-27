@@ -1,8 +1,8 @@
 ## Interface: 11509, 20506, 16001
-## Title: |cffd6a640Readycheck|r |cff999999v5.0.13|r
+## Title: |cffd6a640Readycheck|r |cff999999v5.0.14|r
 ## Notes: The Complete Character Toolkit - reminders, consumables, gear, trinket swaps, TTK modeling and more
 ## Author: Zac
-## Version: 5.0.13
+## Version: 5.0.14
 ## IconTexture: Interface\AddOns\Readycheck\Media\Checkmark
 ## SavedVariables: ReadycheckDB, WarriorReminderDB
 ## X-Category: Combat
@@ -119,6 +119,7 @@ UI\Raids\Raids_Hotswap.lua
 UI\Raids\Raids_BulkTrash.lua
 UI\Raids\Raids_Nav.lua
 UI\Sidebar\Sidebar_Search.lua
+UI\Sidebar\Sidebar_SearchData.lua
 UI\Sidebar\Sidebar_SearchBox.lua
 UI\Raids\Raids_BossConfig.lua
 UI\Raids\Raids_AbilityPages.lua

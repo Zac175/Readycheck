@@ -1161,6 +1161,7 @@ local function InitializeBattleShoutReminder()
         for _, row in ipairs(frame.rows) do
             RC:ApplyFontSpec(row.nameText, rowSpec, RC.BATTLE_SHOUT_TRACKER_FONT)
             RC:ApplyFontSpec(row.apText, rowSpec, RC.BATTLE_SHOUT_TRACKER_FONT)
+            row._bsFitText = nil        -- (a new font: the status is measured again)
             if row._bsTo then
                 Apply(row.apText, statusSpec, TR_STATUS_DEF, row._bsTo)
                 Apply(row.bloodrageIcon, iconSpec, TR_ROWICON_DEF, row._bsTo)
@@ -1542,6 +1543,21 @@ local function InitializeBattleShoutReminder()
             end
             row.apText:SetText(apStr)
             row.apText:SetTextColor(col.r, col.g, col.b, col.a)
+            -- THE STATUS TAKES WHAT ITS OWN TEXT NEEDS AND THE NAME GETS THE
+            -- REST (2026-11-25, the in-game audit on a warrior: the column
+            -- was a fixed 72, "290 AP" needs about 40, and an 11-letter name
+            -- beside the Bloodrage icon read "Welovec..."). It is
+            -- right-justified at the same edge, so a status is drawn where
+            -- it always was, and one longer than 72 (AP and a timer in a big
+            -- font) is whole now too. Measured only when the text changed.
+            if row._bsFitText ~= apStr then
+                row._bsFitText = apStr
+                local need = row.apText.GetUnboundedStringWidth and row.apText:GetUnboundedStringWidth()
+                if type(need) == "number" and need == need
+                   and not (issecretvalue ~= nil and issecretvalue(need)) then
+                    row.apText:SetWidth(math.max(8, math.ceil(need) + 4))
+                end
+            end
 
             local showBar = (durStyle == "bar" or durStyle == "both") and data.hasBuff
             local effectiveMax = math.max(1, data.peakMax or 120)

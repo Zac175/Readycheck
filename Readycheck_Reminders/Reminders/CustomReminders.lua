@@ -1588,7 +1588,9 @@ local function InitializeCustomReminders()
          end},
         {key="buff_missing_demo", name="Missing Buff Alert",
          description=RCL["Alert when a buff is missing  -  edit spell ID for your buff"],
-         icon="Interface\\Icons\\Spell_Nature_AncientWard",
+         -- (2026-11-25: Spell_Nature_AncientWard is not a file on this client and
+         -- the preset drew no icon; the demo's own spell is the Dragonslayer's cry)
+         icon="Interface\\Icons\\INV_Misc_Head_Dragon_01",
          build=function()
              return {mode="aura", message=RCL["Buff missing!"],
                  duration=6, cooldown=30,

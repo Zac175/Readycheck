@@ -562,21 +562,25 @@ function S.IsIndexing() return running end
 -- ran again on the first search of every session, one page a frame, the
 -- moment the box was clicked - right under the typing. Now:
 --   * what was read is saved account-wide (ReadycheckDB.searchIndex) with
---     a stamp of what it was read on: the version, the game version,
---     the language and which Readycheck parts are loaded. With the same
---     stamp the next session loads it and builds nothing; a new version
---     (or another part loaded) reads again, once.
+--     a stamp of what it was read on: the version, the game version and
+--     the language. With the same stamp the next session loads it and
+--     builds nothing; a new version reads again, once.
 --   * a page you open is re-read from the real page as before
 --     (S.RefreshFromPage) and the saved copy follows.
 --   * when pages do have to be read, the reading waits while keys are
 --     arriving (TYPE_PAUSE after the last one), so typing stays smooth
 --     and the results fill in a moment later.
+-- (2026-11-25, "searching in both addons still nukes fps": every update
+-- read every page again, and so did every character with other parts
+-- loaded. Now the stamp leaves the loaded parts out, a page nobody has
+-- read on this client comes from the index that ships with the addon
+-- before any page is read - see FromShipped - and what is kept is small,
+-- see Slim.)
 -- Not a setting: never exported, and safe to delete (it is rebuilt).
 -- ============================================================
-local CACHE_FORMAT = 1
+local CACHE_FORMAT = 2
 local TYPE_PAUSE = 0.4
 local lastKey = -100
-local cacheLoaded = false
 local GetTime = GetTime
 
 function S.NoteKey() lastKey = GetTime and GetTime() or 0 end
@@ -584,56 +588,93 @@ function S.NoteKey() lastKey = GetTime and GetTime() or 0 end
 local function CacheSig()
     -- (not the class: one saved index serves every character on the
     -- account; a page only a Warrior has is read and added the first time
-    -- a Warrior searches, and is simply not loaded for the others)
+    -- a Warrior searches, and is simply not loaded for the others.
+    -- 2026-11-25: not which parts are loaded either - that differs from
+    -- one character to the next, and every change of it threw the whole
+    -- saved index away, so the pages were read again and again. A page
+    -- whose part is not loaded is not offered, so it is not read from
+    -- here, and it is read fresh the day its part is there.)
     local parts = { "f" .. CACHE_FORMAT, tostring(RC.version or "?"),
         tostring(RC.Flavor and RC:Flavor() or "?"),
         tostring(GetLocale and GetLocale() or "?") }
-    local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
-    for _, a in ipairs({ "Readycheck_Features", "Readycheck_Reminders", "Readycheck_Consumables", "Readycheck_Gear",
-                         "Readycheck_WorldTools", "Readycheck_Extras" }) do
-        local okL, on = pcall(isLoaded or function() return false end, a)
-        parts[#parts + 1] = (okL and on) and "1" or "0"
-    end
     return table_concat(parts, "|")
 end
 
--- A page as it is saved: its entries without what can be worked out
--- again (hay, key, the page id, the tab label a tab path gives), and its
--- tab paths once each (every entry on a tab carried its own copy).
-local function Slim(id, list)
+-- A page as it is kept (saved, and shipped): small. Every line is
+--   { kind letter, label, tab number, card number, section number, text }
+-- (numbers into the page's own lists t / c / f, 0 = none; text only when
+-- it has one), the tab paths once each in p, and nothing that can be
+-- worked out again (hay, key, the page id, the label a tab path gives,
+-- where the line sat when it was read). A page with 1,000 lines was
+-- 150 KB with every line spelling out its tab and card; it is 40.
+local KIND_CODE = { row = "r", desc = "d", tip = "t", card = "c" }
+local KIND_OF = { r = "row", d = "desc", t = "tip", c = "card" }
+local function Slim(id, list, keep)
     local paths, out = {}, {}
-    for i, e in ipairs(list) do
-        local c = {}
-        for k, v in pairs(e) do
-            if k ~= "hay" and k ~= "key" and k ~= "item" and k ~= "tabPath" then c[k] = v end
+    local tabs, cards, folds = {}, {}, {}
+    local tabN, cardN, foldN = {}, {}, {}
+    local function Num(names, nums, v)
+        if v == nil then return 0 end
+        local n = nums[v]
+        if not n then
+            n = #names + 1
+            names[n] = v
+            nums[v] = n
         end
-        if e.tabPath then
-            paths[e.tabKey or ""] = e.tabPath
-            c.tabLabel = nil
-        end
-        out[i] = c
+        return n
     end
-    return { p = paths, e = out }
+    for _, e in ipairs(list) do
+        if not keep or keep(e) then
+            local tk = e.tabKey or ""
+            if e.tabPath then paths[tk] = e.tabPath end
+            local c = { KIND_CODE[e.kind] or e.kind or "r", e.label or false,
+                Num(tabs, tabN, tk), Num(cards, cardN, e.card), Num(folds, foldN, e.fold) }
+            if e.text ~= nil then c[6] = e.text end
+            -- (a line read through a tab hook: its hook and the label it gave)
+            if e.alias then
+                c.a = e.alias
+                c.tl = e.tabLabel
+            end
+            out[#out + 1] = c
+        end
+    end
+    return { p = paths, t = tabs, c = cards, f = folds, e = out }
 end
 local function Fatten(id, saved)
     local list = {}
     local paths = type(saved.p) == "table" and saved.p or {}
+    local tabs = type(saved.t) == "table" and saved.t or {}
+    local cards = type(saved.c) == "table" and saved.c or {}
+    local folds = type(saved.f) == "table" and saved.f or {}
+    local labelOf = {}
     for i, c in ipairs(saved.e or {}) do
-        local e = {}
-        for k, v in pairs(c) do e[k] = v end
-        e.item = id
-        local path = paths[e.tabKey or ""]
+        local e = { kind = KIND_OF[c[1]] or c[1], item = id }
+        if c[2] then e.label = c[2] end
+        e.tabKey = tabs[c[3]] or ""
+        e.card = cards[c[4]]
+        e.fold = folds[c[5]]
+        e.text = c[6]
+        local path = paths[e.tabKey]
         if path then
             e.tabPath = path
-            local labels = {}
-            for _, st in ipairs(path) do
-                if st.many and st.label then labels[#labels + 1] = st.label end
+            local label = labelOf[path]
+            if label == nil then
+                local labels = {}
+                for _, st in ipairs(path) do
+                    if st.many and st.label then labels[#labels + 1] = st.label end
+                end
+                label = #labels > 0 and table_concat(labels, "  >  ") or false
+                labelOf[path] = label
             end
-            if #labels > 0 then e.tabLabel = table_concat(labels, "  >  ") end
+            if label then e.tabLabel = label end
+        end
+        if c.a then
+            e.alias = c.a
+            e.tabLabel = c.tl
         end
         e.hay = ((e.label or "") .. " " .. (e.text or "")):lower()
         e.key = (e.kind or "") .. "\1" .. (e.label or "") .. "\1" .. (e.card or "")
-            .. "\1" .. (e.text or "") .. "\1" .. (e.tabKey or "")
+            .. "\1" .. (e.text or "") .. "\1" .. e.tabKey
         list[i] = e
     end
     return list
@@ -651,23 +692,82 @@ local function Cache(create)
     return c
 end
 
--- once per session: the saved pages for this stamp come in
-local function LoadCache()
-    if cacheLoaded then return end
-    cacheLoaded = true
+-- A page from what this account saved (read on this client, so it has
+-- the rows only you have: your gear sets, your reminders) ...
+local function FromSaved(id)
     local c = Cache(false)
-    if not c then return end
-    EachItem(function(item)
-        local saved = c.pages[item.id]
-        if type(saved) == "table" and not done[item.id] and Indexable(item) then
-            local okF, list = pcall(Fatten, item.id, saved)
-            if okF and type(list) == "table" then
-                index[item.id] = list
-                done[item.id] = true
-            end
-        end
-    end)
+    local saved = c and c.pages[id]
+    if type(saved) ~= "table" then return nil end
+    local okF, list = pcall(Fatten, id, saved)
+    return (okF and type(list) == "table") and list or nil
 end
+
+-- ... or from THE INDEX THAT SHIPS WITH THE ADDON (2026-11-25; Sidebar_
+-- SearchData.lua, written by tools/search_index from the pages
+-- themselves: each page as a fresh install with the feature switched on
+-- shows it, per game version and class). With it nobody's client reads a page unseen: the
+-- first search after an update used to build every page, one per frame,
+-- seconds of single-digit fps. Used only when it was made for exactly
+-- this version (a build without a fresh one falls back to reading the
+-- pages, as before) and this language. What it cannot know - a line
+-- only your own settings add - comes in the moment you open that page
+-- (S.RefreshFromPage), and is saved from then on.
+local shippedPages
+local function Shipped()
+    if shippedPages ~= nil then return shippedPages end
+    shippedPages = false
+    local d = RC.SearchShipped
+    -- (the file keeps only the pages of the client and class it loaded on)
+    if type(d) == "table" and d.v == RC.version and type(d.pages) == "table" and next(d.pages)
+            and d.flavor == (RC.Flavor and RC:Flavor() or "era")
+            and d.class and d.class == (UnitClass and select(2, UnitClass("player")))
+            and (not GetLocale or GetLocale() == (d.locale or "enUS")) then
+        shippedPages = d.pages
+    end
+    RC.SearchShipped = nil
+    return shippedPages
+end
+local function ShippedPart(text)
+    if type(text) ~= "string" then return nil end
+    local fn = loadstring(text)
+    if not fn then return nil end
+    local okL, saved = pcall(fn)
+    if not okL or type(saved) ~= "table" then return nil end
+    return saved
+end
+local function FromShipped(id)
+    local pages = Shipped()
+    local v = pages and pages[id]
+    if not v then return nil end
+    pages[id] = nil
+    if type(v) == "string" then
+        local saved = ShippedPart(v)
+        if not saved then return nil end
+        local okF, list = pcall(Fatten, id, saved)
+        return (okF and type(list) == "table") and list or nil
+    end
+    -- the lines every class has, and this class's own, each where it
+    -- stands on the page (`at`): the page as this class reads it
+    local base, extra = ShippedPart(v[1]), ShippedPart(v[2])
+    if not (base and extra and type(extra.at) == "table") then return nil end
+    local okB, shared = pcall(Fatten, id, base)
+    local okE, own = pcall(Fatten, id, extra)
+    if not (okB and okE) then return nil end
+    local at, list, si, oi = extra.at, {}, 1, 1
+    for pos = 1, #shared + #own do
+        if own[oi] and at[oi] == pos then
+            list[pos] = own[oi]
+            oi = oi + 1
+        else
+            list[pos] = shared[si]
+            si = si + 1
+        end
+    end
+    if #list ~= #shared + #own then return nil end
+    return list
+end
+function S.HasShipped() return Shipped() and true or false end
+
 local function SavePage(id)
     if not done[id] then return end
     local c = Cache(true)
@@ -678,54 +778,103 @@ function S.ForgetSaved()
     if type(ReadycheckDB) == "table" then ReadycheckDB.searchIndex = nil end
 end
 function S.SavedSig() local c = Cache(false) return c and c.sig or nil end
+-- (release tooling: every page read so far, as it would be saved)
+function S.Export(keep)
+    local out = {}
+    for id in pairs(done) do
+        out[id] = Slim(id, index[id] or {}, keep and function(e) return keep(id, e) end or nil)
+    end
+    return out
+end
 
--- Builds the index in the background, one page (or tab) per frame.
--- onDone runs once everything is in.
+-- Fills the index in the background. A page comes from what this account
+-- saved, else from the index that ships with the addon - both cheap, as
+-- many as fit in a few ms a frame, never waiting; only a page neither has is READ (built
+-- unseen), and then never while keys are arriving or in a fight, with a
+-- rest after each read as long as twice what the read took, so reading
+-- never takes more than a third of the time. Every page is usable the
+-- moment it is in; onDone runs when all are (and about every 2 s while
+-- pages are being read, so a list on screen fills in).
+local CHEAP_MS = 4
+local function ClockMs()
+    return (debugprofilestop and debugprofilestop()) or ((GetTime and GetTime() or 0) * 1000)
+end
 function S.EnsureIndex(onDone)
     if running or not RC.sidebarConfigFrame then return end
-    LoadCache()
+    -- (what an older version saved is of no use to this one: let it go
+    -- now, not whenever a page is next saved - it is read at every login)
+    do
+        local c = type(ReadycheckDB) == "table" and ReadycheckDB.searchIndex
+        if c ~= nil and (type(c) ~= "table" or c.sig ~= CacheSig()) then ReadycheckDB.searchIndex = nil end
+    end
     local todo = {}
     EachItem(function(item)
         if not done[item.id] and Indexable(item) then
-            -- Tabs first: a setting found on a tab keeps that tab with it,
-            -- so jumping to it switches there even after you have left
-            -- the page on a different one. The default build fills in
-            -- whatever the tabs did not cover.
             -- (its tabs are walked by the build itself)
             todo[#todo + 1] = { item = item }
         end
     end)
     if #todo == 0 then return end
     running = true
-    local fresh = {}
-    local i = 0
+    local i, lastTold = 0, GetTime and GetTime() or 0
     local function Step()
-        -- (keys are arriving: the reading waits, typing stays smooth)
-        if GetTime and (GetTime() - lastKey) < TYPE_PAUSE then
-            C_Timer.After(0.1, Step)
-            return
-        end
-        i = i + 1
-        local job = todo[i]
-        if not job then
-            running = false
-            for id, list in pairs(fresh) do
-                index[id] = list
-                done[id] = true
-                SavePage(id)
+        local t0 = ClockMs()
+        while true do
+            local job = todo[i + 1]
+            if not job then
+                running = false
+                if onDone then pcall(onDone) end
+                return
             end
-            if onDone then pcall(onDone) end
-            return
-        end
-        if not done[job.item.id] then
-            local entries = DryRun(job.item, job.alias)
-            if entries then
-                fresh[job.item.id] = Merge(fresh[job.item.id] or {}, entries)
+            local id = job.item.id
+            if done[id] then
+                i = i + 1
+            else
+                local list = FromSaved(id) or FromShipped(id)
+                if list then
+                    index[id] = list
+                    done[id] = true
+                    i = i + 1
+                    if ClockMs() - t0 >= CHEAP_MS then
+                        C_Timer.After(0, Step)
+                        return
+                    end
+                else
+                    -- (keys are arriving, or a fight: the reading waits)
+                    if GetTime and (GetTime() - lastKey) < TYPE_PAUSE then
+                        C_Timer.After(0.1, Step)
+                        return
+                    end
+                    if InCombatLockdown and InCombatLockdown() then
+                        C_Timer.After(0.5, Step)
+                        return
+                    end
+                    local t0 = ClockMs()
+                    local entries = DryRun(job.item, job.alias)
+                    local cost = (ClockMs() - t0) / 1000
+                    i = i + 1
+                    if entries then
+                        index[id] = Merge({}, entries)
+                        done[id] = true
+                        SavePage(id)
+                    end
+                    local now = GetTime and GetTime() or 0
+                    if onDone and now - lastTold >= 2 and todo[i + 1] then
+                        lastTold = now
+                        pcall(onDone)
+                    end
+                    C_Timer.After(math_min(0.25, math_max(0, cost * 2)), Step)
+                    return
+                end
             end
         end
-        C_Timer.After(0, Step)
     end
     C_Timer.After(0, Step)
+end
+function S.IndexedCount()
+    local n = 0
+    for _ in pairs(done) do n = n + 1 end
+    return n
 end
 
 -- ============================================================
@@ -887,6 +1036,98 @@ local function Score(own, ctx, tokens)
 end
 S.Score = Score
 
+-- THE SAME ANSWERS, CHEAPER (2026-11-25). WordQuality above is the rule;
+-- Fast* below gives exactly what it gives for a word prepared once per
+-- search (its letters, and its one-letter-short spellings as they are
+-- first needed), so nothing is cut out of a string or joined per line:
+--   * the forward pass over the letters is made once and serves both the
+--     letters-in-order test and the one-letter-wrong test (the rule made
+--     it twice);
+--   * a line's surroundings are the same string for every line of a card,
+--     so a word's answer for one such string is kept for the search.
+local string_find, string_byte, string_sub = string.find, string.byte, string.sub
+local function Prepare(w)
+    local L = {}
+    for i = 1, #w do L[i] = string_sub(w, i, i) end
+    return { w = w, n = #w, L = L, B = { string_byte(w, 1, #w) }, short = {}, ctx = {} }
+end
+-- letters in order within a span (Subseq, from its backward pass on):
+-- last is where the forward pass ended
+local function Tight(hay, B, wl, last, slack)
+    local hi, wi = last, wl
+    while wi >= 1 do
+        if string_byte(hay, hi) == B[wi] then wi = wi - 1 end
+        hi = hi - 1
+    end
+    local span = last - hi
+    if span > wl + (slack or math_max(2, math_floor(wl / 2))) then return nil end
+    return 25 + math_floor(25 * wl / span)
+end
+local function FastQuality(hay, tk)
+    local w = tk.w
+    local i = string_find(hay, w, 1, true)
+    if i then
+        if i == 1 then return Q_PREFIX end
+        local prev = string_byte(hay, i - 1)
+        if prev == 32 or prev < 48 or (prev > 57 and prev < 65) then return Q_WORD end
+        return Q_INSIDE
+    end
+    local wl = tk.n
+    if wl < 3 then return nil end
+    local L = tk.L
+    local pos, stuck = 0, nil
+    for k = 1, wl do
+        pos = string_find(hay, L[k], pos + 1, true)
+        if not pos then stuck = k break end
+    end
+    if not stuck then return Tight(hay, tk.B, wl, pos) end
+    -- one letter wrong: the letter that could not be placed is left out
+    if wl < 4 then return nil end
+    local sh = tk.short[stuck]
+    if sh == nil then
+        local short = string_sub(w, 1, stuck - 1) .. string_sub(w, stuck + 1)
+        sh = (#short >= 3) and Prepare(short) or false
+        tk.short[stuck] = sh
+    end
+    if not sh then return nil end
+    local sl, SL = sh.n, sh.L
+    if sl > #hay then return nil end
+    pos = 0
+    for k = 1, sl do
+        pos = string_find(hay, SL[k], pos + 1, true)
+        if not pos then return nil end
+    end
+    local q = Tight(hay, sh.B, sl, pos, 3)
+    return q and math_floor(q * 0.6) or nil
+end
+local function FastScore(own, ctx, tks)
+    local total, hits = 0, 0
+    for k = 1, #tks do
+        local tk = tks[k]
+        local q = FastQuality(own, tk)
+        if q then
+            hits = hits + 1
+            total = total + q
+        else
+            if not ctx then return nil end
+            q = tk.ctx[ctx]
+            if q == nil then
+                q = FastQuality(ctx, tk) or false
+                tk.ctx[ctx] = q
+            end
+            if not q then return nil end
+            total = total + math_floor(q / 4)
+        end
+    end
+    if hits == 0 then return nil end
+    return total
+end
+S.FastScore = function(own, ctx, tokens)
+    local tks = {}
+    for i, w in ipairs(tokens) do tks[i] = Prepare(w) end
+    return FastScore(own, ctx, tks)
+end
+
 local function PageHay(item, cat)
     local parts = { (item.name or ""):lower() }
     if cat then parts[#parts + 1] = (cat.name or ""):lower() end
@@ -894,18 +1135,62 @@ local function PageHay(item, cat)
     return table_concat(parts, " ")
 end
 
+-- A SEARCH MUST COST NEXT TO NOTHING (2026-11-25, "searching still nukes
+-- fps": measured, one search was 23 to 33 ms, run after every pause in
+-- typing; at 400 fps that is a frame fifteen times too long, each time).
+-- Where the time went, and what holds it now:
+--   * every entry's surroundings (card, tab, page, group) were joined and
+--     lower-cased again for every search: kept on the entry (e._ctx,
+--     e._ll; never saved - Slim leaves them out);
+--   * a page's own words and a tab alias's words likewise: kept per page
+--     and per alias for the session;
+--   * a one- or two-letter word matches thousands of lines and all of
+--     them were sorted to show twelve: only the best KEEP (and whatever
+--     ties with the last of them) are sorted; the best line of every page
+--     is noted on the way (the third thing S.Run returns) for the sidebar.
+-- The twelve rows shown, their order and the pages lit in the sidebar are
+-- exactly what they were.
+local KEEP = 60
+local pageWords = setmetatable({}, { __mode = "k" })    -- [item] = { hay, name, cat }
+local aliasWords = setmetatable({}, { __mode = "k" })   -- [sub] = hay
+local function PageWords(item, cat)
+    local w = pageWords[item]
+    if not w or w.catRef ~= cat or w.nameRef ~= item.name then
+        w = { hay = PageHay(item, cat), name = (item.name or ""):lower(),
+              cat = cat and (cat.name or ""):lower() or "", catRef = cat, nameRef = item.name }
+        pageWords[item] = w
+    end
+    return w
+end
+
 -- Equal scores: a setting before its section, a section before a
 -- command, a command before a tab, a tab before a page.
 local KIND_RANK = { row = 1, desc = 1, tip = 1, card = 2, command = 3, tab = 4, page = 5 }
+local function Before(a, b)
+    if a.score ~= b.score then return a.score > b.score end
+    local ra, rb = KIND_RANK[a.kind] or 9, KIND_RANK[b.kind] or 9
+    if ra ~= rb then return ra < rb end
+    return (a.order or 0) < (b.order or 0)
+end
 
 -- Ranked results plus the set of page ids that have something. Each
 -- result: item (the menu id), kind, label, score, page, parent, and
 -- entry (the indexed line) or command (the Commands page row).
-function S.Run(query)
+local function RunBody(query, tick)
     local tokens = Tokens(query)
-    local results, hits = {}, {}
-    if #tokens == 0 then return results, hits end
+    local results, hits, best = {}, {}, {}
+    if #tokens == 0 then return results, hits, best end
     local phrase = table_concat(tokens, " ")
+    local tks = {}
+    for i, w in ipairs(tokens) do tks[i] = Prepare(w) end
+    local n = 0
+    local function Add(r)
+        n = n + 1
+        r.order = n - 1
+        results[n] = r
+        local b = best[r.item]
+        if not b or Before(r, b) then best[r.item] = r end
+    end
 
     -- The Commands page's own lines (a command, what it does) come back as
     -- Command results below, not as settings of that page.
@@ -917,38 +1202,44 @@ function S.Run(query)
 
     EachItem(function(item, cat)
         if not (item.panel or item.raidKey) or not S.IsVisible(item) then return end
-        local pageName = (item.name or ""):lower()
-        local catName = cat and (cat.name or ""):lower() or ""
-        local score = Score(PageHay(item, cat), nil, tokens)
+        local pw = PageWords(item, cat)
+        local pageName, catName = pw.name, pw.cat
+        local score = FastScore(pw.hay, nil, tks)
         if score then
             -- a hit on the aliases alone sits below a setting that names
             -- the word itself; the page's own name counts in full
-            if not Score(pageName, nil, tokens) then score = math_floor(score / 2) end
+            if not FastScore(pageName, nil, tks) then score = math_floor(score / 2) end
             if pageName:find(phrase, 1, true) then score = score + 30 end
             -- the page whose name is the query is what was asked for
             if pageName == phrase then score = score + 60 end
-            results[#results + 1] = { item = item.id, kind = "page", label = item.name,
-                score = score, page = item.name, parent = cat and cat.name, order = #results }
+            Add({ item = item.id, kind = "page", label = item.name,
+                score = score, page = item.name, parent = cat and cat.name })
             hits[item.id] = true
         end
+        local isCommands = item.id == "commands"
         for _, e in ipairs(index[item.id] or {}) do
-            local ctx = (e.card or ""):lower() .. " " .. (e.tabLabel or ""):lower() .. " "
-                .. pageName .. " " .. catName
-            local s
-            if not (item.id == "commands" and e.kind ~= "card" and cmdLines[(e.label or ""):lower()]) then
-                s = Score(e.hay, ctx, tokens)
+            local ctx, label = e._ctx, e._ll
+            if not ctx or e._ctxFor ~= pw then
+                ctx = (e.card or ""):lower() .. " " .. (e.tabLabel or ""):lower() .. " "
+                    .. pageName .. " " .. catName
+                label = (e.label or ""):lower()
+                e._ctx, e._ll, e._ctxFor = ctx, label, pw
             end
+            local s
+            if not (isCommands and e.kind ~= "card" and cmdLines[label]) then
+                s = FastScore(e.hay, ctx, tks)
+            end
+            if tick then tick() end
             if s then
-                local label = (e.label or ""):lower()
                 if label:find(phrase, 1, true) then s = s + 30 end
                 if label == phrase then s = s + 40 end
                 if e.kind == "card" then s = s + 4
                 elseif e.kind == "desc" then s = s - 10
                 elseif e.kind == "tip" then s = s - 8 end
                 s = s + math_max(0, 12 - math_floor(#label / 8))
-                results[#results + 1] = { entry = e, item = item.id, kind = e.kind,
+                Add({ entry = e, item = item.id, kind = e.kind,
                     label = e.label, score = s, page = item.name,
-                    parent = cat and cat.name, order = #results }
+                    parent = cat and cat.name })
                 hits[item.id] = true
             end
         end
@@ -957,13 +1248,18 @@ function S.Run(query)
         for i, sub in ipairs(RC.SUBPANEL_ALIASES or {}) do
             if sub.parentId == item.id and type(sub.setTab) == "function" then
                 -- (a part this game version does not run leaves its words out: Core_Flavor)
-                local words = RC.AliasKeywords and RC:AliasKeywords(sub) or sub.keywords
-                local hay = table_concat(words or {}, " "):lower() .. " " .. (sub.tabLabel or ""):lower()
-                local s = Score(hay, pageName .. " " .. catName, tokens)
+                local hay = aliasWords[sub]
+                if not hay then
+                    local words = RC.AliasKeywords and RC:AliasKeywords(sub) or sub.keywords
+                    hay = table_concat(words or {}, " "):lower() .. " " .. (sub.tabLabel or ""):lower()
+                    aliasWords[sub] = hay
+                end
+                pw.both = pw.both or (pageName .. " " .. catName)
+                local s = FastScore(hay, pw.both, tks)
                 if s then
-                    results[#results + 1] = { entry = { kind = "tab", alias = i, tabLabel = sub.tabLabel, label = sub.tabLabel },
+                    Add({ entry = { kind = "tab", alias = i, tabLabel = sub.tabLabel, label = sub.tabLabel },
                         item = item.id, kind = "tab", label = (sub.tabLabel or item.name), score = math_floor(s / 2) + 3,
-                        page = item.name, parent = cat and cat.name, order = #results }
+                        page = item.name, parent = cat and cat.name })
                     hits[item.id] = true
                 end
             end
@@ -975,32 +1271,97 @@ function S.Run(query)
         local text = CommandText(row)
         -- (every spelling: "/rc moveui" finds "/rc move | /rc moveui")
         local own = (Clean(row.cmd or text) .. " " .. (row.desc or "")):lower()
-        local s = Score(own, (section.title or ""):lower(), tokens)
+        local s = FastScore(own, (section.title or ""):lower(), tks)
         if s then
             if (row.cmd or text):lower():find(phrase, 1, true) then s = s + 20 end
-            results[#results + 1] = { command = row, item = "_commands", kind = "command",
-                label = text, score = s, page = RCL["Commands"], parent = section.title, order = #results }
+            Add({ command = row, item = "_commands", kind = "command",
+                label = text, score = s, page = RCL["Commands"], parent = section.title })
         end
     end)
 
-    table_sort(results, function(a, b)
-        if a.score ~= b.score then return a.score > b.score end
-        local ra, rb = KIND_RANK[a.kind] or 9, KIND_RANK[b.kind] or 9
-        if ra ~= rb then return ra < rb end
-        return (a.order or 0) < (b.order or 0)
+    -- Sorted, and the same line found twice (under two tabs' reads) once.
+    local function Ranked(list)
+        table_sort(list, Before)
+        local seen, out = {}, {}
+        for _, r in ipairs(list) do
+            local e = r.entry
+            local k = r.item .. "\1" .. (r.label or "") .. "\1" .. ((e and e.card) or "")
+                .. "\1" .. tostring(e and (e.tabKey or e.alias))
+            if not seen[k] then
+                seen[k] = true
+                out[#out + 1] = r
+            end
+        end
+        return out
+    end
+    if n > KEEP * 3 then
+        -- the score the KEEP-th best line has; everything at or over it
+        local count, scores = {}, {}
+        for i = 1, n do
+            local sc = results[i].score
+            if not count[sc] then count[sc] = 0 scores[#scores + 1] = sc end
+            count[sc] = count[sc] + 1
+        end
+        table_sort(scores, function(a, b) return a > b end)
+        local have, cut = 0, scores[#scores]
+        for _, sc in ipairs(scores) do
+            have = have + count[sc]
+            if have >= KEEP then cut = sc break end
+        end
+        local top = {}
+        for i = 1, n do
+            local r = results[i]
+            if r.score >= cut then top[#top + 1] = r end
+        end
+        local out = Ranked(top)
+        -- (twelve are shown; fewer than that left after the doubles went:
+        -- the whole list after all)
+        if #out >= 12 then return out, hits, best end
+    end
+    return Ranked(results), hits, best
+end
+function S.Run(query) return RunBody(query, nil) end
+
+-- THE SEARCH AS YOU TYPE NEVER HOLDS A FRAME. S.RunSliced does the same
+-- work in pieces of at most SLICE_MS a frame and hands the three answers
+-- to onDone when it is through (at once when the whole of it fits in the
+-- first piece). A newer call drops the one before it. S.Run is the same
+-- search in one go, for Enter and the tests.
+local SLICE_MS = 4
+local sliceSerial = 0
+local function Clock()
+    return (debugprofilestop and debugprofilestop()) or ((GetTime and GetTime() or 0) * 1000)
+end
+function S.RunSliced(query, onDone)
+    sliceSerial = sliceSerial + 1
+    local mine = sliceSerial
+    local t0, count = Clock(), 0
+    local co = coroutine.create(function()
+        return RunBody(query, function()
+            count = count + 1
+            if count % 40 == 0 and Clock() - t0 > SLICE_MS then coroutine.yield() end
+        end)
     end)
-    local seen, out = {}, {}
-    for _, r in ipairs(results) do
-        local e = r.entry
-        local k = r.item .. "\1" .. (r.label or "") .. "\1" .. ((e and e.card) or "")
-            .. "\1" .. tostring(e and (e.tabKey or e.alias))
-        if not seen[k] then
-            seen[k] = true
-            out[#out + 1] = r
+    local function Step()
+        if mine ~= sliceSerial then return end
+        t0 = Clock()
+        local okR, a, b, c = coroutine.resume(co)
+        if not okR then
+            -- (never leave the box without an answer: the plain search)
+            RC:DebugPrint("Search slice failed: " .. tostring(a), "config")
+            a, b, c = RunBody(query, nil)
+            onDone(a, b, c)
+            return
+        end
+        if coroutine.status(co) == "dead" then
+            onDone(a, b, c)
+        else
+            C_Timer.After(0, Step)
         end
     end
-    return out, hits
+    Step()
 end
+function S.CancelSliced() sliceSerial = sliceSerial + 1 end
 
 -- ============================================================
 -- HOW A RESULT READS

@@ -605,6 +605,38 @@ end
 -- with an acknowledgement (A), and each side then sends the other its
 -- whole roster. Changes go to every character online as they happen, and
 -- the whole roster again every 5 minutes as a safety net.
+--
+-- WHOSE GOLD COUNTS (2026-11-25). Zac: "why does my accounts on another
+-- battle net ... not sync the gold with the mesh sync stuff", and "a way
+-- to filter out accounts ... because not every account is mine". The
+-- BattleTag rule above stays the default, and two picks sit on top of it
+-- (the list on the Gold tab; ReadycheckDB.goldMine, account-wide like the
+-- ledger, in no profile and no export - a shared profile must not decide
+-- whose gold you see):
+--   * an account on ANOTHER Battle.net counts once you tick it. It has
+--     to be in your mesh: the mesh's own roster (characters that proved
+--     they hold the mesh password) says which account a character
+--     belongs to, and a message from another Battle.net is taken only
+--     from a character of a ticked account. Both sides tick the other;
+--     until both have, neither gets the other's numbers.
+--   * an account on YOUR Battle.net that is not yours (a shared
+--     Battle.net) can be unticked: what it sent leaves the ledger, its
+--     messages are dropped and it is sent nothing.
+-- Nothing is ticked or unticked for anyone until they do it themselves.
+--
+-- A TICK CARRIES TO YOUR OTHER ACCOUNTS ON THE SAME BATTLE.NET
+-- (2026-11-26, Zac: "do i need to tick cuajofury and thanda on every
+-- account? if yes can you do it for me"). The accounts of one Battle.net
+-- already hold each other's gold, so they hold each other's answer to
+-- "is that mesh account mine" too: every roster sent to an account on
+-- your Battle.net carries one line per mesh account ever ticked or
+-- unticked ("!-!~k~<label>~<1|0>~<when>"), and the newest answer wins on
+-- every one of them. So it is one sitting per Battle.net, not one per
+-- account. Such a line is taken ONLY from your own Battle.net - an
+-- account on another one can never tick anything for you - and a build
+-- from before this reads it as a line it does not know and skips it.
+-- (Unticking an account of your own Battle.net is not carried: that one
+-- is each account's own call.)
 
 local PREFIX      = "RCGOLD"
 local LINK_VER    = "G2"
@@ -623,6 +655,7 @@ local helloAt     = {}   -- lower "name-realm" -> time of our last hello
 local rosterAt    = {}   -- lower "name-realm" -> time we last sent it our roster
 local whisperedAt = {}   -- lower base name -> time of our last whisper to it
 local lastFull, lastProbe = 0, 0
+local notMine     = {}   -- lower "name-realm" of an account unticked on the Gold tab, as heard this session
 local stats = { sent = 0, refused = 0, throttled = 0, heard = 0, lastHeard = 0 }
 L.linkStats = stats
 
@@ -708,6 +741,51 @@ local function MyFull()
     return (FullName(UnitName("player")) or ""):lower()
 end
 
+-- Whose gold counts -----------------------------------------------------
+
+-- off[install id] = true: on my Battle.net, not mine.
+-- mesh[account label, lower] = true: on another Battle.net, mine.
+local function Mine()
+    if not ReadycheckDB then return nil end
+    local m = ReadycheckDB.goldMine
+    if type(m) ~= "table" then
+        m = {}
+        ReadycheckDB.goldMine = m
+    end
+    if type(m.off) ~= "table" then m.off = {} end
+    if type(m.mesh) ~= "table" then m.mesh = {} end
+    -- meshT[label] = when that mesh account was last ticked or unticked
+    -- (a tick from before the times were kept counts as the oldest)
+    if type(m.meshT) ~= "table" then m.meshT = {} end
+    for label in pairs(m.mesh) do
+        if not m.meshT[label] then m.meshT[label] = 1 end
+    end
+    return m
+end
+
+local function SameChar(a, b)
+    return type(a) == "string" and type(b) == "string"
+        and a:lower():gsub("[%s']", "") == b:lower():gsub("[%s']", "")
+end
+
+-- The mesh account a character belongs to, by the mesh's own roster.
+local function MeshLabelOf(full)
+    local cfg = Cfg()
+    if not (full and cfg and type(cfg.members) == "table") then return nil end
+    for _, mb in ipairs(cfg.members) do
+        if type(mb) == "table" and type(mb.name) == "string" and SameChar(FullName(mb.name), full) then
+            return type(mb.label) == "string" and mb.label ~= "" and mb.label or nil
+        end
+    end
+end
+
+-- A character of a mesh account ticked as mine.
+local function MeshMine(full)
+    local label = MeshLabelOf(full)
+    local m = label and Mine()
+    return (m and m.mesh[label:lower()]) and true or false
+end
+
 -- Sending --------------------------------------------------------------
 
 local THROTTLED = {}
@@ -782,6 +860,8 @@ local function Hello(name, kind)
     if not full then return end
     local k = full:lower()
     if k == MyFull() then return end
+    -- (a character of an account you said is not yours: not knocked on again)
+    if notMine[k] then return end
     local now = time()
     if kind ~= "A" then
         if helloAt[k] and now - helloAt[k] < HELLO_GAP then return end
@@ -813,6 +893,36 @@ local function Send(keys, target)
     end
 end
 
+-- The answers to "is that mesh account mine", to the accounts on your
+-- Battle.net that are online (or to one of them).
+local function SendTicks(target)
+    local m = Mine()
+    if not m or not next(m.meshT) then return end
+    local budget = LinkBudget()
+    if not budget then return end
+    local targets = {}
+    for _, name in ipairs(target and { target } or Peers()) do
+        local p = online[name:lower()]
+        if p and p.verified and p.bnet then targets[#targets + 1] = name end
+    end
+    if #targets == 0 then return end
+    local labels = {}
+    for label in pairs(m.meshT) do
+        -- (a label the line cannot carry stays this account's own)
+        if not label:find("[~;#]") then labels[#labels + 1] = label end
+    end
+    if #labels == 0 then return end
+    table_sort(labels)
+    local records = {}
+    for _, label in ipairs(labels) do
+        records[#records + 1] = "!-!~k~" .. label .. "~" .. (m.mesh[label] and 1 or 0) .. "~" .. math_floor(m.meshT[label])
+    end
+    local head = Header("D")
+    for _, msg in ipairs(Pack(records, budget)) do
+        for _, t in ipairs(targets) do Whisper(t, head .. msg) end
+    end
+end
+
 function L:OwnKeys()
     local store = Store()
     local out = {}
@@ -835,6 +945,7 @@ function L:SendAll(target)
     self:RecordSelf()
     Reconcile()
     Send(self:OwnKeys(), target)
+    SendTicks(target)
     if not target then
         lastFull = time()
         dirty = {}
@@ -968,8 +1079,11 @@ local function Probe(withMembers)
     end
     local gp = ReadycheckDB and ReadycheckDB.goldPeers
     if type(gp) == "table" then
-        for _, v in pairs(gp) do
-            if type(v) == "table" and v.char then Add(v.char, (v.seen or 0) + 86400 * 90) end
+        local mm = Mine()
+        for pid, v in pairs(gp) do
+            if type(v) == "table" and v.char and not (mm and mm.off[pid]) then
+                Add(v.char, (v.seen or 0) + 86400 * 90)
+            end
         end
     end
     table_sort(list, function(a, b) return a.when > b.when end)
@@ -991,11 +1105,22 @@ local function OnLinkMessage(text, sender)
     local ver, label, bh, id, rest = strsplit("#", text, 5)
     if ver ~= LINK_VER or not rest or rest == "" then return end
     local b = Bnet()
-    if not b or bh ~= b.h then return end      -- not your Battle.net account
     local full = FullName(sender)
     if not full then return end
     local k = full:lower()
     if k == MyFull() then return end
+    local sameBnet = (b ~= nil and bh == b.h)
+    local m = Mine()
+    if sameBnet then
+        -- on your Battle.net, but you said it is not yours
+        if m and m.off[id] then
+            notMine[k] = true
+            return
+        end
+        notMine[k] = nil
+    elseif not MeshMine(full) then
+        return                                 -- not your Battle.net account, and not ticked as yours
+    end
     if id == InstallId() then
         -- Another account with our id: a copied WTF folder. Take a new
         -- one; its next message gets through.
@@ -1012,18 +1137,190 @@ local function OnLinkMessage(text, sender)
         online[k] = p
     end
     p.name, p.id, p.label, p.seen, p.verified = full, id, label, now, true
+    p.bnet = sameBnet
     if ReadycheckDB then
         local gp = ReadycheckDB.goldPeers
         if type(gp) ~= "table" then
             gp = {}
             ReadycheckDB.goldPeers = gp
         end
-        gp[id] = { label = label, char = full, seen = now }
+        gp[id] = { label = label, char = full, seen = now, via = sameBnet and "bnet" or "mesh",
+            mesh = (not sameBnet) and MeshLabelOf(full) or nil }
     end
     local kind, data = rest:sub(1, 1), rest:sub(2)
     if kind == "H" then Hello(full, "A") end
     if kind == "H" or kind == "A" or isNew then RosterTo(full) end
-    if kind == "D" and data ~= "" then Decode(label, full, data) end
+    if kind == "D" and data ~= "" then Decode(label, full, data, id, sameBnet) end
+end
+
+-- Whose gold counts: the list for the Gold tab, and its two switches.
+-- One row per account: { key =, label =, char =, via = "bnet" | "mesh",
+-- mine =, id = (a Battle.net row), mesh = (a mesh row's label), chars = }.
+-- EVERY account of the mesh is in it, however its gold gets here (Zac,
+-- 2026-11-26: "show all accounts connected to my mesh even if they dont
+-- use the mesh to transfer the gold"): one that links by itself over
+-- your Battle.net is the same row as its mesh entry (matched by the
+-- character it was heard from, then by its label), never a second one.
+function L:Accounts()
+    local rows, byLabel = {}, {}
+    local m = Mine()
+    if not m then return rows end
+    local gp = ReadycheckDB.goldPeers
+    if type(gp) == "table" then
+        for id, v in pairs(gp) do
+            if type(v) == "table" and v.via ~= "mesh" then
+                local label = tostring(v.label or "?")
+                local row = { key = "id:" .. tostring(id), id = id, label = label, via = "bnet",
+                    char = type(v.char) == "string" and v.char:match("^([^%-]+)") or nil,
+                    seen = v.seen or 0, mine = not m.off[id] }
+                rows[#rows + 1] = row
+                byLabel[label:lower()] = row
+                -- (the mesh may know this account under another label)
+                local ml = type(v.char) == "string" and MeshLabelOf(v.char) or nil
+                if ml then
+                    row.inMesh = true
+                    byLabel[ml:lower()] = byLabel[ml:lower()] or row
+                end
+            end
+        end
+    end
+    local cfg = Cfg()
+    local mineLabel = MyAccount():lower()
+    if cfg and type(cfg.members) == "table" then
+        for _, mb in ipairs(cfg.members) do
+            local label = type(mb) == "table" and type(mb.label) == "string" and mb.label or nil
+            if label and label ~= "" and label:lower() ~= mineLabel then
+                local lk = label:lower()
+                local row = byLabel[lk]
+                if not row then
+                    row = { key = "mesh:" .. lk, mesh = lk, label = label, via = "mesh", chars = 0,
+                        seen = 0, mine = m.mesh[lk] and true or false }
+                    rows[#rows + 1] = row
+                    byLabel[lk] = row
+                else
+                    row.inMesh = true
+                end
+                if row.via == "mesh" then
+                    row.chars = row.chars + 1
+                    row.char = row.char or (type(mb.name) == "string" and mb.name:match("^([^%-]+)") or nil)
+                end
+            end
+        end
+    end
+    -- (an account ticked on a mesh that has since lost it stays listed, so it can be unticked)
+    for lk in pairs(m.mesh) do
+        if not byLabel[lk] and lk ~= mineLabel then
+            local row = { key = "mesh:" .. lk, mesh = lk, label = lk, via = "mesh", chars = 0, seen = 0, mine = true }
+            rows[#rows + 1] = row
+            byLabel[lk] = row
+        end
+    end
+    table_sort(rows, function(a, b)
+        if a.via ~= b.via then return a.via == "bnet" end
+        return a.label:lower() < b.label:lower()
+    end)
+    return rows
+end
+
+-- What one account sent leaves the ledger (here only: no word of it goes
+-- to the other accounts, unlike Forget).
+local function DropAccount(id, meshLabel)
+    local store = Store()
+    if not store then return end
+    local gp = ReadycheckDB.goldPeers
+    local ids, labels = {}, {}
+    if id then
+        ids[id] = true
+        local v = type(gp) == "table" and gp[id]
+        if type(v) == "table" and v.label then labels[tostring(v.label):lower()] = true end
+    end
+    if meshLabel then
+        labels[meshLabel] = true
+        if type(gp) == "table" then
+            for pid, v in pairs(gp) do
+                if type(v) == "table" and v.via == "mesh"
+                        and (tostring(v.mesh or ""):lower() == meshLabel or tostring(v.label or ""):lower() == meshLabel) then
+                    ids[pid] = true
+                    gp[pid] = nil
+                end
+            end
+        end
+    end
+    for key, e in pairs(store) do
+        if type(e) == "table" and not e.own
+                and ((e.src and ids[e.src]) or (not e.src and e.account and labels[tostring(e.account):lower()])) then
+            store[key] = nil
+        end
+    end
+    for k, p in pairs(online) do
+        if ids[p.id] or (meshLabel and tostring(MeshLabelOf(p.name) or ""):lower() == meshLabel) then
+            online[k], helloAt[k], rosterAt[k] = nil, nil, nil
+        end
+    end
+    Reconcile()
+    RefreshBar()
+end
+
+-- One mesh account ticked or unticked as mine, here or on another account
+-- of this Battle.net (t = when).
+local function SetMeshMine(label, on, t)
+    local m = Mine()
+    if not m then return end
+    local was = m.mesh[label] and true or false
+    m.mesh[label] = on or nil
+    m.meshT[label] = t
+    if was == on then return end
+    if not on then
+        DropAccount(nil, label)
+    else
+        local cfg = Cfg()
+        for _, mb in ipairs((cfg and type(cfg.members) == "table") and cfg.members or {}) do
+            if type(mb) == "table" and type(mb.label) == "string" and mb.label:lower() == label
+                    and type(mb.name) == "string" then
+                local full = FullName(mb.name)
+                if full then
+                    helloAt[full:lower()] = nil
+                    Hello(full)
+                end
+            end
+        end
+    end
+end
+-- (Decode, below, takes the same answer from an account of this Battle.net)
+function L:ApplyTick(label, on, t)
+    local m = Mine()
+    if not (m and type(label) == "string" and label ~= "" and #label <= 40 and t) then return false end
+    label = label:lower()
+    -- (the newest answer wins; one from the future is a broken clock)
+    if t <= (m.meshT[label] or 0) or t > time() + 86400 then return false end
+    SetMeshMine(label, on and true or false, t)
+    RefreshBar()
+    return true
+end
+
+function L:SetAccountMine(row, on)
+    local m = Mine()
+    if not (m and type(row) == "table") then return end
+    on = on and true or false
+    if row.via == "bnet" and row.id then
+        m.off[row.id] = (not on) and true or nil
+        if not on then
+            DropAccount(row.id, nil)
+        else
+            for k in pairs(notMine) do notMine[k] = nil end
+            -- (its characters answer the next knock)
+            local v = type(ReadycheckDB.goldPeers) == "table" and ReadycheckDB.goldPeers[row.id]
+            if type(v) == "table" and v.char then
+                helloAt[FullName(v.char):lower()] = nil
+                Hello(v.char)
+            end
+        end
+    elseif row.mesh then
+        -- (never older than what is already known, whatever this clock says)
+        SetMeshMine(row.mesh, on, math_max(time(), (m.meshT[row.mesh] or 0) + 1))
+        -- your other accounts on this Battle.net hear of it now
+        SendTicks()
+    end
 end
 
 -- For the Gold card.
@@ -1146,7 +1443,7 @@ local function ApplyTomb(store, key, name, realm, t, r)
     return true
 end
 
-Decode = function(from, sender, data)
+Decode = function(from, sender, data, src, sameBnet)
     local store = Store()
     if not store or type(data) ~= "string" or data == "" then return end
     local now = time()
@@ -1165,7 +1462,13 @@ Decode = function(from, sender, data)
             local key = Key(name, realm)
             if key ~= me then
                 local t, r = tonumber(f5), tonumber(f6)
-                if f2 == "x" then
+                if f2 == "k" then
+                    -- "!-!~k~label~1|0~when": is that mesh account mine,
+                    -- as an account of this Battle.net answered it
+                    if sameBnet and (f4 == "1" or f4 == "0") and t then
+                        L:ApplyTick(f3, f4 == "1", math_floor(t))
+                    end
+                elseif f2 == "x" then
                     if t and r then
                         changed = ApplyTomb(store, key, name, realm, math_floor(t), math_floor(r)) or changed
                     end
@@ -1210,6 +1513,9 @@ Decode = function(from, sender, data)
                             e.t = now - math_floor(age)
                         end
                         changed = ApplyEntry(store, key, e) or changed
+                        -- (which install said so, for "not mine" above)
+                        local cur = store[key]
+                        if src and type(cur) == "table" and not cur.own then cur.src = src end
                     end
                 end
             end
@@ -1600,47 +1906,82 @@ function RC:BuildGoldCard(parent, yPos, pageFrame)
         cy = cy - 8
     end
 
-    -- Freshness, account by account. Another account's numbers are exact
-    -- as of the last time it was online together with this one; this is
-    -- where that time is shown rather than implied.
+    -- Whose gold counts, account by account (L:Accounts), and how fresh
+    -- each one is: another account's numbers are exact as of the last
+    -- time it was online together with this one, and this is where that
+    -- time is shown rather than implied.
     local st = L:LinkStatus()
     local green = RC:GetColor("text", "green") or norm
     local heard = ReadycheckDB and ReadycheckDB.goldPeers
-    local ids = {}
-    if type(heard) == "table" then
-        for id, v in pairs(heard) do
-            if type(v) == "table" then ids[#ids + 1] = id end
-        end
-    end
-    if #ids > 0 then
-        table_sort(ids, function(x, y) return (heard[x].seen or 0) > (heard[y].seen or 0) end)
+    local accounts = L:Accounts()
+    if #accounts > 0 then
         local hf = RC:CreateFontString(card, "OVERLAY", nil, 10)
         hf:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy)
-        hf:SetText(RCL["Other accounts"])
+        hf:SetText(RCL["Whose gold counts"])
         hf:SetTextColor(norm.r, norm.g, norm.b)
-        cy = cy - 16
-        for _, id in ipairs(ids) do
-            local v = heard[id]
-            local lf = RC:CreateFontString(card, "OVERLAY", nil, 10)
-            lf:SetPoint("TOPLEFT", card, "TOPLEFT", 27, cy)
-            lf:SetWidth(140)
-            lf:SetJustifyH("LEFT")
-            lf:SetWordWrap(false)
-            local who = type(v.char) == "string" and v.char:match("^([^%-]+)") or nil
-            lf:SetText(tostring(v.label or "?") .. ((who and who ~= v.label) and (" (" .. who .. ")") or ""))
-            lf:SetTextColor(gray.r, gray.g, gray.b)
+        cy = cy - 18
+        -- this account heads the list, so the list is the whole mesh
+        do
+            local me = MyAccount()
+            local who = UnitName("player")
+            local tf = RC:CreateFontString(card, "OVERLAY", nil, 10)
+            tf:SetPoint("TOPLEFT", card, "TOPLEFT", 15, cy - 2)
+            tf:SetText(((me ~= "local" and me ~= "") and (me .. " (" .. tostring(who) .. ")") or tostring(who)))
+            tf:SetTextColor(gray.r, gray.g, gray.b)
+            local nf = RC:CreateFontString(card, "OVERLAY", nil, 10)
+            nf:SetPoint("TOPRIGHT", card, "TOPRIGHT", -15, cy - 2)
+            nf:SetJustifyH("RIGHT")
+            nf:SetText(RCL["this account - always counted"])
+            nf:SetTextColor(gray.r, gray.g, gray.b)
+            cy = cy - 20
+        end
+        for _, row in ipairs(accounts) do
+            local text = row.label .. ((row.char and row.char ~= row.label) and (" (" .. row.char .. ")") or "")
+            local acct = row
+            local cb = RC.UI:CreateSettingCheckbox(card, cy, text, row.mine, function(box)
+                L:SetAccountMine(acct, box:GetChecked() and true or false)
+                -- (after the click's own handlers: the page is built again)
+                C_Timer.After(0, Refresh)
+            end)
             local vf = RC:CreateFontString(card, "OVERLAY", nil, 10)
-            vf:SetPoint("TOPLEFT", card, "TOPLEFT", 170, cy)
-            if st.online[id] then
-                vf:SetText(RCL["online - live"])
+            vf:SetPoint("TOPRIGHT", card, "TOPRIGHT", -15, cy - 2)
+            vf:SetJustifyH("RIGHT")
+            -- the account it came in under, when it has been heard
+            local live = false
+            local seen = row.seen or 0
+            if row.id then
+                live = st.online[row.id] and true or false
+            elseif type(heard) == "table" then
+                for pid, v in pairs(heard) do
+                    if type(v) == "table" and v.via == "mesh"
+                            and (tostring(v.mesh or ""):lower() == row.mesh or tostring(v.label or ""):lower() == row.mesh) then
+                        if st.online[pid] then live = true end
+                        if (v.seen or 0) > seen then seen = v.seen end
+                    end
+                end
+            end
+            local where = row.via == "bnet" and RCL["your Battle.net"] or RCL["in your mesh"]
+            if not row.mine then
+                -- (a mesh account that has not been heard may be on your
+                -- Battle.net or not: either way the tick is the answer)
+                vf:SetText(where .. " - " .. (row.via == "bnet" and RCL["not counted"] or RCL["not counted: tick it if it is yours"]))
+                vf:SetTextColor(gray.r, gray.g, gray.b)
+            elseif live then
+                vf:SetText(where .. " - " .. RCL["online - live"])
                 vf:SetTextColor(green.r, green.g, green.b)
+            elseif seen > 0 then
+                vf:SetText(where .. " - " .. string.format(RCL["last synced %s"], AgeText({ t = seen })))
+                vf:SetTextColor(gray.r, gray.g, gray.b)
             else
-                vf:SetText(string.format(RCL["last synced %s"], AgeText({ t = v.seen })))
+                vf:SetText(where .. " - " .. RCL["nothing from it yet"])
                 vf:SetTextColor(gray.r, gray.g, gray.b)
             end
-            cy = cy - 14
+            cy = cy - 22
         end
-        cy = cy - 8
+        cy = cy - 2
+        cy = RC.UI:CreateHelpLine(card, 15, cy, RCL["Every account in your mesh is listed, however its gold gets here. Accounts on your Battle.net count by themselves: untick one that is not yours and its gold leaves the total, and it gets none of yours. An account on another Battle.net counts once it is in your mesh and you tick it here AND tick this account over there - until both are ticked neither sees the other's gold. A tick you make carries to your other accounts on this Battle.net the next time they are online together, so it is one sitting per Battle.net."],
+            { short = RCL["Tick the accounts that are yours."], title = RCL["Whose gold counts"] })
+        cy = cy - 6
     end
 
     -- What the link is doing right now.
@@ -1662,7 +2003,7 @@ function RC:BuildGoldCard(parent, yPos, pageFrame)
     sf:SetTextColor(gray.r, gray.g, gray.b)
     cy = cy - 32
 
-    cy = RC.UI:CreateHelpLine(card, 15, cy, RCL["Every character holding money on this account and your other accounts on the same Battle.net account, including money in their mailboxes and money mailed between them that has not been opened yet. Works on every character, with or without Mesh sync - friends on your mesh are never counted. An account that is not online shows its numbers as of the last time it was. Tick GOLD on the Stats tab to put the chip on the bar."],
+    cy = RC.UI:CreateHelpLine(card, 15, cy, RCL["Every character holding money on this account and your other accounts on the same Battle.net account, including money in their mailboxes and money mailed between them that has not been opened yet. Works on every character, with or without Mesh sync - an account in your mesh is only counted when you tick it above. An account that is not online shows its numbers as of the last time it was. Tick GOLD on the Stats tab to put the chip on the bar."],
         { short = RCL["Gold on every character of your Battle.net account, mail included."], title = RCL["Account gold"] })
 
     card:SetContentHeight(math.abs(cy))

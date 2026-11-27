@@ -489,6 +489,31 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         return slider
     end
 
+    -- LABELLED SLIDERS IN ONE COLUMN (2026-11-25, seen in the game on
+    -- Reminder Settings > Sound: "Repeat count" and "Repeat reminder every"
+    -- each began their slider where their own label ended, so two short
+    -- tracks sat at two different places). rows = { { label, slider }, ... }:
+    -- every slider starts `gap` (12) after the longest label, level with
+    -- its own label, and is `width` wide when one is given.
+    function RC.UI:AlignLabelledSliders(rows, width, gap)
+        gap = gap or 12
+        local w = 0
+        for _, r in ipairs(rows) do
+            local lw = r[1] and r[1].GetStringWidth and r[1]:GetStringWidth() or 0
+            if lw and lw > w then w = lw end
+        end
+        w = math_ceil(w)
+        for _, r in ipairs(rows) do
+            local label, slider = r[1], r[2]
+            if label and slider then
+                local host = slider.parentFrame or slider
+                host:ClearAllPoints()
+                host:SetPoint("LEFT", label, "LEFT", w + gap, 0)
+                if width then slider:SetWidth(width) end
+            end
+        end
+    end
+
     -- CreateSlider pre-anchored to a settings card at (x, y), with an
     -- optional label and OnValueChanged callback.
     function RC.UI:CreateSettingSlider(card, min, max, value, step, x, y, text, onChange)
@@ -651,6 +676,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
         menu._rcWindow = true
         menu:SetSize(width, menuHeight)
         menu:SetPoint("TOPLEFT", container, "BOTTOMLEFT", 0, -2)
+        -- (a list wider than its box - _FitMenuWidth - stays on the screen)
+        menu:SetClampedToScreen(true)
         local STRATA_RANK = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4,
                               DIALOG = 5, FULLSCREEN = 6,
                               FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
@@ -1032,6 +1059,12 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             container.isOpen = true
             RC.UI:SetDropdownArrowOpen(container.arrow, true)
             RC.UI._openDropdown = container
+            -- THE LIST IS THE BOX'S SIZE ON THE SCREEN. It hangs on UIParent,
+            -- which a window's own scale does not reach: under a window at
+            -- 75% the list stood a third bigger than its box.
+            local es, ps = container:GetEffectiveScale(), UIParent:GetEffectiveScale()
+            if es and ps and ps > 0 and es > 0 then menu:SetScale(es / ps) end
+            if container._FitMenuWidth then container:_FitMenuWidth() end
             if RC.UI._HookDropdownAutoClose then RC.UI:_HookDropdownAutoClose(parent) end
             if container._searchEnabled and container.searchBox then
                 container.searchBox:SetText("")
@@ -1103,12 +1136,20 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                             GameTooltip:SetText(self.displayText or "", gold.r, gold.g, gold.b)
                             GameTooltip:AddLine(self.tipText, norm.r, norm.g, norm.b, true)
                             GameTooltip:Show()
+                        elseif self.label and self.label.IsTruncated and self.label:IsTruncated() then
+                            -- a name too long even for the widest list: whole on hover
+                            local norm = RC:GetColor("text", "normal")
+                            self._rcCutTip = true
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetText(tostring(self.displayText or ""), norm.r, norm.g, norm.b, 1, true)
+                            GameTooltip:Show()
                         end
                     end)
                     itemFrame:SetScript("OnLeave", function(self)
                         self.bg:SetVertexColor(1, 1, 1, 0)
                         if set then _SetRowSelected(self, self.isSelectedRow) end
-                        if self.itemLink or self.tipText then GameTooltip:Hide() end
+                        if self.itemLink or self.tipText or self._rcCutTip then GameTooltip:Hide() end
+                        self._rcCutTip = nil
                     end)
 
                     itemFrame:SetScript("OnClick", function(self)
@@ -1189,6 +1230,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
                     end
                     itemFrame.label = itemText
                     itemFrame.isFontPreview = wantPreview
+                    -- (cut only past the widest list, and then whole on hover: OnEnter above)
+                    itemText._rcTruncTip = true
                 end
                 if wantPreview then
                     -- a font file that does not load (a LibSharedMedia entry
@@ -1257,6 +1300,41 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             container._searchAutoFocus = _searchOK and (#items >= 8)
             container._filter = ""
             container:_RelayoutVisible()
+            container._menuRowW = nil
+            container:_FitMenuWidth()
+        end
+
+        -- THE LIST IS AS WIDE AS ITS LONGEST ROW NEEDS (2026-11-25, the
+        -- in-game audit: 68 rows cut short in open lists, "Readycheck:
+        -- Access Allowed" in the sound picker among them). Never narrower
+        -- than the box, at most DD_LIST_MAX wide; a row longer than that is
+        -- cut and shows whole on hover. Asked again each time the list
+        -- opens: the font may have changed since the rows were made.
+        local DD_LIST_MAX = 420
+        function container:_FitMenuWidth()
+            local rowMin = width - scrollBarWidth - 6
+            local need = rowMin
+            for _, row in ipairs(container.items) do
+                local left = (row.icon and row.icon:IsShown()) and 22 or 6
+                local l = row.label
+                if l and l.GetUnboundedStringWidth then
+                    local w = (l:GetUnboundedStringWidth() or 0) + left + 20 + 2
+                    if w > need then need = w end
+                end
+                local sub = row.subText
+                if sub and sub:IsShown() and sub.GetUnboundedStringWidth then
+                    local w = (sub:GetUnboundedStringWidth() or 0) + left + 2 + 20 + 2
+                    if w > need then need = w end
+                end
+            end
+            local rowW = math.floor(math.max(rowMin, math.min(need, DD_LIST_MAX - scrollBarWidth - 6)) + 0.5)
+            if container._menuRowW == rowW then return end
+            container._menuRowW = rowW
+            menu:SetWidth(rowW + scrollBarWidth + 6)
+            scrollChild:SetWidth(rowW)
+            for _, row in ipairs(container._rowPool or {}) do
+                row:SetWidth(rowW)
+            end
         end
 
         function container:SetSearchEnabled(enabled)
@@ -1299,6 +1377,8 @@ local BASE, C, FLAT, CreateProfessionalFontString, GetAccentGold, GetBorderNorma
             for _, row in ipairs(container._rowPool or {}) do
                 row:SetWidth(w - scrollBarWidth - 6)
             end
+            container._menuRowW = nil
+            container:_FitMenuWidth()
         end
 
         return container
